@@ -15,12 +15,22 @@ Android field app (Expo) + Fastify/Prisma/PostgreSQL API for tracking rented gas
 ## Quick start
 
 ```bash
-docker compose up -d                     # Postgres + MailHog
 npm install
-npm run -w @gct/api db:migrate:deploy
-npm run -w @gct/api db:seed              # gas types, suppliers, project managers, 3 role users (password: Passw0rd!)
+npm run setup                            # .env files + Postgres/MailHog + migrate + seed
 npm run dev                              # API on :3000, Expo on :8081
 ```
+
+`npm run setup` is the first command on a fresh clone. Both `.env` files are gitignored, so
+`DATABASE_URL` does not exist until it writes one — the migrate step cannot run before it.
+It also generates a fresh Ed25519 QR signing keypair, keeping the private half in
+`apps/api/.env` and copying only the public half to `apps/mobile/.env`. It never overwrites
+an existing `.env`, and migrate and seed are both idempotent, so re-running is safe.
+
+Seeded logins (password `Passw0rd!`): `admin@demo.local`, `stores@demo.local`,
+`technician@demo.local`. MailHog inbox: <http://localhost:8025>.
+
+Doing it by hand instead — `docker compose up -d`, then `npm run -w @gct/api db:migrate:deploy`
+and `db:seed` — works only once both `.env` files already exist.
 
 `npm test` runs all 286 tests; `npm run lint` and `npm run typecheck` gate the same tree.
 
