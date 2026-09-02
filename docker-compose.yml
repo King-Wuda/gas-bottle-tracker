@@ -1,0 +1,31 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: gct-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gct
+      POSTGRES_PASSWORD: gct
+      POSTGRES_DB: gct
+    ports:
+      - '5432:5432'
+    volumes:
+      - gct-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U gct -d gct']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: gct-mailhog
+    restart: unless-stopped
+    ports:
+      - '1025:1025' # SMTP ingest
+      - '8025:8025' # web UI -> http://localhost:8025
+    # No healthcheck: the mailhog image is FROM scratch (no shell to probe with).
+    # Swap to axllent/mailpit:latest (same ports) if CI must gate on a healthcheck.
+
+volumes:
+  gct-db-data:

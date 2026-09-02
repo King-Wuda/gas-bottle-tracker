@@ -1,0 +1,57 @@
+{
+  "name": "gas-bottle-tracker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.14.0 <25",
+    "npm": ">=11"
+  },
+  "packageManager": "npm@11.9.0",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n api,mobile -c blue,magenta \"npm:dev:api\" \"npm:dev:mobile\"",
+    "dev:api": "npm run -w @gct/api dev",
+    "dev:mobile": "npm run -w @gct/mobile start",
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty && npm run -w @gct/shared typecheck && npm run -w @gct/mobile typecheck",
+    "test": "npm run -w @gct/shared test && npm run -w @gct/api test && npm run -w @gct/mobile test",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:up": "docker compose up -d db mailhog",
+    "db:down": "docker compose down",
+    "db:migrate": "npm run -w @gct/api db:migrate",
+    "db:seed": "npm run -w @gct/api db:seed",
+    "clean": "rimraf \"apps/*/dist\" \"packages/*/dist\" \"**/*.tsbuildinfo\"",
+    "demo": "npm run -w @gct/api demo",
+    "setup": "npm run -w @gct/api setup"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.13.3",
+    "concurrently": "10.0.5",
+    "eslint": "10.9.1",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "17.11.0",
+    "prettier": "3.9.6",
+    "rimraf": "6.1.3",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.68.0"
+  },
+  "overrides": {
+    "typescript": "6.0.3",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "@gct/shared": {
+      "zod": "4.4.3"
+    },
+    "@gct/api": {
+      "zod": "4.4.3"
+    }
+  }
+}

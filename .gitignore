@@ -1,0 +1,29 @@
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+
+# env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# prisma generated client (new prisma-client generator writes into the source tree)
+apps/api/src/generated/
+
+# expo / native
+apps/mobile/.expo/
+apps/mobile/dist/
+apps/mobile/dist-web/
+apps/mobile/web-build/
+apps/mobile/android/
+apps/mobile/ios/
+*.orig.*
+
+# api runtime artifacts (generated PDFs, signature PNGs)
+apps/api/var/
+
+# os / editor
+.DS_Store
+*.log

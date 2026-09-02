@@ -1,0 +1,575 @@
+// Gas Cylinder Tracking System — data model.
+// Prisma 7 modern generator: emits an ESM client into the source tree (gitignored);
+// `prisma generate` runs on postinstall. All app code imports the client via src/db.ts.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+  runtime      = "nodejs"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Prisma 7: the connection URL lives in prisma.config.ts (for the CLI/Migrate) and
+  // is passed to PrismaClient via the pg driver adapter (src/db.ts) at runtime.
+}
+
+// ----------------------------- ENUMS (native PG enums) -----------------------------
+
+enum Role {
+  TECHNICIAN
+  STORES_MANAGER
+  ADMIN
+}
+
+enum ProjectStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum BatchStatus {
+  ACTIVE
+  PARTIAL
+  RETURNED
+}
+
+enum CylinderStatus {
+  IN_STORES // pairs with currentSiteId = null
+  DEPLOYED
+  IN_TRANSIT
+  RETURNED // terminal
+}
+
+enum MovementType {
+  INTAKE
+  /// The first physical scan: the printed labels read back off the cylinders. Kept
+  /// distinct from INTAKE because they are different claims — INTAKE is paperwork,
+  /// INITIALIZE is evidence — and collapsing them would make a batch nobody has
+  /// walked up to indistinguishable from one that has been verified sticker by
+  /// sticker.
+  INITIALIZE
+  TRANSFER
+  RETURN
+}
+
+enum DestinationType {
+  SITE
+  STORES
+}
+
+enum EmailType {
+  QR_SHEET
+  DELIVERY_NOTE
+}
+
+enum EmailStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+}
+
+// ----------------------------- MODELS -----------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  batchesCreated  Batch[]               @relation("BatchCreatedBy")
+  movementEvents  MovementEvent[]
+  transfers       Transfer[]
+  returnsManaged  ReturnRecord[]        @relation("ReturnManager")
+  refreshTokens   RefreshToken[]
+  amendments      BatchAmendment[]
+  initializations BatchInitialization[]
+  batchPhotos     BatchPhoto[]
+
+  @@index([role])
+}
+
+/// Opaque refresh tokens, stored as a SHA-256 hash. Rotated on every use
+/// (the old row is marked revoked); `/auth/logout` revokes the presented one.
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// Email recipient for QR sheets and delivery notes — NOT an app login.
+model ProjectManager {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  /// Deactivated rather than deleted. A batch's paperwork names the manager it was
+  /// addressed to; a row that could vanish would take that answer with it. Inactive
+  /// managers stay joinable but drop out of every picker that assigns new work.
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projects  Project[]
+  batches   Batch[]
+  transfers Transfer[] @relation("TransferProjectManager")
+
+  @@index([active])
+  @@index([name]) // btree for equality
+  // Substring/ILIKE search for GET /projects?q= (Workflow B1 / C1). Declared here —
+  // NOT only in raw SQL — because `prisma migrate dev` treats an index it cannot see
+  // in the schema as drift and silently DROPs it (which is exactly what migration
+  // 20260827194253_refresh_tokens did to the original hand-written version).
+  @@index([name(ops: raw("gin_trgm_ops"))], map: "ProjectManager_name_trgm_idx", type: Gin)
+}
+
+model Project {
+  id               String        @id @default(cuid())
+  projectNumber    String        @unique
+  projectManagerId String
+  status           ProjectStatus @default(ACTIVE)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  projectManager ProjectManager @relation(fields: [projectManagerId], references: [id])
+  sites          Site[]
+  batches        Batch[]
+
+  @@index([projectManagerId])
+  @@index([status])
+  @@index([projectNumber(ops: raw("gin_trgm_ops"))], map: "Project_projectNumber_trgm_idx", type: Gin) // see ProjectManager
+}
+
+model Site {
+  id        String   @id @default(cuid())
+  projectId String
+  name      String
+  location  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project          Project         @relation(fields: [projectId], references: [id])
+  batches          Batch[]
+  cylindersPresent Cylinder[]      @relation("CylinderCurrentSite")
+  movementsFrom    MovementEvent[] @relation("MovementFromSite")
+  movementsTo      MovementEvent[] @relation("MovementToSite")
+  transfersInbound Transfer[]      @relation("TransferDestinationSite")
+
+  @@unique([projectId, name])
+  @@index([projectId])
+}
+
+model GasType {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  prefix    String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  batchLines BatchLine[]
+  cylinders  Cylinder[]
+  suppliers  GasSupplier[]
+}
+
+/// A cylinder supplier. Data-driven so real names replace "Supplier 1"/"Supplier 2"
+/// with an INSERT, not a deploy.
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  gasTypes   GasSupplier[]
+  batchLines BatchLine[]
+
+  @@index([active])
+}
+
+/// Which suppliers can be picked for which gas — the dependent-dropdown pairing.
+/// Many-to-many by an explicit join model rather than Prisma's implicit relation:
+/// the pairing is business data an admin edits directly, so it needs a table with a
+/// name someone can write SQL against.
+model GasSupplier {
+  gasTypeId  String
+  supplierId String
+  createdAt  DateTime @default(now())
+
+  gasType  GasType  @relation(fields: [gasTypeId], references: [id], onDelete: Restrict)
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+
+  @@id([gasTypeId, supplierId])
+  @@index([supplierId])
+}
+
+/// The serial-number allocation counter. One row per (prefix, year); the composite
+/// primary key is also the ON CONFLICT arbiter and the single contention point.
+model SerialSequence {
+  prefix  String
+  year    Int
+  lastSeq Int    @default(0)
+
+  @@id([prefix, year])
+}
+
+/// A single delivery: one project, one site, one day — and, since the multi-gas
+/// change, one OR MORE gases. What used to be "a batch is 7 nitrogen" is now "a batch
+/// has lines, and one of them is 7 nitrogen". The gas, supplier, quantity and delivery
+/// point moved wholesale to `BatchLine`; nothing about a batch is gas-specific any more.
+model Batch {
+  id                  String      @id @default(cuid())
+  projectId           String
+  siteId              String
+  /// Who this batch's paperwork is addressed to. A real column rather than a hop
+  /// through `project.projectManager`, because it is reassignable: a transfer can hand
+  /// the batch to a different manager, and an admin can correct it, without touching
+  /// the project or any other batch on it.
+  projectManagerId    String
+  /// Snapshot of the address actually used. Follows a deliberate reassignment (that
+  /// IS the redirection being asked for) but never a correction to the manager's own
+  /// record — "where did last month's QR sheet go?" must keep answering truthfully.
+  projectManagerEmail String
+  createdByUserId     String
+  status              BatchStatus @default(ACTIVE)
+  clientRequestId     String      @unique // device-minted UUID idempotency key
+
+  /// When every label on this batch was first scanned back off its cylinder. Null
+  /// until that happens, and while it is null the batch can be neither transferred
+  /// nor returned: a cylinder with no sticker on it cannot be scanned onto a truck,
+  /// so those moves could only ever have been admin overrides. Refusing them says so
+  /// honestly instead of letting a batch run its whole life on assertions.
+  initializedAt DateTime? @db.Timestamptz(3)
+
+  /// When the batch's cylinders first moved, and when the last one came back. Null
+  /// means it has not happened yet. Together they drive the Transfer/Returns default
+  /// exclusions, the status badges, and the audit trail of when each step occurred —
+  /// one source of truth instead of three.
+  transferredAt DateTime? @db.Timestamptz(3)
+  returnedAt    DateTime? @db.Timestamptz(3)
+
+  /// QR-sheet mail accounting. `emailSentAt` is the first queued send; the resend
+  /// lock is computed from `lastEmailSentAt`, on the server, so a page refresh cannot
+  /// shorten it.
+  emailSentAt     DateTime? @db.Timestamptz(3)
+  lastEmailSentAt DateTime? @db.Timestamptz(3)
+  resendCount     Int       @default(0)
+
+  /// timestamptz, and set by the database default — never by the device clock, which
+  /// on a field phone can be minutes to days out.
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt
+
+  project         Project               @relation(fields: [projectId], references: [id])
+  site            Site                  @relation(fields: [siteId], references: [id])
+  projectManager  ProjectManager        @relation(fields: [projectManagerId], references: [id])
+  createdBy       User                  @relation("BatchCreatedBy", fields: [createdByUserId], references: [id])
+  lines           BatchLine[]
+  cylinders       Cylinder[]
+  transfers       Transfer[]
+  returns         ReturnRecord[]
+  amendments      BatchAmendment[]
+  initializations BatchInitialization[]
+  photos          BatchPhoto[]
+
+  @@index([projectId, status])
+  @@index([siteId])
+  @@index([projectManagerId])
+  @@index([createdByUserId])
+  // History sorts every batch newest-first in the database, so the sort survives
+  // filtering instead of being reapplied client-side over a truncated page.
+  @@index([createdAt(sort: Desc)])
+}
+
+/// One homogeneous group inside a batch: a gas, the supplier who sent it, how many,
+/// and where they landed. Adding a line to the draft on screen creates nothing; the
+/// batch and all its lines are written together when Create batch is tapped.
+model BatchLine {
+  id                   String   @id @default(cuid())
+  batchId              String
+  gasTypeId            String
+  supplierId           String?
+  /// Snapshot of the supplier's name. Kept alongside supplierId because the QR sheet
+  /// and the delivery note are records of what was agreed on the day — renaming a
+  /// supplier must not rewrite paperwork already sent.
+  supplierName         String
+  quantity             Int
+  /// 'STORES' | 'SITE' — CHECK-constrained; see initialDeliveryPointSchema.
+  initialDeliveryPoint String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  batch     Batch      @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  gasType   GasType    @relation(fields: [gasTypeId], references: [id], onDelete: Restrict)
+  supplier  Supplier?  @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  cylinders Cylinder[]
+
+  @@index([batchId])
+  @@index([gasTypeId])
+  @@index([supplierId])
+}
+
+model Cylinder {
+  id            String         @id @default(cuid())
+  serialCode    String         @unique // e.g. NIT26-001; unique is the allocator's backstop, not its mechanism
+  batchId       String
+  /// Which line of the batch booked this cylinder in. Denormalised alongside batchId
+  /// rather than reached through it: the per-gas location breakdown groups by line,
+  /// and every list in the app renders that breakdown.
+  batchLineId   String
+  gasTypeId     String
+  status        CylinderStatus @default(IN_STORES)
+  currentSiteId String? // NULL => physically at stores/depot (there is no Site row for "stores")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  batch          Batch           @relation(fields: [batchId], references: [id])
+  batchLine      BatchLine       @relation(fields: [batchLineId], references: [id], onDelete: Cascade)
+  gasType        GasType         @relation(fields: [gasTypeId], references: [id])
+  // Restrict, not the implicit SetNull: nulling currentSiteId on a DEPLOYED cylinder
+  // would instantly violate the Cylinder_deployed_has_site CHECK, turning a site
+  // delete into an unmapped 500. Every other FK here is Restrict too.
+  currentSite    Site?           @relation("CylinderCurrentSite", fields: [currentSiteId], references: [id], onDelete: Restrict)
+  movementEvents MovementEvent[]
+
+  @@index([batchId])
+  @@index([batchId, status]) // partial-return counting
+  @@index([batchLineId])
+  // The per-gas location breakdown ("3 at Stores, 4 at Yard B") groups exactly here.
+  @@index([batchId, batchLineId, currentSiteId, status])
+  @@index([currentSiteId])
+  @@index([gasTypeId])
+}
+
+/// Append-only audit trail.
+model MovementEvent {
+  id               String       @id @default(cuid())
+  cylinderId       String
+  type             MovementType
+  fromSiteId       String? // NULL = from stores
+  toSiteId         String? // NULL = to stores
+  userId           String
+  /// The Transfer, ReturnRecord or BatchInitialization this event belongs to; all
+  /// NULL for INTAKE. Lets an idempotent replay report exactly which serials the
+  /// original submission moved, rather than guessing from timestamps — and gives the
+  /// audit view a real join instead of a heuristic.
+  transferId       String?
+  returnRecordId   String?
+  initializationId String?
+  deviceAt         DateTime // when the device recorded it (offline-capable)
+  serverAt         DateTime     @default(now()) // when the server persisted it
+  /// TRUE when an admin waved this cylinder through without a physical scan.
+  /// The whole justification for scanning is being able to prove a cylinder was seen;
+  /// an override is a weaker claim — a named admin's assertion — and the trail has to
+  /// say which one it is rather than quietly presenting both as the same evidence.
+  overridden       Boolean      @default(false)
+
+  cylinder       Cylinder             @relation(fields: [cylinderId], references: [id])
+  user           User                 @relation(fields: [userId], references: [id])
+  fromSite       Site?                @relation("MovementFromSite", fields: [fromSiteId], references: [id])
+  toSite         Site?                @relation("MovementToSite", fields: [toSiteId], references: [id])
+  // Restrict, like every other FK here: the movement log is append-only evidence, so
+  // deleting a Transfer or ReturnRecord must not silently orphan the events proving
+  // what moved — those events ARE the rental-accountability trail.
+  transfer       Transfer?            @relation(fields: [transferId], references: [id], onDelete: Restrict)
+  returnRecord   ReturnRecord?        @relation(fields: [returnRecordId], references: [id], onDelete: Restrict)
+  initialization BatchInitialization? @relation(fields: [initializationId], references: [id], onDelete: Restrict)
+
+  @@index([cylinderId])
+  @@index([cylinderId, serverAt]) // ordered per-cylinder history
+  @@index([userId])
+  @@index([transferId])
+  @@index([returnRecordId])
+  @@index([initializationId])
+}
+
+model Transfer {
+  id                String          @id @default(cuid())
+  batchId           String
+  destinationType   DestinationType
+  destinationSiteId String? // set when destinationType = SITE
+  userId            String
+  /// The manager this transfer handed the batch to, when it handed it to anyone.
+  /// NULL means the transfer left the addressee alone — the ordinary case.
+  projectManagerId  String?
+  clientRequestId   String          @unique
+  /// TRUE when an ADMIN submitted this without a photo — see BatchInitialization.
+  photoOverridden   Boolean         @default(false)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  batch           Batch           @relation(fields: [batchId], references: [id])
+  user            User            @relation(fields: [userId], references: [id])
+  destinationSite Site?           @relation("TransferDestinationSite", fields: [destinationSiteId], references: [id])
+  // Restrict, like every other FK here — and managers are deactivated, never
+  // deleted. SET NULL (Prisma's default for an optional relation) would let a
+  // delete quietly erase the record of who the batch was handed to.
+  projectManager  ProjectManager? @relation("TransferProjectManager", fields: [projectManagerId], references: [id], onDelete: Restrict)
+  movementEvents  MovementEvent[]
+  photo           BatchPhoto?
+
+  @@index([batchId])
+  @@index([userId])
+  @@index([projectManagerId])
+}
+
+model ReturnRecord {
+  id               String   @id @default(cuid())
+  batchId          String
+  storesManagerId  String
+  driverName       String
+  signaturePath    String // path/key to the persisted signature PNG (storage service)
+  deliveryNotePath String? // filled in after the PDF render completes (may lag the record insert)
+  clientRequestId  String   @unique
+  /// TRUE when an ADMIN submitted this without a photo — see BatchInitialization.
+  photoOverridden  Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  batch          Batch           @relation(fields: [batchId], references: [id])
+  storesManager  User            @relation("ReturnManager", fields: [storesManagerId], references: [id])
+  movementEvents MovementEvent[]
+  photo          BatchPhoto?
+
+  @@index([batchId])
+  @@index([storesManagerId])
+}
+
+/// The first physical scan of a batch: every printed label read back off the cylinder
+/// it was stuck to, in the place the batch was created, with a photo of the assembled
+/// batch.
+///
+/// This is deliberately all-or-nothing, unlike a Transfer. A transfer of 3 of 7
+/// cylinders is a real event — the other 4 genuinely did not move. A *partial*
+/// initialization would instead leave the system unable to say whether cylinder 4 is
+/// unlabelled or merely unscanned, which is precisely the ambiguity the step exists to
+/// remove. So the route refuses a submission that does not name every cylinder, and
+/// `Batch.initializedAt` is a single flag rather than a per-cylinder column.
+model BatchInitialization {
+  id              String   @id @default(cuid())
+  batchId         String
+  userId          String
+  clientRequestId String   @unique // device-minted idempotency key, as on Transfer
+  /// TRUE when an ADMIN submitted this without a photo. The camera override is the
+  /// same kind of claim as a scan override — a named admin's word instead of
+  /// evidence — so it is recorded rather than left to look like a photo was taken.
+  photoOverridden Boolean  @default(false)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt
+
+  batch          Batch           @relation(fields: [batchId], references: [id])
+  user           User            @relation(fields: [userId], references: [id])
+  movementEvents MovementEvent[]
+  photo          BatchPhoto?
+
+  @@index([batchId])
+  @@index([userId])
+  @@index([createdAt(sort: Desc)])
+}
+
+/// A photo of the whole batch, taken at the end of a scan session and stamped with
+/// where and when it was taken.
+///
+/// One table for all three kinds of event rather than three sets of columns on
+/// Transfer/ReturnRecord/BatchInitialization: the photo means the same thing in every
+/// case, and the history feed renders it through one join instead of three.
+///
+/// The three owner columns are mutually exclusive and each `@unique`, so an event has
+/// at most one photo and a photo belongs to exactly one event. Enforced further by a
+/// CHECK constraint in the migration — Prisma cannot express "exactly one of these is
+/// non-null", and a photo attached to nothing (or to two events) would be evidence
+/// pointing at no particular claim.
+model BatchPhoto {
+  id      String @id @default(cuid())
+  /// Denormalised from the owning event so the batch's photos can be found without a
+  /// three-way union. The event tables all carry the same batchId; a CHECK cannot
+  /// span tables, so the route sets it from the event it is writing.
+  batchId String
+  userId  String
+
+  /// Storage key, relative to STORAGE_DIR (see services/storage.ts).
+  path     String
+  mimeType String
+
+  /// Null together when no fix was obtained; `locationError` then says why. A missing
+  /// fix is visibly missing — never silently rendered as 0°N 0°E.
+  latitude      Float?
+  longitude     Float?
+  accuracyM     Float?
+  locationError String?
+
+  /// The device's clock at the shutter, and the server's on arrival. Both kept: the
+  /// gap between them is what tells you the submission sat in an outbox overnight.
+  capturedAt DateTime @db.Timestamptz(3)
+  serverAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  initializationId String? @unique
+  transferId       String? @unique
+  returnRecordId   String? @unique
+
+  batch          Batch                @relation(fields: [batchId], references: [id])
+  user           User                 @relation(fields: [userId], references: [id])
+  initialization BatchInitialization? @relation(fields: [initializationId], references: [id], onDelete: Restrict)
+  transfer       Transfer?            @relation(fields: [transferId], references: [id], onDelete: Restrict)
+  returnRecord   ReturnRecord?        @relation(fields: [returnRecordId], references: [id], onDelete: Restrict)
+
+  @@index([batchId])
+  @@index([userId])
+}
+
+/// Append-only log of admin corrections to a batch.
+///
+/// Correcting a mis-keyed entry is a legitimate need, but an admin silently rewriting
+/// a record is a hole in exactly the accountability this system exists to provide. So
+/// every override writes one of these first: what changed, from what to what, by whom.
+model BatchAmendment {
+  id      String  @id @default(cuid())
+  batchId String
+  userId  String
+  /// `[{ field, from, to }]`, rendered into "Site: Yard A → Yard B" for display.
+  changes Json
+  reason  String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  batch Batch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@index([batchId, createdAt(sort: Desc)])
+  @@index([userId])
+}
+
+/// DB-backed mail queue, drained by an in-process poller — no Redis.
+model OutboundEmail {
+  id              String      @id @default(cuid())
+  to              String
+  type            EmailType
+  subject         String
+  bodyText        String
+  bodyHtml        String?
+  /// Render context for the worker, e.g. { batchId } for QR_SHEET,
+  /// { returnRecordId } for DELIVERY_NOTE. Attachments are rendered at send time.
+  payload         Json?
+  attachmentPaths String[] // PG text[] — populated by the worker after rendering
+  status          EmailStatus @default(PENDING)
+  attempts        Int         @default(0)
+  lastError       String?
+  sentAt          DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([status])
+  @@index([status, createdAt]) // poller: oldest PENDING first
+}
