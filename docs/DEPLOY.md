@@ -1,5 +1,26 @@
 # Putting the app on the internet
 
+## It is deployed
+
+**https://gas-bottle-tracker.onrender.com** — sign in with `mashabaindustriesllc@gmail.com`
+or `jacques.viljoen@gmail.com`, password `password`.
+
+Auto-deploy is on: every push to `main` builds and ships. The service is
+`gas-bottle-tracker` (free plan, singapore) and the database is `Gas-Bottle-Tracker`
+(free Postgres, singapore, **expires 2026-10-04**).
+
+Three things about the free plan that will be noticed before anything else goes wrong:
+
+- **It sleeps after ~15 idle minutes** and the next request waits 30-60 seconds while
+  it wakes. Open the URL a minute before you present, not as you present.
+- **The database is deleted after 30 days.** Move it to a paid plan for anything past
+  a trial.
+- **Singapore is a long way from South Africa** (~300 ms round trip). The database was
+  created there and a free account gets one, so the service follows it. Frankfurt is
+  roughly half the latency and is a database migration away, not a code change.
+
+The rest of this document is how it was set up, and what to change.
+
 The whole system is one web service and one Postgres database. The Fastify API serves
 the Expo web build at `/app` from its own origin, so there is nothing else to host:
 one URL, opened on a phone, is the app.
