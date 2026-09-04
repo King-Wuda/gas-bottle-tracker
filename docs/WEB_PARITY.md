@@ -53,6 +53,38 @@ gh codespace ports visibility 3000:public -c <codespace-name>
 Serving it from the API's own origin is deliberate: the web bundle then calls the API
 same-origin, so CORS never enters into it.
 
+## Which URL to open, and the one that looks like it should work
+
+Open **port 3000's `/app`** — the static export served by the API:
+
+    https://<codespace-name>-3000.app.github.dev/app
+
+NOT port 8081. `npm run dev` starts the API _and_ the Expo dev server, and 8081 is the
+Metro bundler: it serves the JavaScript, and there is no API behind it. A browser
+loading the app from 8081 has nowhere to send `/auth/login`, and the failure looks
+exactly like a dead server.
+
+A public forwarded port also shows a GitHub interstitial — _"You are about to access a
+development port served by someone's codespace"_ — once per browser session. Tap
+**Continue**. A phone that has not done that yet is looking at a warning page, not at
+the app.
+
+### The API address the bundle is built with
+
+`apps/mobile/.env` sets `EXPO_PUBLIC_API_URL=http://localhost:3000`, which is right
+inside the Codespace and meaningless anywhere else: to a phone, "localhost" is the
+phone. `src/config.ts` now catches exactly that case — a configured LOOPBACK address
+plus a page served from a real remote origin means the configured value cannot be
+right, so the serving origin wins and the reason is logged to the console:
+
+    [gct] EXPO_PUBLIC_API_URL is http://localhost:3000, which cannot be reached from
+    this browser. Using https://…-3000.app.github.dev instead.
+
+A configured address that is not loopback is always honoured — that is someone
+deliberately pointing the web build at a different API, and the app has no business
+overruling it. The APK is unaffected: it has no serving origin, so its baked-in
+address is all it has, and it must be a real hostname.
+
 ## The rule
 
 **Any change made or tested against the web version must also be applied to the native app

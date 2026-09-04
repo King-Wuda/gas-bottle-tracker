@@ -43,8 +43,12 @@ import type {
   UpdateProjectManagerRequest,
   UpdateUserRequest,
 } from '@gct/shared';
-import { API_URL } from '../config';
+import { API_URL, configNote } from '../config';
 import { loadTokens, saveTokens, clearTokens, type StoredTokens } from '../auth/tokenStore';
+
+// Printed once, at module load. A build carrying an address that cannot work from
+// this browser is worth saying plainly — see `resolveApiUrl` in config.ts.
+if (configNote) console.info(`[gct] ${configNote}`);
 
 export class ApiError extends Error {
   constructor(

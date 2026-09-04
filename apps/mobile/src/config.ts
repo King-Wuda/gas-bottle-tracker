@@ -23,21 +23,60 @@ function servingOrigin(): string | null {
   return origin && origin.startsWith('http') ? origin : null;
 }
 
+/** Does this URL point at the machine the code is running on? */
+const isLoopback = (url: string): boolean =>
+  /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(url);
+
+/**
+ * Which API address to actually use.
+ *
+ * The configured value normally wins — it is the only way to point the APK at
+ * anything, and the only way to run the web build against a different host.
+ *
+ * The exception is the one that keeps costing people an evening: a configured
+ * `http://localhost:3000` is meaningless to a browser that is not on the server.
+ * "localhost" there means the VIEWER's machine, so a phone, a laptop, or anything
+ * opening a Codespace forwarded URL asks itself for the API and reports a bare
+ * network error that reads exactly like "the server is down". When the page is being
+ * served from a real remote origin and the configured API is loopback, the configured
+ * value is provably wrong and the serving origin is provably right — the API is what
+ * served the page. So the origin wins, and `configNote` says that it did.
+ *
+ * A configured value that is NOT loopback is always honoured: that is someone
+ * deliberately splitting the web build from its API, and this has no business
+ * second-guessing it.
+ */
+function resolveApiUrl(): { url: string; overrodeLoopback: boolean } {
+  const configured =
+    process.env.EXPO_PUBLIC_API_URL ?? (Constants.expoConfig?.extra?.apiUrl as string | undefined);
+  const origin = servingOrigin();
+
+  if (configured && origin && isLoopback(configured) && !isLoopback(origin)) {
+    return { url: origin, overrodeLoopback: true };
+  }
+  return { url: configured ?? origin ?? FALLBACK_API_URL, overrodeLoopback: false };
+}
+
+const resolved = resolveApiUrl();
+
 /**
  * API base URL, in order of precedence:
  *
- * 1. `EXPO_PUBLIC_API_URL`, inlined at bundle time. Required for the APK, which has
- *    no serving origin of its own, and available to override the rest.
- * 2. `extra.apiUrl` from app.json.
- * 3. The origin the page was served from — the ordinary case for the web build,
+ * 1. `EXPO_PUBLIC_API_URL` (or `extra.apiUrl`), inlined at bundle time — unless it is
+ *    a loopback address and the page came from somewhere else. See `resolveApiUrl`.
+ * 2. The origin the page was served from — the ordinary case for the web build,
  *    including the live site.
- * 4. `http://localhost:3000`, for a dev bundle loaded from the Metro server.
+ * 3. `http://localhost:3000`, for a dev bundle with nothing else to go on.
  */
-export const API_URL: string =
-  process.env.EXPO_PUBLIC_API_URL ??
-  (Constants.expoConfig?.extra?.apiUrl as string | undefined) ??
-  servingOrigin() ??
-  FALLBACK_API_URL;
+export const API_URL: string = resolved.url;
+
+/**
+ * Said out loud in the console, because it is the difference between "the app is
+ * broken" and "the address it was built with does not apply here".
+ */
+export const configNote: string | null = resolved.overrodeLoopback
+  ? `EXPO_PUBLIC_API_URL is ${process.env.EXPO_PUBLIC_API_URL ?? 'a loopback address'}, which cannot be reached from this browser. Using ${API_URL} instead — the origin this page was served from.`
+  : null;
 
 const isStandalone = Constants.executionEnvironment === 'standalone';
 
