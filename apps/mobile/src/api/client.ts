@@ -129,7 +129,13 @@ export async function apiRequest<T>(path: string, opts: RequestOptions = {}): Pr
   await hydrate();
 
   const send = async (): Promise<Response> => {
-    const headers: Record<string, string> = { 'content-type': 'application/json' };
+    const headers: Record<string, string> = {};
+    // ONLY when there is actually a body. Declaring `application/json` on a request
+    // that carries nothing is what Fastify rejects with "Body cannot be empty when
+    // content-type is set to 'application/json'" — which is how the Resend email
+    // button failed, and how every future body-less POST would have failed too. A
+    // request with no body has no content type to declare.
+    if (opts.body !== undefined) headers['content-type'] = 'application/json';
     if (!opts.anonymous && tokens?.accessToken) {
       headers.authorization = `Bearer ${tokens.accessToken}`;
     }

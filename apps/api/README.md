@@ -11,7 +11,7 @@ Needs Node 24 and Docker.
 
 ```bash
 npm install
-npm run setup      # .env files + QR keys, starts Postgres & MailHog, migrates, seeds
+npm run setup      # .env files + QR keys, starts Postgres, migrates, seeds
 npm run dev:api    # http://localhost:3000  — leave this running
 ```
 
@@ -21,7 +21,7 @@ Then, in a second terminal:
 npm run demo       # drives all three workflows end to end and prints what happened
 ```
 
-Open **http://localhost:8025** (MailHog) to read the PDFs the project manager
+Set `MAILER=resend` with a `RESEND_API_KEY` to receive the PDFs the project manager
 receives: the printable QR sheet and the signed delivery notes.
 
 `npm run setup` is safe to re-run — it never overwrites an existing `.env`, and both
@@ -42,7 +42,7 @@ The browser build is fine for signing in and the **New** workflow. **Transfer** 
 npm run -w @gct/mobile start:tunnel     # scan the QR with Expo Go on Android
 ```
 
-Print or screenshot the QR sheet from MailHog to have labels to scan.
+Print the QR sheet from the email to have labels to scan.
 
 Demo logins — password `password`:
 
@@ -60,7 +60,7 @@ npm run lint
 npm run typecheck
 ```
 
-The API tests need Postgres and MailHog up (`npm run setup` covers that).
+The API tests need Postgres up (`npm run setup` covers that); mail is captured in process.
 
 ## Docs
 

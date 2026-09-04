@@ -5,6 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { prisma } from '../src/db.js';
 import { processPendingEmails } from '../src/services/emailWorker.js';
+import { capturedMail, clearCapturedMail } from '../src/services/mailer/index.js';
 import { readFileAt } from '../src/services/storage.js';
 import { qrPayloadFor } from '../src/services/qr.js';
 import {
@@ -20,8 +21,6 @@ import {
   testDriverId,
 } from './helpers.js';
 
-const MAILHOG = 'http://localhost:8025';
-
 let app: FastifyInstance;
 let techToken: string;
 let storesToken: string;
@@ -30,7 +29,7 @@ let batchId: string;
 let serials: string[];
 
 beforeAll(async () => {
-  await fetch(`${MAILHOG}/api/v1/messages`, { method: 'DELETE' }).catch(() => undefined);
+  clearCapturedMail();
   await resetDb(); // exact drain counts regardless of other suites
 
   app = await buildApp();
@@ -87,7 +86,7 @@ afterAll(async () => {
 });
 
 describe('email worker — QR sheet', () => {
-  it('renders a PDF, marks the row SENT, and delivers it to MailHog', async () => {
+  it('renders a PDF, marks the row SENT, and hands it to the transport', async () => {
     const pending = await prisma.outboundEmail.findFirstOrThrow({
       where: { type: 'QR_SHEET', payload: { path: ['batchId'], equals: batchId } },
     });
@@ -105,14 +104,15 @@ describe('email worker — QR sheet', () => {
     expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
     expect(pdf.length).toBeGreaterThan(2000); // 5 QR codes -> non-trivial
 
-    const search = await fetch(
-      `${MAILHOG}/api/v2/search?kind=to&query=${encodeURIComponent(pmEmail)}`,
-    ).then((r) => r.json() as Promise<{ total: number; items: unknown[] }>);
-    expect(search.total).toBeGreaterThanOrEqual(1);
-
-    const raw = JSON.stringify(search.items[0]);
-    expect(raw).toContain('application/pdf');
-    expect(raw.toLowerCase()).toContain('qr-sheet');
+    // What the transport was actually handed — the recipient, and a real PDF under a
+    // name the project manager will see in their client.
+    const delivered = capturedMail().filter((m) => m.to === pmEmail);
+    expect(delivered.length).toBeGreaterThanOrEqual(1);
+    const attachments = delivered[0]!.attachments ?? [];
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0]!.contentType).toBe('application/pdf');
+    expect(attachments[0]!.filename.toLowerCase()).toContain('qr-sheet');
+    expect(attachments[0]!.content.subarray(0, 5).toString('latin1')).toBe('%PDF-');
   });
 
   it('re-running the drain is a no-op (row already SENT)', async () => {
@@ -220,10 +220,9 @@ describe('email worker — delivery note', () => {
     const record = await prisma.returnRecord.findUniqueOrThrow({ where: { id: returnRecordId } });
     expect(record.deliveryNotePath).toBe(row.attachmentPaths[0]);
 
-    const search = await fetch(
-      `${MAILHOG}/api/v2/search?kind=to&query=${encodeURIComponent(pmEmail)}`,
-    ).then((r) => r.json() as Promise<{ items: unknown[] }>);
-    const notes = JSON.stringify(search.items);
-    expect(notes.toLowerCase()).toContain('delivery-note');
+    const notes = capturedMail()
+      .filter((m) => m.to === pmEmail)
+      .flatMap((m) => m.attachments ?? []);
+    expect(notes.some((a) => a.filename.toLowerCase().includes('delivery-note'))).toBe(true);
   });
 });

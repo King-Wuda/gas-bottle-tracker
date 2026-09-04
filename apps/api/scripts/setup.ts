@@ -2,7 +2,7 @@
  * One-command first-time setup:  npm run setup
  *
  * Creates the two .env files (generating a fresh QR signing keypair), starts
- * Postgres + MailHog, applies migrations, and seeds the demo data. Safe to re-run —
+ * Postgres, applies migrations, and seeds the catalogue. Safe to re-run —
  * it never overwrites an existing .env, and both migrate and seed are idempotent.
  */
 import { execFileSync } from 'node:child_process';
@@ -75,8 +75,8 @@ if (existsSync(apiEnv) && existsSync(mobileEnv)) {
 
 // ---- 2. containers ----
 
-console.log(dim('\nStarting Postgres + MailHog…'));
-run('docker', ['compose', 'up', '-d', 'db', 'mailhog'], repoRoot);
+console.log(dim('\nStarting Postgres…'));
+run('docker', ['compose', 'up', '-d', 'db'], repoRoot);
 
 process.stdout.write(dim('Waiting for Postgres to accept connections'));
 let ready = false;
@@ -97,7 +97,7 @@ if (!ready) {
   console.error('\nPostgres did not become ready. Check `docker compose logs db`.\n');
   process.exit(1);
 }
-say('Postgres and MailHog are up.');
+say('Postgres is up.');
 
 // ---- 3. schema + seed ----
 
@@ -113,6 +113,5 @@ run('npx', ['prisma', 'db', 'seed'], apiDir);
 console.log(`\n${bold('Setup complete.')}\n`);
 console.log('  Start the API:   npm run dev:api');
 console.log('  Then, elsewhere: npm run demo');
-console.log(`  MailHog inbox:   ${bold('http://localhost:8025')}\n`);
 console.log(dim('  Logins (password password): admin@demo.local, stores@demo.local,'));
 console.log(dim('  technician@demo.local\n'));

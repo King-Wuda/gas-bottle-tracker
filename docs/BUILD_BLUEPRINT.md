@@ -14,18 +14,18 @@ trail is reachable from the app, and the offline queue is manageable per row.
 
 ## Stack (locked)
 
-| Layer                          | Choice                                                                                                                |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| Monorepo                       | npm workspaces — `packages/shared` + `apps/api` + `apps/mobile`, ESM everywhere                                       |
-| Shared contract                | `@gct/shared` ships **raw .ts**; consumed directly by tsx (API), Metro (mobile), vitest. No build step.               |
-| API                            | Fastify 5 + zod + Prisma 7 (`prisma-client` generator) + PostgreSQL 16                                                |
-| DB access                      | `@prisma/adapter-pg` driver adapter (Prisma 7 requires one) via a single `apps/api/src/db.ts`                         |
-| Mobile                         | Expo SDK 57 / React Native 0.86.3 / expo-router, TypeScript                                                           |
-| Scanning / offline / signature | expo-camera · expo-sqlite · react-native-signature-canvas (M3/M4)                                                     |
-| QR crypto                      | isomorphic `@noble/*` (never `node:crypto`). Two schemes, versioned in the payload prefix; **default GCT2 / Ed25519** |
-| PDF / mail                     | pdfkit + qrcode; pluggable `Mailer` (MailHog dev / SendGrid prod); DB-backed `OutboundEmail` queue (M4)               |
-| Auth                           | local accounts, admin-seeded; JWT access + refresh; roles TECHNICIAN / STORES_MANAGER / ADMIN (M1)                    |
-| Idempotency                    | device-minted `clientRequestId` UUID, `@unique` on Batch / Transfer / ReturnRecord                                    |
+| Layer                          | Choice                                                                                                                     |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| Monorepo                       | npm workspaces — `packages/shared` + `apps/api` + `apps/mobile`, ESM everywhere                                            |
+| Shared contract                | `@gct/shared` ships **raw .ts**; consumed directly by tsx (API), Metro (mobile), vitest. No build step.                    |
+| API                            | Fastify 5 + zod + Prisma 7 (`prisma-client` generator) + PostgreSQL 16                                                     |
+| DB access                      | `@prisma/adapter-pg` driver adapter (Prisma 7 requires one) via a single `apps/api/src/db.ts`                              |
+| Mobile                         | Expo SDK 57 / React Native 0.86.3 / expo-router, TypeScript                                                                |
+| Scanning / offline / signature | expo-camera · expo-sqlite · react-native-signature-canvas (M3/M4)                                                          |
+| QR crypto                      | isomorphic `@noble/*` (never `node:crypto`). Two schemes, versioned in the payload prefix; **default GCT2 / Ed25519**      |
+| PDF / mail                     | pdfkit + qrcode; pluggable `Mailer` (Resend, SendGrid, in-process capture for tests); DB-backed `OutboundEmail` queue (M4) |
+| Auth                           | local accounts, admin-seeded; JWT access + refresh; roles TECHNICIAN / STORES_MANAGER / ADMIN (M1)                         |
+| Idempotency                    | device-minted `clientRequestId` UUID, `@unique` on Batch / Transfer / ReturnRecord                                         |
 
 ---
 
@@ -372,14 +372,14 @@ comes back as a recorded reason rather than an exception or a silent zero.
 ## Verification commands
 
 ```bash
-docker compose up -d                     # Postgres + MailHog
+docker compose up -d                     # Postgres
 npm install                              # clean: rm -rf node_modules package-lock.json first
 npm run -w @gct/api db:migrate:deploy    # apply migrations (migrate dev can hang on its post-step here; deploy is reliable)
 npm run -w @gct/api db:seed
 npm test                                 # 218 tests: @gct/shared (37) + @gct/api (153) + @gct/mobile (28)
 npm run -w @gct/api start & curl -s localhost:3000/health   # -> {"status":"ok","db":"up"}
 # auth smoke: POST /auth/login {"email":"admin@demo.local","password":"password"} -> tokens
-# QR sheets land in MailHog at http://localhost:8025 a few seconds after POST /batches
+# QR sheets are emailed a few seconds after POST /batches (MAILER=resend to receive them)
 cd apps/mobile && npx expo-doctor        # 21/21
 cd apps/mobile && npx expo start --tunnel # scan with Expo Go on an Android phone
 cd apps/mobile && eas build -p android --profile preview   # shareable APK — see docs/BUILD_APK.md

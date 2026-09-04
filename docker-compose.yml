@@ -1,3 +1,7 @@
+# Postgres, and nothing else. Mail used to have a MailHog container here; it was a
+# sink that spoke real SMTP and delivered nothing, which meant a `MAILER` value that
+# looked configured and quietly dropped every QR sheet. Mail now goes through Resend,
+# and the test suite uses an in-process capture transport that needs no container.
 services:
   db:
     image: postgres:16-alpine
@@ -16,16 +20,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-
-  mailhog:
-    image: mailhog/mailhog:v1.0.1
-    container_name: gct-mailhog
-    restart: unless-stopped
-    ports:
-      - '1025:1025' # SMTP ingest
-      - '8025:8025' # web UI -> http://localhost:8025
-    # No healthcheck: the mailhog image is FROM scratch (no shell to probe with).
-    # Swap to axllent/mailpit:latest (same ports) if CI must gate on a healthcheck.
 
 volumes:
   gct-db-data:

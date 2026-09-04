@@ -45,11 +45,14 @@ const EnvSchema = z
     QR_HMAC_SECRET: z.string().min(32).optional(),
 
     // mail (M4)
-    // 'mailhog' is a local dev sink, NOT a dummy transport — it speaks real SMTP and the
-    // message is inspectable at http://localhost:8025. Production wants 'resend'.
-    MAILER: z.enum(['mailhog', 'sendgrid', 'resend']).default('mailhog'),
-    SMTP_HOST: z.string().default('localhost'),
-    SMTP_PORT: z.coerce.number().int().positive().default(1025),
+    //
+    // 'resend' is the only transport that sends mail, and the default: a mail setup
+    // that silently delivers nothing is the worst state this can be in, so it is not
+    // reachable by forgetting to configure something.
+    //
+    // 'capture' keeps messages in memory and sends nothing. It is the integration
+    // suite's transport (see services/mailer), not a deployment option.
+    MAILER: z.enum(['resend', 'sendgrid', 'capture']).default('resend'),
     MAIL_FROM: z.string().default('Gas Cylinder Tracker <no-reply@gct.local>'),
     /** The change spec's name for MAIL_FROM. Set either; this one wins. */
     EMAIL_FROM: z.string().optional(),

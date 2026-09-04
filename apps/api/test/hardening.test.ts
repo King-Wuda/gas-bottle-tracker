@@ -56,7 +56,7 @@ beforeAll(async () => {
 });
 
 afterEach(() => {
-  setMailer(undefined); // back to the real MailHog transport
+  setMailer(undefined); // back to the capture transport
   vi.restoreAllMocks();
 });
 
@@ -243,17 +243,38 @@ describe('GET /health', () => {
 });
 
 describe('env validation', () => {
+  // MAILER defaults to `resend`, which requires a key — so the minimum viable
+  // environment carries one. That is the point: there is no configuration of this
+  // server that boots believing it can send mail and cannot.
   const base = {
     DATABASE_URL: 'postgresql://gct:gct@localhost:5432/gct',
     JWT_ACCESS_SECRET: 'x'.repeat(32),
+    RESEND_API_KEY: 're_test_key',
   };
 
   it('applies defaults for everything optional', () => {
     const env = loadEnv({ ...base });
     expect(env.NODE_ENV).toBe('development');
     expect(env.PORT).toBe(3000);
-    expect(env.MAILER).toBe('mailhog');
     expect(env.SERIAL_YEAR_TZ).toBe('Africa/Johannesburg');
+  });
+
+  it('defaults to the transport that actually sends mail', () => {
+    // Not to a sink. A default that silently delivers nothing is the worst state
+    // available: batches save, the queue drains, and nobody notices the project
+    // manager stopped receiving QR sheets. This is what MAILER=mailhog used to be.
+    expect(loadEnv({ ...base }).MAILER).toBe('resend');
+  });
+
+  /** `base` minus the mail key, for the cases that are about its absence. */
+  const withoutMailKey = (): Record<string, string> => {
+    const copy: Record<string, string> = { ...base };
+    delete copy.RESEND_API_KEY;
+    return copy;
+  };
+
+  it('refuses to boot with no mail credentials at all', () => {
+    expect(() => loadEnv(withoutMailKey())).toThrow(/RESEND_API_KEY/);
   });
 
   it('rejects a missing DATABASE_URL', () => {
@@ -280,9 +301,9 @@ describe('env validation', () => {
   });
 
   it('coerces numeric strings, since process.env only holds strings', () => {
-    const env = loadEnv({ ...base, PORT: '8080', SMTP_PORT: '2525' });
+    const env = loadEnv({ ...base, PORT: '8080', JWT_ACCESS_TTL: '2525' });
     expect(env.PORT).toBe(8080);
-    expect(env.SMTP_PORT).toBe(2525);
+    expect(env.JWT_ACCESS_TTL).toBe(2525);
   });
 
   it('rejects an unknown mailer instead of falling back to one', () => {
@@ -293,10 +314,13 @@ describe('env validation', () => {
     // Caught here rather than at the first send. A server that starts happily and only
     // reveals the missing key when a technician's batch fails to reach its project
     // manager has moved the error to where nobody is watching.
-    expect(() => loadEnv({ ...base, MAILER: 'resend' })).toThrow(/RESEND_API_KEY/);
-    expect(() => loadEnv({ ...base, MAILER: 'sendgrid' })).toThrow(/SENDGRID_API_KEY/);
+    const noKey = withoutMailKey();
+    expect(() => loadEnv({ ...noKey, MAILER: 'resend' })).toThrow(/RESEND_API_KEY/);
+    expect(() => loadEnv({ ...noKey, MAILER: 'sendgrid' })).toThrow(/SENDGRID_API_KEY/);
 
     expect(loadEnv({ ...base, MAILER: 'resend', RESEND_API_KEY: 're_x' }).MAILER).toBe('resend');
+    // `capture` needs no credentials — it is the test transport and sends nothing.
+    expect(loadEnv({ ...withoutMailKey(), MAILER: 'capture' }).MAILER).toBe('capture');
   });
 
   it('lets EMAIL_FROM stand in for MAIL_FROM without breaking the old name', () => {

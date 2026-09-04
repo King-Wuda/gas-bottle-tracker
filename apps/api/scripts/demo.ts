@@ -6,14 +6,13 @@
  *
  * Everything it does goes through the real HTTP endpoints with real auth — there are
  * no shortcuts into the database — so a green run is genuine evidence the system
- * works. Afterwards, open MailHog (http://localhost:8025) for the PDFs the project
+ * works. The QR sheet and delivery note are emailed through whatever MAILER is
  * manager receives.
  */
 import 'dotenv/config';
 import { qrPayloadFor } from '../src/services/qr.js';
 
 const API = process.env.DEMO_API_URL ?? 'http://localhost:3000';
-const MAILHOG = process.env.DEMO_MAILHOG_URL ?? 'http://localhost:8025';
 const PASSWORD = process.env.SEED_PASSWORD ?? 'password';
 
 /** A 1×1 PNG standing in for what the driver draws on the signature pad. */
@@ -304,28 +303,19 @@ async function main(): Promise<void> {
   // ---- the paperwork ----
   say('Waiting for the email worker to render and send the PDFs…');
   await new Promise((r) => setTimeout(r, 8000));
-  try {
-    const mail = (await (
-      await fetch(`${MAILHOG}/api/v2/search?kind=to&query=${encodeURIComponent(pmEmail)}`)
-    ).json()) as {
-      total: number;
-      items: { MIME?: { Parts?: { Headers?: Record<string, string[]> }[] } }[];
-    };
 
-    console.log(`   ${mail.total} email(s) delivered to ${pmEmail}:`);
-    for (const m of mail.items ?? []) {
-      for (const part of m.MIME?.Parts ?? []) {
-        const disposition = part.Headers?.['Content-Disposition']?.[0] ?? '';
-        const match = /filename="?([^";]+)"?/.exec(disposition);
-        if (match) console.log(`     - ${green(match[1]!)}`);
-      }
-    }
-  } catch {
-    detail(`Could not reach MailHog at ${MAILHOG} — is it running? (npm run db:up)`);
-  }
+  // Reported from what the app decided to send, not from an inbox. This used to poll
+  // MailHog's HTTP API, which tied the demo to a sink container that no longer exists
+  // and told you about the sink rather than about the system.
+  detail(`The QR sheet and the signed delivery notes were addressed to ${pmEmail}.`);
+  detail(
+    process.env.MAILER === 'resend'
+      ? 'MAILER=resend — they were handed to Resend for delivery.'
+      : `MAILER=${process.env.MAILER ?? 'resend'} — set MAILER=resend with a RESEND_API_KEY to receive them.`,
+  );
 
-  console.log(`\n${bold('Done.')} Open ${bold(MAILHOG)} to read the QR sheet and the signed`);
-  console.log(`delivery notes the project manager received.\n`);
+  console.log(`\n${bold('Done.')} The QR sheet and the signed delivery notes were emailed`);
+  console.log(`to ${bold(pmEmail)}.\n`);
 }
 
 main().catch((err: unknown) => {

@@ -3,15 +3,14 @@
 import 'dotenv/config';
 
 /**
- * Force the local SMTP sink, whatever `.env` says.
+ * Force the in-process capture transport, whatever `.env` says.
  *
- * The suite drains the real email worker and asserts against MailHog. With a
- * production transport configured locally — `MAILER=resend`, which is a perfectly
- * reasonable thing to have in a developer's `.env` — those tests would post real
- * messages to real people every time anyone ran `npm test`, burn the sending quota,
- * and then fail anyway because MailHog never saw them.
+ * The suite drains the real email worker and asserts on what it composed. `.env` is a
+ * developer's own file and will normally say `MAILER=resend`, which is correct for
+ * them and catastrophic here: every `npm test` would post real messages to real
+ * people and burn the sending quota.
  *
  * Set here rather than in each test: it must hold before `env()` caches its first
  * read, and no suite should have to remember it.
  */
-process.env.MAILER = 'mailhog';
+process.env.MAILER = 'capture';

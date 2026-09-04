@@ -23,7 +23,7 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "db:up": "docker compose up -d db mailhog",
+    "db:up": "docker compose up -d db",
     "db:down": "docker compose down",
     "db:migrate": "npm run -w @gct/api db:migrate",
     "db:seed": "npm run -w @gct/api db:seed",

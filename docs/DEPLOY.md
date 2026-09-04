@@ -43,10 +43,11 @@ that. This document is what it does not fit in a comment.
    nobody is watching. On Render that shows up as a deploy that will not come up; the
    reason is the first line of the log.
 
-   If Resend is not ready yet and you need the site up now, set `MAILER=mailhog` and
-   deploy without `RESEND_API_KEY`. Everything works except email — delivery notes are
-   still generated, stored and downloadable, they just are not sent. Switch to
-   `resend` when the domain is verified; it is one environment variable and a restart.
+   If Resend is not ready yet and you need the site up now, set `MAILER=capture` and
+   deploy without `RESEND_API_KEY`. Everything works except sending — delivery notes
+   are still generated, attached to the queued message and stored, they just go into
+   memory instead of out. Switch to `resend` when the key is ready; it is one
+   environment variable and a restart.
 
 4. **Deploy.** The build installs, generates the Prisma client and exports the web
    bundle; the start step applies migrations, seeds the reference data, and serves.
@@ -89,8 +90,10 @@ See `apps/api/src/services/idOcr.ts`.
 
 ## Real email
 
-Delivery notes and QR sheets are emailed to the project manager. Locally they go to
-MailHog, a sink that catches everything and sends nothing. In production:
+Delivery notes and QR sheets are emailed to the project manager. `resend` is the only
+transport that sends them, and it is the default — there is deliberately no
+configuration of this server that boots believing it can send mail and cannot. To set
+it up:
 
 1. Create an account at [resend.com](https://resend.com) and **verify the domain you
    want to send from** — this is the step that takes the longest, because it needs DNS

@@ -17,7 +17,7 @@ Android field app (Expo) + Fastify/Prisma/PostgreSQL API for tracking rented gas
 
 ```bash
 npm install
-npm run setup                            # .env files + Postgres/MailHog + migrate + seed
+npm run setup                            # .env files + Postgres + migrate + seed
 npm run dev                              # API on :3000, Expo on :8081
 ```
 
@@ -27,8 +27,8 @@ It also generates a fresh Ed25519 QR signing keypair, keeping the private half i
 `apps/api/.env` and copying only the public half to `apps/mobile/.env`. It never overwrites
 an existing `.env`, and migrate and seed are both idempotent, so re-running is safe.
 
-Seeded logins (password `password`): `admin@demo.local`, `stores@demo.local`,
-`technician@demo.local`. MailHog inbox: <http://localhost:8025>.
+Seeded logins (password `password`): `jacques.viljoen@gmail.com` and
+`mashabaindustriesllc@gmail.com`, both ADMIN. Everyone else is added in the app.
 
 Doing it by hand instead — `docker compose up -d`, then `npm run -w @gct/api db:migrate:deploy`
 and `db:seed` — works only once both `.env` files already exist.
@@ -132,13 +132,13 @@ The API queues mail into an `OutboundEmail` table and an in-process worker drain
 with retries, so a send failure never rolls back the batch that triggered it. Which
 transport the worker uses is the `MAILER` env var.
 
-| `MAILER`   | Transport                   | Use                                           |
-| ---------- | --------------------------- | --------------------------------------------- |
-| `mailhog`  | Local SMTP → localhost:1025 | Development. Inspect at http://localhost:8025 |
-| `resend`   | Resend API                  | **Production**                                |
-| `sendgrid` | SendGrid over SMTP          | Alternative                                   |
+| `MAILER`   | Transport                | Use                                            |
+| ---------- | ------------------------ | ---------------------------------------------- |
+| `capture`  | In memory, sends nothing | The integration suite. Not a deployment option |
+| `resend`   | Resend API               | **Production**                                 |
+| `sendgrid` | SendGrid over SMTP       | Alternative                                    |
 
-`mailhog` is a real SMTP sink, not a stub — messages are genuinely delivered and
+`capture` never touches the network — messages are held in memory and
 readable in its web UI. It is a development tool, not a production transport.
 
 ### Setting up Resend

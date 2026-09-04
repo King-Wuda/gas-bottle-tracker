@@ -24,25 +24,39 @@ export interface Mailer {
  *  repo already used) name the same thing; EMAIL_FROM wins when both are set. */
 const fromAddress = (): string => env().EMAIL_FROM ?? env().MAIL_FROM;
 
-/** One nodemailer transport, chosen by MAILER. SendGrid is reached over SMTP so
- *  no extra dependency is needed. */
-function buildTransport(): Transporter {
+/** SendGrid over SMTP, so no extra dependency is needed for it. */
+function buildSendgridTransport(): Transporter {
   const config = env();
-  if (config.MAILER === 'sendgrid') {
-    if (!config.SENDGRID_API_KEY) throw new Error('MAILER=sendgrid but SENDGRID_API_KEY is unset');
-    return nodemailer.createTransport({
-      host: 'smtp.sendgrid.net',
-      port: 587,
-      auth: { user: 'apikey', pass: config.SENDGRID_API_KEY },
-    });
-  }
-  // mailhog (dev): plain SMTP, no auth, no TLS
+  if (!config.SENDGRID_API_KEY) throw new Error('MAILER=sendgrid but SENDGRID_API_KEY is unset');
   return nodemailer.createTransport({
-    host: config.SMTP_HOST,
-    port: config.SMTP_PORT,
-    secure: false,
-    ignoreTLS: true,
+    host: 'smtp.sendgrid.net',
+    port: 587,
+    auth: { user: 'apikey', pass: config.SENDGRID_API_KEY },
   });
+}
+
+/**
+ * Every message the `capture` mailer has accepted, newest last.
+ *
+ * This replaced MailHog. MailHog was a Docker container speaking real SMTP on a real
+ * port, which meant a sink you had to remember to run, a second thing that could be
+ * "not started", and — worst — a `MAILER` value that looked like a working mail setup
+ * and delivered nothing to anyone. This is a transport that never touches the network
+ * and says so in its name.
+ *
+ * It is for the integration suite, which asserts that the worker really composed a
+ * message with the right recipient, subject and attachments. Nothing in a deployment
+ * should be pointed at it: `resend` is the transport that sends mail.
+ */
+const captured: MailMessage[] = [];
+
+/** The messages `MAILER=capture` has taken, for tests to assert against. */
+export function capturedMail(): readonly MailMessage[] {
+  return captured;
+}
+
+export function clearCapturedMail(): void {
+  captured.length = 0;
 }
 
 /**
@@ -100,7 +114,15 @@ export function getMailer(): Mailer {
     cached = buildResendMailer();
     return cached;
   }
-  const transport = buildTransport();
+  if (env().MAILER === 'capture') {
+    cached = {
+      async send(msg) {
+        captured.push(msg);
+      },
+    };
+    return cached;
+  }
+  const transport = buildSendgridTransport();
   const from = fromAddress();
   cached = {
     async send(msg) {
