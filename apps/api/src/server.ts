@@ -18,8 +18,12 @@ import { stopIdOcr } from './services/idOcr.js';
  * A preference, not a restriction — `ipv4first` still falls back to IPv6 if there is
  * no IPv4 address — so a genuinely IPv6-only host keeps working.
  *
- * Set here rather than in the mailer because it is a property of the machine, not of
- * SMTP: every outbound connection this process makes is better off with it.
+ * NOTE: this does NOT fix nodemailer. It resolves hostnames itself with
+ * `dns.resolve4`/`resolve6` (see nodemailer/lib/shared), and this setting only
+ * changes the default for `dns.lookup`. It is kept because it is right for every
+ * outbound connection that DOES go through `lookup` — the Resend API call, the
+ * tesseract model download — not because it rescued SMTP. SMTP on Render's free
+ * plan does not work at all; see docs/DEPLOY.md.
  */
 setDefaultResultOrder('ipv4first');
 

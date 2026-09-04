@@ -147,14 +147,38 @@ that address. A batch belonging to anyone else queues, is refused with a 403, an
 — but nothing says so on the screen the operator is looking at, so pick the project
 manager deliberately or verify a domain first.
 
+## SMTP does not work on Render's free plan
+
+Tried and measured, so nobody repeats it: `MAILER=smtp` against Gmail from a free
+Render instance fails, on both of Gmail's ports, in two different ways.
+
+    port 587  ->  Connection timeout
+    port 465  ->  connect ENETUNREACH 2404:6800:4003:c05::6c:465
+
+The `ENETUNREACH` is an IPv6 address: the container has IPv4 egress and no IPv6
+route, DNS answers with an AAAA record, and nodemailer dials it. `ipv4first` in
+`server.ts` does not help, because nodemailer resolves with `dns.resolve4`/`resolve6`
+itself rather than through `dns.lookup`. Underneath that, port 587 timed out too —
+outbound SMTP is blocked.
+
+Nothing here is a credentials problem. The app password was verified working from
+elsewhere before any of this was deployed.
+
+**So on Render, mail has to leave over HTTPS (port 443).** That means Resend — which
+is why it is the default — with the one-recipient limit until a domain is verified.
+`MAILER=smtp` stays in the code because it is correct and it works on a host that
+allows SMTP (a VPS, a company server); it is simply not an option here.
+
 ## Sending to more than one person, for free
 
 Resend and SendGrid both refuse arbitrary recipients until a DOMAIN is verified, and
 verifying one needs a domain you own. Until then Resend delivers only to the address
 that owns the account.
 
-`MAILER=smtp` is the way round that at no cost: any SMTP account you already have
-sends to anybody, today, with no domain and no DNS. Gmail is the usual one.
+`MAILER=smtp` is the way round that at no cost — **on a host that allows outbound
+SMTP**. Render's free plan does not (see above), so this applies to a VPS or a
+company server, not to the current deployment. Any SMTP account you already have
+sends to anybody, with no domain and no DNS. Gmail is the usual one.
 
 1. The Google account needs **2-Step Verification on**.
 2. Create an **App Password**: myaccount.google.com -> Security -> 2-Step
