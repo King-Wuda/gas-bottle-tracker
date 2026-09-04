@@ -87,6 +87,7 @@ export default function EventDetail() {
         <Row label="Batch holds" value={event.contents} />
         {event.destinationName ? <Row label="Destination" value={event.destinationName} /> : null}
         {event.driverName ? <Row label="Collected by" value={event.driverName} /> : null}
+        {event.driverIdNumber ? <Row label="Driver ID" value={event.driverIdNumber} /> : null}
       </Card>
 
       {event.photo ? (

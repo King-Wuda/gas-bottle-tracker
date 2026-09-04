@@ -33,6 +33,8 @@ import type {
   ProjectDetailResponse,
   ProjectManagersResponse,
   ProjectSearchResponse,
+  ReadDriverIdRequest,
+  ReadDriverIdResponse,
   RefreshResponse,
   ResendBatchEmailResponse,
   SiteOptionsResponse,
@@ -286,6 +288,18 @@ export function apiResendBatchEmail(batchId: string): Promise<ResendBatchEmailRe
 
 export function apiCreateReturn(body: CreateReturnRequest): Promise<CreateReturnResponse> {
   return apiRequest<CreateReturnResponse>('/returns', { method: 'POST', body });
+}
+
+/**
+ * Ask the server to read the driver's ID number off the document they photographed.
+ *
+ * Deliberately NOT routed through the outbox, unlike everything else on this screen.
+ * The outbox exists so that WORK survives a dead spot; this is a suggestion, and a
+ * suggestion that arrives tomorrow is worth nothing. Offline it simply is not offered
+ * and the number is typed, exactly as it was before this existed.
+ */
+export function apiReadDriverId(body: ReadDriverIdRequest): Promise<ReadDriverIdResponse> {
+  return apiRequest<ReadDriverIdResponse>('/driver-id/read', { method: 'POST', body });
 }
 
 // ---- Workflow A2 (Initialize) ----

@@ -1,6 +1,7 @@
 import { Redirect, Stack } from 'expo-router';
 import { useAuth } from '../../src/auth/AuthContext';
 import { LoadingState } from '../../src/ui/components';
+import { stackScreenOptions } from '../../src/ui/chrome';
 
 /**
  * The admin console.
@@ -19,7 +20,7 @@ export default function AdminLayout() {
   if (user.role !== 'ADMIN') return <Redirect href="/" />;
 
   return (
-    <Stack screenOptions={{ headerTitleStyle: { fontWeight: '600' } }}>
+    <Stack screenOptions={stackScreenOptions}>
       <Stack.Screen name="index" options={{ title: 'Admin' }} />
       <Stack.Screen name="users" options={{ title: 'People' }} />
       <Stack.Screen name="project-managers" options={{ title: 'Project managers' }} />

@@ -62,13 +62,17 @@ deliverable, and it must not drift.
 This is mostly automatic — `apps/mobile/app/` and `apps/mobile/src/` compile to both targets
 from one source. Divergence is confined to files that branch on `Platform.OS`:
 
-| File                                       | Web                              | Native                     |
-| ------------------------------------------ | -------------------------------- | -------------------------- |
-| `src/db/index.ts`                          | in-memory store                  | expo-sqlite                |
-| `src/auth/tokenStore.ts`                   | `localStorage`                   | expo-secure-store          |
-| `app/queue.tsx`                            | `confirm()`                      | `Alert.alert`              |
-| `src/components/Scanner.tsx`               | getUserMedia + `BarcodeDetector` | native camera scanner      |
-| `app/login.tsx`, `app/new/create-site.tsx` | no-op                            | iOS `KeyboardAvoidingView` |
+| File                                       | Web                              | Native                      |
+| ------------------------------------------ | -------------------------------- | --------------------------- |
+| `src/db/index.ts`                          | in-memory store                  | expo-sqlite                 |
+| `src/auth/tokenStore.ts`                   | `localStorage`                   | expo-secure-store           |
+| `app/queue.tsx`                            | `confirm()`                      | `Alert.alert`               |
+| `src/components/Scanner.tsx`               | getUserMedia + `BarcodeDetector` | native camera scanner       |
+| `app/login.tsx`, `app/new/create-site.tsx` | no-op                            | iOS `KeyboardAvoidingView`  |
+| `src/components/IdCapture.tsx`             | getUserMedia frame               | device camera file          |
+| `src/components/SignaturePad.tsx`          | needs `touchAction: 'none'`      | style key ignored           |
+| `src/sound/index.ts`                       | blocked until a user gesture     | plays whenever asked        |
+| `src/config.ts`                            | API defaults to the page origin  | needs `EXPO_PUBLIC_API_URL` |
 
 Three of these branch inside a dependency rather than in our own `Platform.OS` check —
 `expo-camera`, `expo-location` and `expo-image-manipulator` each ship a `.web` implementation.
@@ -77,7 +81,7 @@ anyone the two paths differ. What they differ in is set out below.
 
 ## What the web build cannot tell you
 
-Passing on web does **not** mean passing on device. Seven things genuinely differ:
+Passing on web does **not** mean passing on device. Eleven things genuinely differ:
 
 1. **Offline persistence.** `src/db/index.ts` falls back to `createMemoryStore()` on web, so
    the outbox is wiped by a page reload. On device it is SQLite and survives a restart. Any
@@ -109,12 +113,44 @@ Passing on web does **not** mean passing on device. Seven things genuinely diffe
    now: the outbox row for a transfer carries its JPEG as base64, and on web that lives in
    memory. Reloading the page loses the photo along with the submission. On device both are in
    SQLite and survive a restart, which is the behaviour the field depends on.
+8. **Audio needs a user gesture on web, and nothing on device.** `expo-audio` runs on both
+   targets from the same two WAV files, so there is no `Platform.OS` branch — but a browser
+   refuses to start audio until the page has seen a real interaction, and a scan arriving from
+   a camera callback is not one. `primeSounds()` is called on the dashboard tile press for
+   exactly this reason; on device it is a harmless no-op. A missing beep in the browser is
+   therefore not evidence of a missing beep on the phone, and vice versa.
+9. **The signature pad depends on a web-only style.** `touchAction: 'none'` on the drawing
+   surface is what stops a downward stroke from scrolling the page instead of drawing;
+   react-native-web registers its touch listeners as passive, so it cannot `preventDefault()`
+   the scroll itself. React Native has no such style key and ignores it. Remove it and drawing
+   still looks fine with a mouse and breaks completely with a finger — which is the only way
+   it will ever actually be used.
+10. **The web build finds the API by itself; the APK cannot.** `src/config.ts` falls
+    back to the origin the page was served from, which is always right on web because
+    the API serves the bundle at `/app`. An installed APK has no serving origin, so it
+    still needs `EXPO_PUBLIC_API_URL` baked in at build time — and a build without one
+    silently talks to `localhost`, meaning the phone itself. The sign-in screen says so
+    (`configWarning`), which is the only reason that failure is survivable.
+11. **Coordinates inside the pad are `locationX`/`locationY`, not `pageX` minus an offset.**
+    Both platforms compute them against the view holding the responder, per event. A cached
+    offset measured at layout is wrong the moment the surrounding `ScrollView` scrolls, and the
+    failure is silent: the strokes record, `hasInk` is true, the PNG is valid, and the
+    signature is blank paper. `renderSignature` now returns the ink it actually drew and
+    `app/returns/sign.tsx` refuses to submit a blank one.
 
 ## Checklist before calling a mobile change done
 
 1. `npm run -w @gct/mobile export:web` — the browser serves a static export, so an un-exported
    change is invisible and you will be testing stale code.
-2. `npm run typecheck && npm run lint && npm test`.
-3. If the change touched a `Platform.OS` file above — or anything going through the camera,
-   the location, or the image manipulator — say in the summary what the native path does
-   differently and why it remains correct.
+2. **Restart the API.** `@fastify/static` is registered with `wildcard: false`, so it walks
+   `dist-web` and registers one route per file _at boot_. A fresh export has a new
+   content-hashed bundle name that no route matches, the `/app/*` SPA fallback answers with
+   `index.html`, and the browser gets HTML where it asked for JavaScript: a blank white page
+   and `Unexpected token '<'` in the console. The export itself looks perfect. Only a restart
+   fixes it.
+3. `npm run typecheck && npm run lint && npm test` — stop the dev API server first. It shares
+   the database with the test run, and its email worker polling across `resetDb()` fails tests
+   at random.
+4. If the change touched a `Platform.OS` file above — or anything going through the camera,
+   the location, the image manipulator or the audio player — say in the summary what the
+   native path does differently and why it remains correct.

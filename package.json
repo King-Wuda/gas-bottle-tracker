@@ -29,6 +29,7 @@
     "db:seed": "npm run -w @gct/api db:seed",
     "clean": "rimraf \"apps/*/dist\" \"packages/*/dist\" \"**/*.tsbuildinfo\"",
     "demo": "npm run -w @gct/api demo",
+    "gen-qr-keys": "npx tsx apps/api/scripts/gen-qr-keys.ts",
     "setup": "npm run -w @gct/api setup"
   },
   "devDependencies": {

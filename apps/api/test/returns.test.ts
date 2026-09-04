@@ -5,6 +5,7 @@ import type { ScanInput, ScanRejection } from '@gct/shared';
 import { buildApp } from '../src/app.js';
 import { prisma } from '../src/db.js';
 import { qrPayloadFor } from '../src/services/qr.js';
+import { readFileAt } from '../src/services/storage.js';
 import {
   loginAs,
   bearer,
@@ -13,6 +14,7 @@ import {
   makeProjectManager,
   resetDb,
   supplierForGas,
+  testDriverId,
   testPhoto,
   uniqueProjectNumber,
 } from './helpers.js';
@@ -125,6 +127,7 @@ const returnBody = (batchId: string, serials: string[], extra: Record<string, un
   clientRequestId: randomUUID(),
   scans: serials.map(scan),
   driverName: 'Sipho Ndlovu',
+  ...testDriverId(),
   signaturePng: SIGNATURE,
   ...extra,
 });
@@ -405,6 +408,129 @@ describe('POST /returns — request validation', () => {
   it('404s an unknown batch', async () => {
     const res = await postReturn(returnBody('nope', ['NIT26-001']));
     expect(res.statusCode).toBe(404);
+  });
+});
+
+/**
+ * The driver's identity (Workflow C4).
+ *
+ * A signature is a squiggle over a name somebody typed. The number and the
+ * photographed document are what make "who took the cylinders" checkable afterwards,
+ * so they follow exactly the rules the batch photo already follows: mandatory,
+ * waivable only by an admin, and the waiver recorded as a waiver.
+ */
+describe('POST /returns — driver identity', () => {
+  it('records the ID number and stores the photographed document', async () => {
+    const { batchId, serials } = await makeBatch(1);
+    const res = await postReturn(returnBody(batchId, serials));
+
+    expect(res.statusCode).toBe(201);
+    const { returnRecord } = res.json();
+    expect(returnRecord.driverIdNumber).toBe('8801015009087');
+    expect(returnRecord.driverIdCaptured).toBe(true);
+    expect(returnRecord.driverIdOverridden).toBe(false);
+
+    const row = await prisma.returnRecord.findUniqueOrThrow({ where: { id: returnRecord.id } });
+    expect(row.driverIdNumber).toBe('8801015009087');
+    // Named from the idempotency key, like every other blob, so a retry overwrites
+    // its own file instead of littering one per attempt.
+    expect(row.driverIdPath).toContain(`driver-id-${row.clientRequestId}`);
+    await expect(readFileAt(row.driverIdPath!)).resolves.toBeInstanceOf(Buffer);
+  });
+
+  it('refuses a return with no ID number', async () => {
+    const { batchId, serials } = await makeBatch(1);
+    const res = await postReturn({ ...returnBody(batchId, serials), driverIdNumber: '' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('VALIDATION');
+  });
+
+  it('accepts a passport or foreign licence number, not only a South African ID', async () => {
+    // A driver who cannot be recorded is a driver who leaves with the cylinders and
+    // no name against them, which is worse than a number in an unexpected format.
+    const { batchId, serials } = await makeBatch(1);
+    const res = await postReturn({
+      ...returnBody(batchId, serials),
+      driverIdNumber: 'ZW-DL-88231/04',
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().returnRecord.driverIdNumber).toBe('ZW-DL-88231/04');
+  });
+
+  it('refuses a return with neither an ID photo nor an override', async () => {
+    const { batchId, serials } = await makeBatch(1);
+    const res = await postReturn({ ...returnBody(batchId, serials), driverIdPhoto: null });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('VALIDATION');
+  });
+
+  it('refuses a non-admin who claims the ID override, rather than ignoring it', async () => {
+    // Silently dropping it would let a tampered client believe it recorded a return
+    // that a stores manager is not entitled to record.
+    const { batchId, serials } = await makeBatch(1);
+    const res = await postReturn({
+      ...returnBody(batchId, serials),
+      driverIdPhoto: null,
+      driverIdOverride: true,
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.code).toBe('DRIVER_ID_OVERRIDE_FORBIDDEN');
+  });
+
+  it('lets an admin waive the ID photo, and records it as a waiver', async () => {
+    const { batchId, serials } = await makeBatch(1);
+    const res = await postReturn(
+      { ...returnBody(batchId, serials), driverIdPhoto: null, driverIdOverride: true },
+      adminToken,
+    );
+    expect(res.statusCode).toBe(201);
+    const { returnRecord } = res.json();
+    expect(returnRecord.driverIdOverridden).toBe(true);
+    expect(returnRecord.driverIdCaptured).toBe(false);
+    // The number is still required — the waiver is of the camera, not of identity.
+    expect(returnRecord.driverIdNumber).toBe('8801015009087');
+
+    const row = await prisma.returnRecord.findUniqueOrThrow({ where: { id: returnRecord.id } });
+    expect(row.driverIdPath).toBeNull();
+  });
+
+  it('keeps the photo when a submission carries both a photo and an override', async () => {
+    // Real evidence outranks an assertion, exactly as a genuinely scanned serial
+    // keeps its scan even when it also appears in overrideSerials.
+    const { batchId, serials } = await makeBatch(1);
+    const res = await postReturn(
+      { ...returnBody(batchId, serials), driverIdOverride: true },
+      adminToken,
+    );
+    expect(res.statusCode).toBe(201);
+    expect(res.json().returnRecord.driverIdCaptured).toBe(true);
+    expect(res.json().returnRecord.driverIdOverridden).toBe(false);
+  });
+
+  it('refuses an ID payload that is not actually an image', async () => {
+    const { batchId, serials } = await makeBatch(1);
+    const res = await postReturn({
+      ...returnBody(batchId, serials),
+      driverIdPhoto: testPhoto({
+        imageBase64: `data:image/jpeg;base64,${Buffer.from('x'.repeat(100)).toString('base64')}`,
+      }),
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('INVALID_DRIVER_ID_PHOTO');
+  });
+
+  it('reports the ID number on the history event detail', async () => {
+    const { batchId, serials } = await makeBatch(1);
+    const created = await postReturn(returnBody(batchId, serials));
+    expect(created.statusCode).toBe(201);
+
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/history/events/RETURN/${created.json().returnRecord.id}`,
+      headers: bearer(storesToken),
+    });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json().event.driverIdNumber).toBe('8801015009087');
   });
 });
 

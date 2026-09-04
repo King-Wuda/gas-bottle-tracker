@@ -22,6 +22,7 @@ import {
   supplierForGas,
   testPhoto,
   uniqueProjectNumber,
+  testDriverId,
 } from './helpers.js';
 
 /**
@@ -150,6 +151,7 @@ const returnAll = (batchId: string, serials: string[]) =>
       clientRequestId: randomUUID(),
       scans: serials.map(scan),
       driverName: 'Sipho Ndlovu',
+      ...testDriverId(),
       signaturePng: `data:image/png;base64,${PNG_1X1}`,
     },
   });

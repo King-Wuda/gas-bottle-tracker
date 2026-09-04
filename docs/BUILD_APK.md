@@ -79,7 +79,7 @@ The API must be reachable from the phone's network — a Codespaces forwarded po
 while it is public and the Codespace is running. Check, in this order:
 
 1. Sign-in screen shows **no** configuration warning.
-2. Sign in as a seeded user (`stores@demo.local` / `Passw0rd!`).
+2. Sign in as a seeded user (`stores@demo.local` / `password`).
 3. Dashboard → History → look up a known serial. That single round trip proves the API URL,
    auth, and TLS all work.
 4. Turn on airplane mode, complete a transfer, confirm it lands in the sync queue, then turn

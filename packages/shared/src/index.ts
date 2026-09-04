@@ -4,6 +4,7 @@ export * from './serial';
 export * from './qr';
 export * from './projectNumber';
 export * from './format';
+export * from './southAfricanId';
 
 export * from './schemas/common';
 export * from './schemas/auth';

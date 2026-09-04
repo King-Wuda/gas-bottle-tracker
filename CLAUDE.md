@@ -32,10 +32,24 @@ touches one of these:
 | `apps/mobile/src/photo/capture.ts`            | `navigator.geolocation` (HTTPS only) | Play Services / GPS        |
 | `apps/mobile/app/login.tsx`                   | (no-op)                              | iOS `KeyboardAvoidingView` |
 | `apps/mobile/app/new/create-site.tsx`         | (no-op)                              | iOS `KeyboardAvoidingView` |
+| `apps/mobile/src/components/IdCapture.tsx`    | getUserMedia frame                   | device camera file         |
+| `apps/mobile/src/components/SignaturePad.tsx` | needs `touchAction: 'none'`          | style key ignored          |
+| `apps/mobile/src/sound/index.ts`              | blocked until a user gesture         | plays whenever asked       |
 
-The last two branch inside `expo-camera` / `expo-location` / `expo-image-manipulator` rather
-than in our own `Platform.OS` check, which makes them easier to forget — there is no visible
-`if` in our source. See [docs/WEB_PARITY.md](docs/WEB_PARITY.md) for what each does differently.
+None of the last five branch on `Platform.OS` in our own source — they differ inside
+`expo-camera` / `expo-location` / `expo-image-manipulator` / `expo-audio`, or in what the
+browser will allow — which makes them the easiest of all to forget, because there is no
+visible `if` to notice. See [docs/WEB_PARITY.md](docs/WEB_PARITY.md) for what each does
+differently.
+
+Two things deliberately have NO platform path at all, and should be kept that way:
+
+- **The signature raster.** `src/signature/png.ts` and `raster.ts` encode the PNG in plain
+  TypeScript rather than using a canvas on web and a screenshot library on device, so the
+  driver's signature is byte-identical on both targets. A canvas would have been three lines;
+  it would also have meant the signature under test was never the signature that ships.
+- **The sound cues.** `expo-audio` has a real web implementation, so both targets play the
+  same two WAV files through the same code.
 
 Two traps that cause silent divergence:
 
@@ -76,7 +90,14 @@ when the export looks right but the app cannot reach the API.
 ## Before calling a mobile change done
 
 1. `npm run -w @gct/mobile export:web` — reflect it on the surface the user actually tests.
-2. `npm run typecheck && npm run lint && npm test` — 286 tests baseline
-   (39 shared, 212 API, 35 mobile).
-3. If the change touched a `Platform.OS` file above, state in your summary what the native
+2. **Restart the API.** `@fastify/static` is registered with `wildcard: false`, which walks
+   `dist-web` and registers one route per file _at boot_. After an export the bundle has a
+   new content-hashed name, no route matches it, and the SPA fallback serves `index.html` in
+   its place — so the browser gets HTML where it asked for JavaScript and the app is a blank
+   white page with `Unexpected token '<'` in the console. Nothing about the export looks
+   wrong; only the restart fixes it.
+3. `npm run typecheck && npm run lint && npm test` — 359 tests baseline
+   (63 shared, 242 API, 54 mobile). **Stop the dev API server first**: it shares the database
+   with the test run, and its email worker polling across `resetDb()` fails tests at random.
+4. If the change touched a `Platform.OS` file above, state in your summary what the native
    path does differently and why it is still correct.

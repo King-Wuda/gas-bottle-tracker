@@ -5,6 +5,7 @@ import * as Crypto from 'expo-crypto';
 import type { CreateTransferRequest, ProjectManagerDto } from '@gct/shared';
 import { apiProjectManagers } from '../../src/api/client';
 import { useScanFlow } from '../../src/scanning/ScanFlowContext';
+import { playCue } from '../../src/sound';
 import { useSync } from '../../src/sync/SyncContext';
 import { enqueueMutation } from '../../src/sync/worker';
 import { Card, ErrorText, PrimaryButton, ScreenScroll, styles } from '../../src/ui/components';
@@ -71,6 +72,11 @@ export default function Destination() {
     }
     setSubmitting(true);
     setError(null);
+    // The submit cue: a struck steel cylinder. It fires on the press rather than on
+    // the server's reply, because it is confirming the TAP — and the reply may not
+    // come for hours, this being a submission that is durable in the outbox first
+    // and sent over the wire second.
+    playCue('clang');
     try {
       // The idempotency key is minted HERE, once, as the intent is formed — and it
       // becomes the outbox row's id. Every retry, now or after three days in a dead

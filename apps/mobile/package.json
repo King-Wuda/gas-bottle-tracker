@@ -9,7 +9,7 @@
     "export:web": "expo export --platform web --output-dir dist-web",
     "android": "expo run:android",
     "doctor": "expo-doctor",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -17,6 +17,7 @@
     "@expo/metro-runtime": "57.0.14",
     "@gct/shared": "*",
     "expo": "57.0.18",
+    "expo-audio": "57.0.4",
     "expo-camera": "57.0.4",
     "expo-constants": "57.0.16",
     "expo-crypto": "57.0.2",
@@ -36,6 +37,7 @@
     "react-native-safe-area-context": "5.7.0",
     "react-native-screens": "4.26.0",
     "react-native-signature-canvas": "5.1.1",
+    "react-native-svg": "15.15.4",
     "react-native-web": "0.21.2",
     "react-native-webview": "13.16.1",
     "react-native-worklets": "0.10.1"

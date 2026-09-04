@@ -378,7 +378,7 @@ npm run -w @gct/api db:migrate:deploy    # apply migrations (migrate dev can han
 npm run -w @gct/api db:seed
 npm test                                 # 218 tests: @gct/shared (37) + @gct/api (153) + @gct/mobile (28)
 npm run -w @gct/api start & curl -s localhost:3000/health   # -> {"status":"ok","db":"up"}
-# auth smoke: POST /auth/login {"email":"admin@demo.local","password":"Passw0rd!"} -> tokens
+# auth smoke: POST /auth/login {"email":"admin@demo.local","password":"password"} -> tokens
 # QR sheets land in MailHog at http://localhost:8025 a few seconds after POST /batches
 cd apps/mobile && npx expo-doctor        # 21/21
 cd apps/mobile && npx expo start --tunnel # scan with Expo Go on an Android phone
@@ -395,5 +395,5 @@ physical phone cannot reach. For `expo start --tunnel`, set `apps/mobile/.env`'s
 `EXPO_PUBLIC_API_URL` to the machine's reachable URL — in this Codespace, the forwarded-port
 public URL for `:3000` (make the port **public** in the Ports panel).
 
-Demo logins (all password `Passw0rd!`): `admin@demo.local` (ADMIN),
+Demo logins (all password `password`): `admin@demo.local` (ADMIN),
 `stores@demo.local` (STORES_MANAGER), `technician@demo.local` (TECHNICIAN).

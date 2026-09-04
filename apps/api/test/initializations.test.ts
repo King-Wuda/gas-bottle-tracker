@@ -15,6 +15,7 @@ import {
   supplierForGas,
   testPhoto,
   uniqueProjectNumber,
+  testDriverId,
 } from './helpers.js';
 
 /**
@@ -364,6 +365,7 @@ describe('an uninitialized batch is inert', () => {
         clientRequestId: randomUUID(),
         scans: serials.map(scan),
         driverName: 'Sipho Ndlovu',
+        ...testDriverId(),
         signaturePng: `data:image/png;base64,${Buffer.from([
           0x89,
           0x50,

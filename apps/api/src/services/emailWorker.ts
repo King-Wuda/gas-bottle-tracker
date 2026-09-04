@@ -139,6 +139,8 @@ async function buildDeliveryNote(
         .map((l) => `${l.quantity} × ${l.gasType.name} (${l.supplierName})`)
         .join(', '),
       driverName: record.driverName,
+      driverIdNumber: record.driverIdNumber,
+      driverIdOverridden: record.driverIdOverridden,
       storesManagerName: record.storesManager.name,
       returnedAt: record.createdAt,
       outstandingCount,
@@ -151,6 +153,10 @@ async function buildDeliveryNote(
       overridden: m.overridden,
     })),
     await readFileAt(record.signaturePath),
+    // Best effort. A missing or unreadable ID photo must not cost the project
+    // manager the whole delivery note — the serials and the signature are what the
+    // document exists for.
+    record.driverIdPath ? await readFileAt(record.driverIdPath).catch(() => null) : null,
   );
 
   const relPath = await saveFile('notes', `delivery-note-${record.id}.pdf`, pdf);

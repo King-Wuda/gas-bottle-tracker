@@ -49,7 +49,7 @@ export async function resetDb(): Promise<void> {
 
 /** Whatever the seed hashed — `prisma/seed.ts` reads the same variable. Hardcoding it
  *  meant changing SEED_PASSWORD locally broke every suite with a 401. */
-export const DEMO_PASSWORD = process.env.SEED_PASSWORD ?? 'Passw0rd!';
+export const DEMO_PASSWORD = process.env.SEED_PASSWORD ?? 'password';
 export const DEMO = {
   technician: 'technician@demo.local',
   stores: 'stores@demo.local',
@@ -161,6 +161,22 @@ export function testPhoto(overrides: Record<string, unknown> = {}) {
     longitude: 28.0473,
     accuracyM: 12,
     locationError: null,
+    ...overrides,
+  };
+}
+
+/**
+ * The driver identity every return must carry: the number off the document, and a
+ * photograph of the document itself.
+ *
+ * The image is the same tiny JPEG the batch photo uses — `services/photo.ts` cares
+ * that it is a real image and nothing else, and a second fixture would only be a
+ * second thing to keep in step.
+ */
+export function testDriverId(overrides: Record<string, unknown> = {}) {
+  return {
+    driverIdNumber: '8801015009087',
+    driverIdPhoto: testPhoto(),
     ...overrides,
   };
 }

@@ -19,6 +19,7 @@ import {
   resetDb,
   testPhoto,
   uniqueProjectNumber,
+  testDriverId,
 } from './helpers.js';
 
 const PNG_1X1 =
@@ -389,6 +390,7 @@ describe('GET /batches — the shared Transfer / Returns / History list', () => 
         batchId: returned,
         clientRequestId: randomUUID(),
         driverName: 'Driver D',
+        ...testDriverId(),
         signaturePng: SIGNATURE,
         scans: r.serials.map(scan),
       },
@@ -422,6 +424,7 @@ describe('GET /batches — the shared Transfer / Returns / History list', () => 
         batchId: p.batchId,
         clientRequestId: randomUUID(),
         driverName: 'Driver P',
+        ...testDriverId(),
         signaturePng: SIGNATURE,
         scans: [scan(p.serials[0]!)],
       },

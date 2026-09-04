@@ -17,6 +17,7 @@ import {
   supplierForGas,
   testPhoto,
   uniqueProjectNumber,
+  testDriverId,
 } from './helpers.js';
 
 const MAILHOG = 'http://localhost:8025';
@@ -177,6 +178,7 @@ describe('email worker — delivery note', () => {
           scannedAt: new Date().toISOString(),
         })),
         driverName: 'Thabo Mokoena',
+        ...testDriverId(),
         signaturePng: SIGNATURE,
       },
     });
@@ -204,6 +206,10 @@ describe('email worker — delivery note', () => {
     const text = pdfText(pdf);
     for (const serial of serials.slice(0, 3)) expect(text).toContain(serial);
     expect(text).toContain('Thabo Mokoena');
+    // The identity half of the note: the number off the driver's document, and the
+    // heading under which their ID photo is embedded.
+    expect(text).toContain('8801015009087');
+    expect(text).toContain('ID DOCUMENT PRESENTED');
     expect(text).toContain('Delivery Note');
     // 3 of 5 came back, so the note must say the batch is not finished.
     expect(text).toContain('outstanding');

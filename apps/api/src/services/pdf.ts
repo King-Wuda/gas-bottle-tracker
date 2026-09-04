@@ -163,6 +163,12 @@ export interface DeliveryNoteMeta {
   /** "7 × Nitrogen (Afrox), 4 × Argon (Air Products)" — the batch is no longer one gas. */
   contents: string;
   driverName: string;
+  /** Off whatever document the driver presented. Null on returns that predate ID
+   *  capture — printed as such, rather than left blank as if nobody had looked. */
+  driverIdNumber: string | null;
+  /** True when an admin waived the ID photograph. Printed, because the note is the
+   *  evidence somebody signs against and they are entitled to know what is missing. */
+  driverIdOverridden: boolean;
   storesManagerName: string;
   returnedAt: Date;
   /** Cylinders from this batch still not returned — the batch is PARTIAL if > 0. */
@@ -175,12 +181,19 @@ const fmt = (d: Date): string =>
 /**
  * The signed delivery note emailed to the PM on return (Workflow C5). This is the
  * document that proves a cylinder stopped accruing rental and who signed for it, so
- * it carries the serials, both timestamps, and the driver's actual signature image.
+ * it carries the serials, both timestamps, the driver's actual signature image and —
+ * where one was taken — the ID document they presented.
+ *
+ * `driverIdImage` is optional and nullable on purpose. A note whose ID photo cannot
+ * be read must still render: the serials, the timestamps and the signature are the
+ * evidence that matters, and losing all of it over one unreadable JPEG would be the
+ * expensive failure.
  */
 export async function renderDeliveryNote(
   meta: DeliveryNoteMeta,
   rows: DeliveryNoteRow[],
   signaturePng: Buffer,
+  driverIdImage?: Buffer | null,
 ): Promise<Buffer> {
   const doc = new PDFDocument({ size: 'A4', margin: MARGIN, autoFirstPage: false });
   const done = collect(doc);
@@ -222,6 +235,7 @@ export async function renderDeliveryNote(
   line('Site', meta.siteName);
   line('Contents', meta.contents);
   line('Returned', fmt(meta.returnedAt));
+  line('Driver ID number', meta.driverIdNumber ?? 'Not recorded');
   line('Received by', meta.storesManagerName);
   line('Cylinders returned', String(rows.length));
   const overriddenCount = rows.filter((r) => r.overridden).length;
@@ -245,7 +259,9 @@ export async function renderDeliveryNote(
   y += 20;
 
   // Reserve room for the signature block so the last rows never collide with it.
-  const SIGNATURE_BLOCK_H = 150;
+  // Taller than it needs to be for the signature alone: the ID document sits beside
+  // it, and an ID photographed in portrait is the deeper of the two.
+  const SIGNATURE_BLOCK_H = 170;
   const pageBottom = PAGE.height - MARGIN - SIGNATURE_BLOCK_H;
 
   for (const row of rows) {
@@ -278,6 +294,36 @@ export async function renderDeliveryNote(
     .strokeColor('#bbb')
     .stroke();
   doc.fontSize(9).fillColor('#555').text('COLLECTION DRIVER — SIGNED ON DEVICE', MARGIN, sigY);
+
+  // The ID document, to the right of the signature. Together they are the claim the
+  // note makes about identity: a drawn signature over a typed name, next to the
+  // document that name came off.
+  const idX = MARGIN + 300;
+  doc.fontSize(9).fillColor('#555').text('ID DOCUMENT PRESENTED', idX, sigY);
+  if (driverIdImage) {
+    try {
+      doc.image(driverIdImage, idX, sigY + 16, { fit: [200, 92] });
+    } catch {
+      doc
+        .fontSize(9)
+        .fillColor('#c0392b')
+        .text('[ID image unavailable]', idX, sigY + 30);
+    }
+  } else {
+    doc
+      .fontSize(9)
+      .fillColor(meta.driverIdOverridden ? '#b8860b' : '#777')
+      .text(
+        meta.driverIdOverridden
+          ? 'Not photographed — admin override. The number above is the only ' +
+              'identification on this return.'
+          : 'No ID document on record for this return.',
+        idX,
+        sigY + 18,
+        { width: 200 },
+      );
+  }
+
   try {
     doc.image(signaturePng, MARGIN, sigY + 16, { fit: [220, 80] });
   } catch {
@@ -297,10 +343,12 @@ export async function renderDeliveryNote(
     .fontSize(11)
     .fillColor('#000')
     .text(meta.driverName, MARGIN, sigY + 108);
+  // Under the name rather than beside it: the right half of this band now holds the
+  // ID document, and the timestamp used to be printed straight over the bottom of it.
   doc
     .fontSize(9)
     .fillColor('#555')
-    .text(fmt(meta.returnedAt), MARGIN + 300, sigY + 108);
+    .text(fmt(meta.returnedAt), MARGIN, sigY + 124);
 
   doc.end();
   return done;

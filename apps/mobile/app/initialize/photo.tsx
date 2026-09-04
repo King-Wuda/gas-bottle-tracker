@@ -4,6 +4,7 @@ import { Redirect, useRouter } from 'expo-router';
 import * as Crypto from 'expo-crypto';
 import type { CapturedPhoto, CreateInitializationRequest } from '@gct/shared';
 import { useAuth } from '../../src/auth/AuthContext';
+import { playCue } from '../../src/sound';
 import { PhotoCapture } from '../../src/components/PhotoCapture';
 import { useScanFlow } from '../../src/scanning/ScanFlowContext';
 import { useSync } from '../../src/sync/SyncContext';
@@ -32,6 +33,11 @@ export default function InitializePhoto() {
   const submit = async (evidence: { photo: CapturedPhoto | null; photoOverride: boolean }) => {
     setSubmitting(true);
     setError(null);
+    // The submit cue: a struck steel cylinder. It fires on the press rather than on
+    // the server's reply, because it is confirming the TAP — and the reply may not
+    // come for hours, this being a submission that is durable in the outbox first
+    // and sent over the wire second.
+    playCue('clang');
     try {
       // Minted once, here, as the intent is formed — and it becomes the outbox row's
       // id, so every later retry replays this same key. See docs/OFFLINE.md.

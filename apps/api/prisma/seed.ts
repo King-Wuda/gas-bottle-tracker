@@ -70,7 +70,7 @@ const USERS = [
   ...OWNERS.map((o) => ({ email: o.email, name: o.name, role: 'ADMIN' as const })),
 ];
 
-const DEV_PASSWORD = process.env.SEED_PASSWORD ?? 'Passw0rd!';
+const DEV_PASSWORD = process.env.SEED_PASSWORD ?? 'password';
 
 async function main(): Promise<void> {
   const gasTypeIds = new Map<string, string>();

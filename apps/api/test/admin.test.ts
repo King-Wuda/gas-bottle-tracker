@@ -14,6 +14,7 @@ import {
   supplierForGas,
   testPhoto,
   uniqueProjectNumber,
+  testDriverId,
 } from './helpers.js';
 
 /**
@@ -693,6 +694,7 @@ describe('scan override', () => {
         scans: [],
         overrideSerials: [serials[0]!],
         driverName: 'Sipho',
+        ...testDriverId(),
         signaturePng: 'x'.repeat(100),
       },
     });

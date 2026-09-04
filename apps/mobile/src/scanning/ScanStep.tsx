@@ -1,10 +1,12 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { Redirect, Stack, useRouter, type Href } from 'expo-router';
 import { useScanFlow } from './ScanFlowContext';
 import { useAuth } from '../auth/AuthContext';
 import { verifyScannedCode, qrVerificationConfigured } from '../qr/verify';
 import { Scanner, type ScanOutcome } from '../components/Scanner';
+import { HeaderLogo } from '../ui/GeaLogo';
+import { RocketFlyby } from '../ui/RocketFlyby';
 import { ErrorText, PrimaryButton, ScreenScroll, styles } from '../ui/components';
 
 /**
@@ -58,6 +60,10 @@ export function ScanStep({
     useScanFlow();
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
+  /** The flyby plays over this screen and navigation waits for it, so that leaving
+   *  the scan step is the thing being celebrated rather than an animation the next
+   *  screen cuts off half a second in. */
+  const [flyby, setFlyby] = useState(false);
 
   const expected = useMemo(() => new Set(cylinders.map((c) => c.serialCode)), [cylinders]);
   const scanned = useMemo(() => new Set(scans.map((s) => s.serialCode)), [scans]);
@@ -170,12 +176,18 @@ export function ScanStep({
       {isAdmin ? (
         <Stack.Screen
           options={{
+            // Replaces the shared header from `ui/chrome`, so the logo is re-rendered
+            // here rather than silently dropped on the one screen an operator spends
+            // the longest on.
             headerRight: () => (
-              <Pressable onPress={overrideAll} hitSlop={12}>
-                <Text style={{ color: '#b8860b', fontSize: 15, fontWeight: '700' }}>
-                  Override scan
-                </Text>
-              </Pressable>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Pressable onPress={overrideAll} hitSlop={12}>
+                  <Text style={{ color: '#b8860b', fontSize: 15, fontWeight: '700' }}>
+                    Override scan
+                  </Text>
+                </Pressable>
+                <HeaderLogo />
+              </View>
             ),
           }}
         />
@@ -221,8 +233,8 @@ export function ScanStep({
               ? ctaLabel(selectedCount)
               : (incompleteLabel?.(remaining) ?? `${remaining} still to scan`)
         }
-        onPress={() => router.push(next)}
-        disabled={selectedCount === 0 || !complete}
+        onPress={() => setFlyby(true)}
+        disabled={selectedCount === 0 || !complete || flyby}
       />
       {selectedCount > 0 ? (
         <Pressable onPress={clearScans} style={{ paddingVertical: 10 }}>
@@ -231,6 +243,10 @@ export function ScanStep({
           </Text>
         </Pressable>
       ) : null}
+
+      {/* The scanning is done. `onDone` fires whether the flight finished or the
+          screen went away underneath it, so the flow cannot get stuck behind it. */}
+      <RocketFlyby playing={flyby} onDone={() => router.push(next)} />
     </ScreenScroll>
   );
 }

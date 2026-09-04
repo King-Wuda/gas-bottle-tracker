@@ -44,7 +44,7 @@ npm run -w @gct/mobile start:tunnel     # scan the QR with Expo Go on Android
 
 Print or screenshot the QR sheet from MailHog to have labels to scan.
 
-Demo logins — password `Passw0rd!`:
+Demo logins — password `password`:
 
 | Email                   | Role           | Can do            |
 | ----------------------- | -------------- | ----------------- |

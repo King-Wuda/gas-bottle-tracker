@@ -24,6 +24,11 @@ apps/mobile/ios/
 # api runtime artifacts (generated PDFs, signature PNGs)
 apps/api/var/
 
+# tesseract.js downloads its ~5 MB language model on first use, into the working
+# directory. It is a cache, not a source file — see services/idOcr.ts.
+*.traineddata
+*.traineddata.gz
+
 # os / editor
 .DS_Store
 *.log

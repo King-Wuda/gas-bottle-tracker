@@ -1,10 +1,11 @@
 import { Stack } from 'expo-router';
 import { ScanFlowProvider } from '../../src/scanning/ScanFlowContext';
+import { stackScreenOptions } from '../../src/ui/chrome';
 
 export default function ReturnsLayout() {
   return (
     <ScanFlowProvider>
-      <Stack screenOptions={{ headerTitleStyle: { fontWeight: '600' } }}>
+      <Stack screenOptions={stackScreenOptions}>
         <Stack.Screen name="index" options={{ title: 'Returns — find batch' }} />
         <Stack.Screen name="scan" options={{ title: 'Verify cylinders' }} />
         <Stack.Screen name="photo" options={{ title: 'Photo of the batch' }} />

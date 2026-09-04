@@ -11,6 +11,7 @@ Android field app (Expo) + Fastify/Prisma/PostgreSQL API for tracking rented gas
 | [OFFLINE.md](docs/OFFLINE.md)                 | Outbox / sync design — why the id is the idempotency key                   |
 | [BUILD_APK.md](docs/BUILD_APK.md)             | Producing a sideloadable Android APK with EAS                              |
 | [WEB_PARITY.md](docs/WEB_PARITY.md)           | Why we test on the web, and the web/native parity rule                     |
+| [DEPLOY.md](docs/DEPLOY.md)                   | Putting it on the internet — Render blueprint, real email, storage         |
 
 ## Quick start
 
@@ -26,13 +27,13 @@ It also generates a fresh Ed25519 QR signing keypair, keeping the private half i
 `apps/api/.env` and copying only the public half to `apps/mobile/.env`. It never overwrites
 an existing `.env`, and migrate and seed are both idempotent, so re-running is safe.
 
-Seeded logins (password `Passw0rd!`): `admin@demo.local`, `stores@demo.local`,
+Seeded logins (password `password`): `admin@demo.local`, `stores@demo.local`,
 `technician@demo.local`. MailHog inbox: <http://localhost:8025>.
 
 Doing it by hand instead — `docker compose up -d`, then `npm run -w @gct/api db:migrate:deploy`
 and `db:seed` — works only once both `.env` files already exist.
 
-`npm test` runs all 286 tests; `npm run lint` and `npm run typecheck` gate the same tree.
+`npm test` runs all 359 tests; `npm run lint` and `npm run typecheck` gate the same tree.
 
 ## The batch lifecycle
 

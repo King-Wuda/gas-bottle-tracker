@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useAuth, ApiError } from '../src/auth/AuthContext';
 import { configWarning } from '../src/config';
+import { GeaLogo } from '../src/ui/GeaLogo';
 
 export default function Login() {
   const { signIn } = useAuth();
@@ -41,6 +42,14 @@ export default function Login() {
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
+      {/* This screen has no navigation header (`headerShown: false`), so the mark
+          that `ui/chrome` puts top-right everywhere else is placed by hand here —
+          and this is the first screen anyone sees, so it is the one that must not
+          be missing it. */}
+      <View style={styles.brand} pointerEvents="none">
+        <GeaLogo width={78} />
+      </View>
+
       <View style={styles.container}>
         <Text style={styles.title}>Gas Cylinder Tracker</Text>
         <Text style={styles.subtitle}>Sign in with your work account</Text>
@@ -91,6 +100,7 @@ export default function Login() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  brand: { position: 'absolute', top: 16, right: 20 },
   container: { flex: 1, justifyContent: 'center', padding: 24, gap: 12 },
   title: { fontSize: 26, fontWeight: '700', textAlign: 'center' },
   subtitle: { fontSize: 15, opacity: 0.6, textAlign: 'center', marginBottom: 12 },

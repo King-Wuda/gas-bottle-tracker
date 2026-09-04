@@ -56,6 +56,18 @@ export function savePhoto(clientRequestId: string, photo: DecodedPhoto): Promise
 }
 
 /**
+ * The driver's ID document, stored beside the batch photos.
+ *
+ * A separate name rather than a separate `StorageKind`: it is the same sort of file
+ * in the same place, and the prefix is what distinguishes it. Like every other blob
+ * here the filename is derived from the idempotency key, so a retry overwrites its
+ * own file instead of littering one per attempt.
+ */
+export function saveDriverIdPhoto(clientRequestId: string, photo: DecodedPhoto): Promise<string> {
+  return saveFile('photos', `driver-id-${clientRequestId}.${photo.extension}`, photo.bytes);
+}
+
+/**
  * The columns a `BatchPhoto` row is built from, minus the owner link.
  *
  * `capturedAt` is parsed from the device's own clock and stored as given. It is not

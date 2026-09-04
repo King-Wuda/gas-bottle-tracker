@@ -426,17 +426,28 @@ model Transfer {
 }
 
 model ReturnRecord {
-  id               String   @id @default(cuid())
-  batchId          String
-  storesManagerId  String
-  driverName       String
-  signaturePath    String // path/key to the persisted signature PNG (storage service)
-  deliveryNotePath String? // filled in after the PDF render completes (may lag the record insert)
-  clientRequestId  String   @unique
+  id                 String   @id @default(cuid())
+  batchId            String
+  storesManagerId    String
+  driverName         String
+  /// The number off whatever document the driver presented — an ID card, a passport,
+  /// a foreign licence. NULLABLE because returns recorded before ID capture existed
+  /// genuinely do not have one: a column backfilled with '' would claim the number
+  /// was collected and left blank, which is a different and false statement.
+  driverIdNumber     String?
+  /// Path to the photographed ID document. Null when there is none — either because
+  /// the return predates the requirement, or because an admin waived it.
+  driverIdPath       String?
+  /// TRUE when an ADMIN submitted this without photographing the ID. Recorded rather
+  /// than left to look like no document was ever asked for — see BatchInitialization.
+  driverIdOverridden Boolean  @default(false)
+  signaturePath      String // path/key to the persisted signature PNG (storage service)
+  deliveryNotePath   String? // filled in after the PDF render completes (may lag the record insert)
+  clientRequestId    String   @unique
   /// TRUE when an ADMIN submitted this without a photo — see BatchInitialization.
-  photoOverridden  Boolean  @default(false)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  photoOverridden    Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   batch          Batch           @relation(fields: [batchId], references: [id])
   storesManager  User            @relation("ReturnManager", fields: [storesManagerId], references: [id])
@@ -572,4 +583,24 @@ model OutboundEmail {
 
   @@index([status])
   @@index([status, createdAt]) // poller: oldest PENDING first
+}
+
+/// A stored blob — a QR sheet, a delivery note, a signature, a batch photo, a
+/// driver's ID document.
+///
+/// The filesystem is the default and remains so for local work (STORAGE_DRIVER=fs).
+/// This table exists because the hosts these demos run on do not all have a durable
+/// filesystem: a free Render web service has an EPHEMERAL disk that is wiped every
+/// time the instance spins down, which for this app means the photographs and
+/// signatures — the evidence the whole system exists to hold — quietly disappear
+/// while the database that references them stays perfectly intact. A dangling
+/// reference to lost evidence is worse than either having it or not.
+///
+/// `path` is the same relative key the filesystem driver uses, so the two drivers are
+/// interchangeable and nothing above `services/storage.ts` knows which is in use.
+model StoredFile {
+  path      String   @id
+  bytes     Bytes
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

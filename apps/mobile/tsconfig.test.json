@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // The unit tests run in node (see vitest.config.mts) and reach for `Buffer` and
+    // `node:zlib` to check the hand-written PNG encoder against a real inflater.
+    // Kept out of the app's own tsconfig deliberately: nothing under `app/` or `src/`
+    // may use a node built-in, and the surest way to enforce that is for those types
+    // not to exist there.
+    "types": ["node"]
+  },
+  // `exclude` is inherited, and it excludes `test` — so it has to be reset here
+  // or this project ends up with no inputs at all.
+  "exclude": [],
+  "include": ["test/**/*.ts", "vitest.config.mts"]
+}

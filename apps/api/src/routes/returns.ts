@@ -1,13 +1,22 @@
 import type { FastifyInstance } from 'fastify';
 import {
   createReturnRequestSchema,
+  describeSouthAfricanId,
+  readDriverIdRequestSchema,
   type BatchStatus,
   type CreateReturnResponse,
+  type ReadDriverIdResponse,
   type ReturnRecordDto,
   type ScanRejection,
 } from '@gct/shared';
 import { prisma, Prisma } from '../db.js';
-import { preparePhoto } from '../services/photo.js';
+import { readIdNumber } from '../services/idOcr.js';
+import {
+  decodePhoto,
+  InvalidPhotoError,
+  preparePhoto,
+  saveDriverIdPhoto,
+} from '../services/photo.js';
 import { toPhotoDto, type PhotoRow } from '../services/photoView.js';
 import { resolveScans, scanRejection } from '../services/scans.js';
 import { decodeSignaturePng, InvalidSignatureError, saveSignature } from '../services/signature.js';
@@ -24,6 +33,9 @@ type ReturnRow = {
   id: string;
   batchId: string;
   driverName: string;
+  driverIdNumber: string | null;
+  driverIdPath: string | null;
+  driverIdOverridden: boolean;
   storesManagerId: string;
   photoOverridden: boolean;
   createdAt: Date;
@@ -60,6 +72,12 @@ export async function returnRoutes(app: FastifyInstance): Promise<void> {
     id: r.id,
     batchId: r.batchId,
     driverName: r.driverName,
+    driverIdNumber: r.driverIdNumber,
+    driverIdOverridden: r.driverIdOverridden,
+    // Derived from the file actually on record rather than from the absence of an
+    // override, so a return that predates ID capture reads as "no document" instead
+    // of as "an admin waived it".
+    driverIdCaptured: r.driverIdPath !== null,
     storesManagerId: r.storesManagerId,
     createdAt: r.createdAt.toISOString(),
     returnedSerials: r.movementEvents.map((m) => m.cylinder.serialCode),
@@ -71,6 +89,31 @@ export async function returnRoutes(app: FastifyInstance): Promise<void> {
     photo: r.photo ? toPhotoDto(r.photo) : null,
     photoOverridden: r.photoOverridden,
   });
+
+  /**
+   * Read the driver's ID number off a photograph of their document (Workflow C4).
+   *
+   * A convenience endpoint, and it behaves like one. It stores nothing, changes
+   * nothing, and answers 200 whether or not it found a number — "we could not read
+   * it" is a result, not a failure, and the operator's next move (type the number) is
+   * the same either way. See `services/idOcr.ts` for why it will not guess.
+   */
+  app.post(
+    '/driver-id/read',
+    { preHandler: app.requireRole('STORES_MANAGER', 'ADMIN') },
+    async (request, reply) => {
+      const input = readDriverIdRequestSchema.parse(request.body);
+      const result = await readIdNumber(input.imageBase64);
+      const body: ReadDriverIdResponse = result.ok
+        ? {
+            idNumber: result.id.value,
+            description: describeSouthAfricanId(result.id),
+            reason: null,
+          }
+        : { idNumber: null, description: null, reason: result.reason };
+      return reply.code(200).send(body);
+    },
+  );
 
   // Workflow C (server side): verify the scans, mark only what was physically
   // scanned as returned, roll the batch status forward, and queue the PM's note.
@@ -95,6 +138,19 @@ export async function returnRoutes(app: FastifyInstance): Promise<void> {
           error: {
             code: 'OVERRIDE_FORBIDDEN',
             message: 'Only an admin can return a cylinder without scanning it.',
+          },
+        });
+      }
+
+      // The ID camera override is the same kind of claim as the scan and batch-photo
+      // overrides: an admin's word in place of evidence. Refused outright for every
+      // other role rather than quietly ignored — an override that was silently
+      // dropped would let a tampered client believe it recorded a document nobody saw.
+      if (input.driverIdOverride && !input.driverIdPhoto && request.user.role !== 'ADMIN') {
+        return reply.code(403).send({
+          error: {
+            code: 'DRIVER_ID_OVERRIDE_FORBIDDEN',
+            message: 'Only an admin can record a return without photographing the driver’s ID.',
           },
         });
       }
@@ -143,6 +199,28 @@ export async function returnRoutes(app: FastifyInstance): Promise<void> {
         }
         throw err;
       }
+
+      // Beside the signature, and for the same reason: filesystem IO belongs outside
+      // the transaction. Real evidence outranks an assertion, so a submission
+      // carrying both a photo and an override keeps the photo — the same rule scans
+      // and batch photos already follow.
+      let driverIdPath: string | null = null;
+      if (input.driverIdPhoto) {
+        try {
+          driverIdPath = await saveDriverIdPhoto(
+            input.clientRequestId,
+            decodePhoto(input.driverIdPhoto.imageBase64),
+          );
+        } catch (err) {
+          if (err instanceof InvalidPhotoError) {
+            return reply
+              .code(400)
+              .send({ error: { code: 'INVALID_DRIVER_ID_PHOTO', message: err.message } });
+          }
+          throw err;
+        }
+      }
+      const driverIdOverridden = driverIdPath === null;
 
       const userId = request.user.sub;
 
@@ -197,6 +275,9 @@ export async function returnRoutes(app: FastifyInstance): Promise<void> {
                 batchId: input.batchId,
                 storesManagerId: userId,
                 driverName: input.driverName,
+                driverIdNumber: input.driverIdNumber,
+                driverIdPath,
+                driverIdOverridden,
                 signaturePath,
                 photoOverridden: prepared.overridden,
                 clientRequestId: input.clientRequestId,

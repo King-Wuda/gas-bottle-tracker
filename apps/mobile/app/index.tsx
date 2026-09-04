@@ -1,7 +1,9 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { useAuth } from '../src/auth/AuthContext';
+import { primeSounds } from '../src/sound';
 import { useSync } from '../src/sync/SyncContext';
+import { HeaderLogo } from '../src/ui/GeaLogo';
 
 type DashboardRoute = '/new' | '/transfer' | '/returns' | '/history' | '/admin';
 
@@ -48,10 +50,16 @@ export default function Dashboard() {
     <View style={styles.container}>
       <Stack.Screen
         options={{
+          // `headerRight` REPLACES the shared one from `ui/chrome`, so the logo has
+          // to be re-rendered alongside Sign out or it disappears on this screen —
+          // the only screen most users see for any length of time.
           headerRight: () => (
-            <Pressable onPress={() => void signOut()} hitSlop={12}>
-              <Text style={styles.signOut}>Sign out</Text>
-            </Pressable>
+            <View style={styles.headerRight}>
+              <Pressable onPress={() => void signOut()} hitSlop={12}>
+                <Text style={styles.signOut}>Sign out</Text>
+              </Pressable>
+              <HeaderLogo />
+            </View>
           ),
         }}
       />
@@ -101,7 +109,14 @@ export default function Dashboard() {
           <Pressable
             key={a.key}
             style={styles.card}
-            onPress={() => a.onPress((p) => router.push(p))}
+            onPress={() => {
+              // The tap that starts a workflow is also the last guaranteed user
+              // gesture before the camera starts firing scans at us, and a browser
+              // will not let audio start outside one. Priming here is what makes the
+              // FIRST beep of a session audible on the web build.
+              primeSounds();
+              a.onPress((p) => router.push(p));
+            }}
           >
             <Text style={styles.cardLabel}>{a.label}</Text>
             <Text style={styles.cardHint}>{a.hint}</Text>
@@ -116,6 +131,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, padding: 20, gap: 16 },
   who: { fontSize: 14, opacity: 0.6 },
   signOut: { color: '#1f6feb', fontSize: 15, fontWeight: '600' },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   grid: { gap: 12 },
   card: {
     backgroundColor: 'rgba(127,127,127,0.12)',

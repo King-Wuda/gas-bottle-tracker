@@ -59,6 +59,14 @@ const EnvSchema = z
 
     // storage (M2/M4)
     STORAGE_DIR: z.string().default('./var/storage'),
+    /**
+     * Where generated PDFs, signatures, photos and ID documents actually live.
+     *
+     * 'fs' is right everywhere with a durable disk. 'db' puts the bytes in Postgres
+     * instead, for hosts that have none — see services/storage.ts for why that is
+     * worth a column rather than a lost photograph.
+     */
+    STORAGE_DRIVER: z.enum(['fs', 'db']).default('fs'),
   })
   .superRefine((cfg, ctx) => {
     // Caught at boot rather than at the first send. A server that starts happily and
@@ -101,4 +109,16 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
 export function env(): Env {
   cached ??= loadEnv();
   return cached;
+}
+
+/**
+ * Drop the cache, so the next `env()` re-reads `process.env`.
+ *
+ * For tests that need to exercise a configuration switch — the two storage drivers
+ * are the case that needed it. The cache is deliberate everywhere else: the process's
+ * environment does not change under a running server, and re-validating on every call
+ * would only hide a boot-time mistake behind a request-time one.
+ */
+export function resetEnvCache(): void {
+  cached = undefined;
 }

@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { playCue } from '../sound';
 
 export type ScanOutcome =
   | { kind: 'accepted'; serialCode: string; payload: string }
@@ -30,6 +31,13 @@ export function Scanner({ onScan, footer }: ScannerProps) {
       const previous = seen.current.get(data);
       if (previous && now - previous < REPEAT_SUPPRESS_MS) return;
       seen.current.set(data, now);
+      // Every code the scanner takes in gets the beep, whatever it turns out to
+      // mean. It answers "the camera saw that one" — which is the question the person
+      // holding the phone has, because they are looking at the cylinder and not at
+      // the screen. What the scan MEANT is still said visually, below, in colour:
+      // the beep deliberately does not try to encode accepted vs. rejected, because
+      // a tone nobody has been taught is not information.
+      playCue('scan');
       setLast(onScan(data));
     },
     [onScan],

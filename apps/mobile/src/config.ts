@@ -3,16 +3,40 @@ import Constants from 'expo-constants';
 const FALLBACK_API_URL = 'http://localhost:3000';
 
 /**
- * API base URL. `EXPO_PUBLIC_API_URL` is inlined at bundle time.
- * - Simulator / web: http://localhost:3000
- * - Physical device via `expo start --tunnel`: set this to the machine's
- *   reachable URL (e.g. the Codespaces forwarded-port URL for :3000).
- * - Standalone APK: set it in the eas.json build profile's `env` (or via
- *   `eas env:create`). `.env` is gitignored, so EAS does NOT upload it.
+ * The origin the page itself was served from, when there is one.
+ *
+ * The API serves the web export at `/app` on its own origin (see `SERVE_WEB_APP` in
+ * `app.ts`), so in a browser the API is always exactly where the page came from. That
+ * makes the deployed bundle portable: the same `dist-web` works on a Codespace
+ * forwarded URL, on Render, and on any hostname later, with no rebuild and no
+ * build-time secret to get wrong.
+ *
+ * Guarded by feature detection rather than `Platform.OS` on purpose — `window` exists
+ * in React Native but `window.location` does not, so this is `null` on the device
+ * without needing a platform branch to say so.
+ */
+function servingOrigin(): string | null {
+  const origin = (globalThis as { location?: { origin?: string; protocol?: string } }).location
+    ?.origin;
+  // `file://` and `about:` origins stringify to "null"; neither is somewhere an API
+  // lives, so fall through to the explicit value.
+  return origin && origin.startsWith('http') ? origin : null;
+}
+
+/**
+ * API base URL, in order of precedence:
+ *
+ * 1. `EXPO_PUBLIC_API_URL`, inlined at bundle time. Required for the APK, which has
+ *    no serving origin of its own, and available to override the rest.
+ * 2. `extra.apiUrl` from app.json.
+ * 3. The origin the page was served from — the ordinary case for the web build,
+ *    including the live site.
+ * 4. `http://localhost:3000`, for a dev bundle loaded from the Metro server.
  */
 export const API_URL: string =
   process.env.EXPO_PUBLIC_API_URL ??
   (Constants.expoConfig?.extra?.apiUrl as string | undefined) ??
+  servingOrigin() ??
   FALLBACK_API_URL;
 
 const isStandalone = Constants.executionEnvironment === 'standalone';

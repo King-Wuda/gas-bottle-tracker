@@ -3,6 +3,7 @@ import { Redirect, Stack, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from '../src/auth/AuthContext';
 import { SyncProvider } from '../src/sync/SyncContext';
+import { stackScreenOptions } from '../src/ui/chrome';
 
 function AuthGate() {
   const { status } = useAuth();
@@ -23,10 +24,16 @@ function AuthGate() {
   if (status === 'signedIn' && onLogin) return <Redirect href="/" />;
 
   return (
-    <Stack screenOptions={{ headerTitleStyle: { fontWeight: '600' } }}>
+    <Stack screenOptions={stackScreenOptions}>
       <Stack.Screen name="index" options={{ title: 'Gas Cylinder Tracker' }} />
       <Stack.Screen name="login" options={{ title: 'Sign in', headerShown: false }} />
       <Stack.Screen name="new" options={{ headerShown: false }} />
+      {/* These two own nested stacks with their own headers, exactly like the four
+          around them. Without this the root stack draws a second header above the
+          nested one — two title bars, and now two GEA logos, on every admin and
+          initialize screen. */}
+      <Stack.Screen name="initialize" options={{ headerShown: false }} />
+      <Stack.Screen name="admin" options={{ headerShown: false }} />
       <Stack.Screen name="transfer" options={{ headerShown: false }} />
       <Stack.Screen name="returns" options={{ headerShown: false }} />
       <Stack.Screen name="queue" options={{ title: 'Sync queue' }} />

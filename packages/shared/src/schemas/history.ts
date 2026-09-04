@@ -166,6 +166,8 @@ export const batchEventDetailSchema = batchEventSummarySchema.extend({
   destinationName: z.string().nullable(),
   /** RETURN only: who signed for them. */
   driverName: z.string().nullable(),
+  /** RETURN only: the number off the ID they presented, where one was recorded. */
+  driverIdNumber: z.string().nullable(),
   /** AMENDED only: what was changed, and why. */
   changes: z.array(amendmentChangeSchema),
   reason: z.string().nullable(),

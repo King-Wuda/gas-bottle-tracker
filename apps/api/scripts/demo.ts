@@ -14,11 +14,29 @@ import { qrPayloadFor } from '../src/services/qr.js';
 
 const API = process.env.DEMO_API_URL ?? 'http://localhost:3000';
 const MAILHOG = process.env.DEMO_MAILHOG_URL ?? 'http://localhost:8025';
-const PASSWORD = process.env.SEED_PASSWORD ?? 'Passw0rd!';
+const PASSWORD = process.env.SEED_PASSWORD ?? 'password';
 
-/** A 1×1 PNG standing in for what the driver draws on the signature canvas. */
+/** A 1×1 PNG standing in for what the driver draws on the signature pad. */
 const SIGNATURE_PNG =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+/**
+ * Every scan-backed step now has to carry a photo — the batch for initialization,
+ * transfer and return, and the driver's ID document for a return. `services/photo.ts`
+ * checks the magic bytes, so a stub with the right prefix will not do; this is a real
+ * 1×1 PNG.
+ *
+ * A fresh object each time so the two clocks on the record are the demo's own, and
+ * so a reader can see that `capturedAt` is the device's claim rather than a constant.
+ */
+const photo = () => ({
+  imageBase64: SIGNATURE_PNG,
+  capturedAt: new Date().toISOString(),
+  latitude: -26.2041,
+  longitude: 28.0473,
+  accuracyM: 12,
+  locationError: null,
+});
 
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
@@ -168,6 +186,23 @@ async function main(): Promise<void> {
     'A printable QR sheet is queued — one label per cylinder, each carrying the batch details.',
   );
 
+  // ---- Workflow A2: Initialize ----
+  // The gate, not a formality: POST /transfers and POST /returns both refuse an
+  // uninitialized batch with 409, because a cylinder whose label was never read back
+  // off it cannot honestly be scanned onto a truck.
+  await api('/initializations', {
+    method: 'POST',
+    token: tech,
+    expect: 201,
+    body: {
+      batchId,
+      clientRequestId: crypto.randomUUID(),
+      scans: serials.map(scanOf),
+      photo: photo(),
+    },
+  });
+  say(`Workflow A2 — all ${bold(String(serials.length))} labels scanned back off the cylinders.`);
+
   // ---- Workflow B: Transfer ----
   const moving = serials.slice(0, 3);
   const transfer = await api<{ transfer: { id: string; movedSerials: string[] } }>('/transfers', {
@@ -179,6 +214,7 @@ async function main(): Promise<void> {
       clientRequestId: crypto.randomUUID(),
       destination: { type: 'SITE', siteId: yardB },
       scans: moving.map(scanOf),
+      photo: photo(),
     },
   });
   say(
@@ -196,6 +232,7 @@ async function main(): Promise<void> {
       clientRequestId: crypto.randomUUID(),
       destination: { type: 'STORES' },
       scans: [{ ...scanOf(serials[3]!), qrPayload: `GCT2|${serials[3]}|${'ab'.repeat(64)}` }],
+      photo: photo(),
     },
   });
   say(
@@ -213,7 +250,10 @@ async function main(): Promise<void> {
       batchId,
       clientRequestId: crypto.randomUUID(),
       scans: moving.map(scanOf),
+      photo: photo(),
       driverName: 'Thabo Mokoena',
+      driverIdNumber: '8801015009087',
+      driverIdPhoto: photo(),
       signaturePng: SIGNATURE_PNG,
     },
   });
@@ -228,7 +268,10 @@ async function main(): Promise<void> {
     batchId,
     clientRequestId: replayKey,
     scans: serials.slice(3).map(scanOf),
+    photo: photo(),
     driverName: 'Naledi Khumalo',
+    driverIdNumber: '9203125800083',
+    driverIdPhoto: photo(),
     signaturePng: SIGNATURE_PNG,
   };
   const second = await api<{ returnRecord: { id: string; batchStatus: string } }>('/returns', {

@@ -347,6 +347,7 @@ export async function historyEvent(
     photo: null,
     destinationName: null,
     driverName: null,
+    driverIdNumber: null,
     changes: [],
     reason: null,
   };
@@ -400,8 +401,14 @@ export async function historyEvent(
           .then((t) => ({ destinationName: t ? (t.destinationSite?.name ?? STORES) : null }))
       : kind === 'RETURN'
         ? await prisma.returnRecord
-            .findUnique({ where: { id: recordId }, select: { driverName: true } })
-            .then((r) => ({ driverName: r?.driverName ?? null }))
+            .findUnique({
+              where: { id: recordId },
+              select: { driverName: true, driverIdNumber: true },
+            })
+            .then((r) => ({
+              driverName: r?.driverName ?? null,
+              driverIdNumber: r?.driverIdNumber ?? null,
+            }))
         : {};
 
   return {

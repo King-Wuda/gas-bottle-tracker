@@ -114,5 +114,5 @@ console.log(`\n${bold('Setup complete.')}\n`);
 console.log('  Start the API:   npm run dev:api');
 console.log('  Then, elsewhere: npm run demo');
 console.log(`  MailHog inbox:   ${bold('http://localhost:8025')}\n`);
-console.log(dim('  Logins (password Passw0rd!): admin@demo.local, stores@demo.local,'));
+console.log(dim('  Logins (password password): admin@demo.local, stores@demo.local,'));
 console.log(dim('  technician@demo.local\n'));

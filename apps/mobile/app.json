@@ -22,7 +22,8 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Batch photos are stamped with where they were taken, so the record shows the cylinders were where the paperwork says."
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true,
