@@ -102,9 +102,15 @@ it up:
 3. Set `MAIL_FROM` to an address **at that verified domain**. A mismatch here is the
    usual cause of mail that silently never arrives.
 
-Until the domain is verified, Resend will only deliver to the address that owns the
-account — which is enough to demo with, as long as the project manager you pick is
-that address.
+**Until a domain is verified, Resend delivers to exactly one address: the one that
+owns the Resend account.** It also refuses any sender but its own shared testing
+address, so `MAIL_FROM` must be `onboarding@resend.dev` until then.
+
+That is enough to demonstrate with, as long as the project manager on the batch IS
+that address. A batch belonging to anyone else queues, is refused with a 403, and sits
+`PENDING` with the reason in `OutboundEmail.lastError`. The app records that faithfully
+— but nothing says so on the screen the operator is looking at, so pick the project
+manager deliberately or verify a domain first.
 
 ## Why the web build has no baked-in API URL
 

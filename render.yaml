@@ -78,8 +78,12 @@ services:
       - key: QR_SIGN_PUBLIC_KEY_HEX
         sync: false
 
-      # Real email through Resend. Create a key at resend.com and verify the domain
-      # you send from; MAIL_FROM must use that domain.
+      # Real email through Resend. Create a key at resend.com.
+      #
+      # With no verified domain, MAIL_FROM must be "onboarding@resend.dev" and Resend
+      # delivers ONLY to the address that owns the account - everything else is
+      # refused with a 403 and left PENDING in the queue. Verify a domain at
+      # resend.com/domains to send to anyone, then point MAIL_FROM at it.
       #
       # BOTH ARE REQUIRED TO BOOT. MAILER=resend without a key fails env validation at
       # startup rather than at the first send, which is deliberate — see apps/api/src/
