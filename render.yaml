@@ -80,6 +80,11 @@ services:
 
       # Real email through Resend. Create a key at resend.com and verify the domain
       # you send from; MAIL_FROM must use that domain.
+      #
+      # BOTH ARE REQUIRED TO BOOT. MAILER=resend without a key fails env validation at
+      # startup rather than at the first send, which is deliberate — see apps/api/src/
+      # env.ts. If Resend is not ready yet, set MAILER=mailhog and leave the key empty:
+      # everything works except sending, and it is one variable to switch back.
       - key: MAILER
         value: resend
       - key: RESEND_API_KEY

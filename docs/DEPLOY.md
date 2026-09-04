@@ -36,6 +36,18 @@ that. This document is what it does not fit in a comment.
    Everything else — the database URL, the JWT secret, the storage driver — is set by
    the blueprint.
 
+   **All four are required for the service to start.** `MAILER=resend` with no
+   `RESEND_API_KEY` fails validation at boot rather than at the first send — on
+   purpose, because a server that starts happily and only reveals a missing key when a
+   technician's batch fails to reach its project manager has moved the error somewhere
+   nobody is watching. On Render that shows up as a deploy that will not come up; the
+   reason is the first line of the log.
+
+   If Resend is not ready yet and you need the site up now, set `MAILER=mailhog` and
+   deploy without `RESEND_API_KEY`. Everything works except email — delivery notes are
+   still generated, stored and downloadable, they just are not sent. Switch to
+   `resend` when the domain is verified; it is one environment variable and a restart.
+
 4. **Deploy.** The build installs, generates the Prisma client and exports the web
    bundle; the start step applies migrations, seeds the reference data, and serves.
    First deploy takes a few minutes, mostly the Expo export.
