@@ -24,7 +24,8 @@ type Status = 'loading' | 'signedIn' | 'signedOut';
 interface AuthValue {
   status: Status;
   user: UserDto | null;
-  signIn: (email: string, password: string) => Promise<void>;
+  /** `remember` false keeps the session in memory only — see `setSession`. */
+  signIn: (email: string, password: string, remember?: boolean) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -81,9 +82,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const signIn = useCallback(async (email: string, password: string) => {
+  const signIn = useCallback(async (email: string, password: string, remember = true) => {
     const res = await apiLogin(email, password);
-    await setSession({ accessToken: res.accessToken, refreshToken: res.refreshToken });
+    await setSession(
+      { accessToken: res.accessToken, refreshToken: res.refreshToken },
+      { remember },
+    );
     setUser(res.user);
     setStatus('signedIn');
   }, []);

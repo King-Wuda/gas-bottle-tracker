@@ -117,8 +117,22 @@ configuration of this server that boots believing it can send mail and cannot. T
 it up:
 
 1. Create an account at [resend.com](https://resend.com) and **verify the domain you
-   want to send from** — this is the step that takes the longest, because it needs DNS
-   records added, and Resend will not send from an unverified domain.
+   want to send from**. This is the step that takes the longest, because it needs DNS
+   records added and propagated. In the Resend dashboard: **Domains → Add Domain**,
+   enter the domain (e.g. `gct.co.za` — use a subdomain like `mail.gct.co.za` if the
+   apex already sends mail elsewhere), pick the region closest to you, and Resend
+   shows three records to add at your DNS provider:
+
+   | Type         | Purpose                          | Notes                                        |
+   | ------------ | -------------------------------- | -------------------------------------------- |
+   | `MX`         | receives bounce reports          | on the `send` subdomain Resend names         |
+   | `TXT` (SPF)  | authorises Resend to send as you | `v=spf1 include:amazonses.com ~all`          |
+   | `TXT` (DKIM) | signs each message               | a long `p=...` public key — paste it exactly |
+
+   Add them verbatim at your registrar, then press **Verify**. It is usually minutes;
+   allow up to 48 hours. A DMARC record (`_dmarc`, `v=DMARC1; p=none;`) is optional and
+   worth adding once the other three are green.
+
 2. Create an API key and put it in `RESEND_API_KEY`.
 3. Set `MAIL_FROM` to an address **at that verified domain**. A mismatch here is the
    usual cause of mail that silently never arrives.

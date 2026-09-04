@@ -12,6 +12,7 @@ import {
 import { useAuth, ApiError } from '../src/auth/AuthContext';
 import { configWarning } from '../src/config';
 import { GeaLogo } from '../src/ui/GeaLogo';
+import { Checkbox } from '../src/ui/components';
 import { CylinderIcon } from '../src/ui/icons';
 import { colors, radius, shadow, space, type } from '../src/ui/theme';
 
@@ -21,6 +22,12 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * On by default. This is a field app on a personal work phone: the common case is
+   * one person, one device, all day, and making them retype a password at every gate
+   * is how a shared login gets written on the back of the phone case.
+   */
+  const [remember, setRemember] = useState(true);
 
   const canSubmit = email.trim().length > 0 && password.length > 0 && !busy;
 
@@ -28,7 +35,7 @@ export default function Login() {
     setBusy(true);
     setError(null);
     try {
-      await signIn(email.trim(), password);
+      await signIn(email.trim(), password, remember);
       // AuthGate redirects to '/' once status flips to signedIn.
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) setError('Email or password is incorrect.');
@@ -89,6 +96,18 @@ export default function Login() {
               onSubmitEditing={() => canSubmit && onSubmit()}
             />
           </View>
+
+          <Checkbox
+            label="Keep me signed in"
+            hint={
+              remember
+                ? 'This device stays signed in until you sign out.'
+                : 'You will be signed out when the app is closed.'
+            }
+            value={remember}
+            onChange={setRemember}
+            disabled={busy}
+          />
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 

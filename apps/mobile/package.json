@@ -10,6 +10,7 @@
     "android": "expo run:android",
     "doctor": "expo-doctor",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
+    "logo:embed": "node scripts/embed-logo.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },

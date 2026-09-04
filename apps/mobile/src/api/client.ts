@@ -78,10 +78,27 @@ async function hydrate(): Promise<void> {
   hydrated = true;
 }
 
-export async function setSession(next: StoredTokens | null): Promise<void> {
+/**
+ * Adopt a session, and decide whether it outlives the app.
+ *
+ * `remember` false keeps the tokens in memory ONLY — nothing is written to
+ * localStorage or the Keystore, so closing the tab or the app signs you out. That is
+ * one rule with one meaning on both targets, which is why it is expressed as "do not
+ * persist" rather than as a different storage on each: a web-only sessionStorage
+ * branch would have made "remember me" mean something subtly different on the phone
+ * than in the browser it is tested in.
+ *
+ * Anything already on disk is cleared either way. Signing in without ticking the box
+ * on a device that remembered you last time has to actually stop remembering you,
+ * otherwise the tick does nothing on the machine where it matters most.
+ */
+export async function setSession(
+  next: StoredTokens | null,
+  { remember = true }: { remember?: boolean } = {},
+): Promise<void> {
   tokens = next;
   hydrated = true;
-  if (next) await saveTokens(next);
+  if (next && remember) await saveTokens(next);
   else await clearTokens();
 }
 

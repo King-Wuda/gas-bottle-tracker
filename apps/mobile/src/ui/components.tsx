@@ -10,6 +10,7 @@ import {
   type TextInputProps,
   type ViewStyle,
 } from 'react-native';
+import { CheckIcon } from './icons';
 import { colors, radius, shadow, space, type } from './theme';
 
 /**
@@ -183,6 +184,46 @@ export function Card({
       style={({ pressed }) => [...base, pressed && styles.cardPressed]}
     >
       {children}
+    </Pressable>
+  );
+}
+
+/**
+ * A checkbox with its label as one tap target.
+ *
+ * The whole row is pressable, not just the 22px box: this is used outdoors, with
+ * gloves, on a phone held in one hand. A control you have to aim at is a control that
+ * gets mis-tapped, and a mis-tapped "remember me" is someone signed out at a gate.
+ */
+export function Checkbox({
+  label,
+  hint,
+  value,
+  onChange,
+  disabled = false,
+}: {
+  label: string;
+  hint?: string;
+  value: boolean;
+  onChange: (next: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Pressable
+      role="checkbox"
+      aria-checked={value}
+      accessibilityState={{ checked: value, disabled }}
+      disabled={disabled}
+      onPress={() => onChange(!value)}
+      style={({ pressed }) => [styles.checkRow, pressed && !disabled && styles.checkRowPressed]}
+    >
+      <View style={[styles.checkBox, value && styles.checkBoxOn, disabled && { opacity: 0.5 }]}>
+        {value ? <CheckIcon size={16} color={colors.onBrand} /> : null}
+      </View>
+      <View style={styles.checkCopy}>
+        <Text style={styles.checkLabel}>{label}</Text>
+        {hint ? <Text style={styles.hint}>{hint}</Text> : null}
+      </View>
     </Pressable>
   );
 }
@@ -389,6 +430,28 @@ export const styles = StyleSheet.create({
   },
   cardPadded: { padding: space.lg, gap: space.sm },
   cardPressed: { backgroundColor: colors.brandTint, borderColor: colors.brandTintStrong },
+
+  checkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    paddingVertical: space.sm,
+    borderRadius: radius.sm,
+  },
+  checkRowPressed: { backgroundColor: colors.brandTint },
+  checkBox: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkBoxOn: { backgroundColor: colors.brand, borderColor: colors.brand },
+  checkCopy: { flex: 1, gap: 1 },
+  checkLabel: { fontSize: 15, fontWeight: '600', color: colors.ink },
 
   pill: {
     paddingHorizontal: space.sm + 2,
