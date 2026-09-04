@@ -24,6 +24,33 @@ export interface Mailer {
  *  repo already used) name the same thing; EMAIL_FROM wins when both are set. */
 const fromAddress = (): string => env().EMAIL_FROM ?? env().MAIL_FROM;
 
+/**
+ * Any SMTP server — Gmail, a work mail server, an ESP that speaks SMTP.
+ *
+ * This exists because the alternative to it is not "a better transport", it is "no
+ * email to anyone but one person". Resend and SendGrid both refuse to send to
+ * arbitrary recipients until a DOMAIN is verified, which needs a domain you own and
+ * DNS records that propagate. An SMTP account you already have has neither
+ * requirement and delivers to anybody today.
+ *
+ * It is not a downgrade in honesty: unlike the sink this replaced, a misconfigured
+ * SMTP server fails loudly at send time and the error lands in
+ * `OutboundEmail.lastError` like any other refusal.
+ */
+function buildSmtpTransport(): Transporter {
+  const config = env();
+  if (!config.SMTP_HOST || !config.SMTP_USER || !config.SMTP_PASS) {
+    throw new Error('MAILER=smtp but SMTP_HOST, SMTP_USER or SMTP_PASS is unset');
+  }
+  return nodemailer.createTransport({
+    host: config.SMTP_HOST,
+    port: config.SMTP_PORT,
+    // 465 is implicit TLS; 587 upgrades with STARTTLS. Neither sends in the clear.
+    secure: config.SMTP_SECURE || config.SMTP_PORT === 465,
+    auth: { user: config.SMTP_USER, pass: config.SMTP_PASS },
+  });
+}
+
 /** SendGrid over SMTP, so no extra dependency is needed for it. */
 function buildSendgridTransport(): Transporter {
   const config = env();
@@ -122,7 +149,7 @@ export function getMailer(): Mailer {
     };
     return cached;
   }
-  const transport = buildSendgridTransport();
+  const transport = env().MAILER === 'smtp' ? buildSmtpTransport() : buildSendgridTransport();
   const from = fromAddress();
   cached = {
     async send(msg) {

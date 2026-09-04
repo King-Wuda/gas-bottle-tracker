@@ -52,7 +52,26 @@ const EnvSchema = z
     //
     // 'capture' keeps messages in memory and sends nothing. It is the integration
     // suite's transport (see services/mailer), not a deployment option.
-    MAILER: z.enum(['resend', 'sendgrid', 'capture']).default('resend'),
+    MAILER: z.enum(['resend', 'sendgrid', 'smtp', 'capture']).default('resend'),
+
+    /**
+     * Any SMTP server, for `MAILER=smtp`. Gmail with an app password is the usual
+     * one: it costs nothing, needs no domain, and delivers to anybody.
+     *
+     * These are NOT the old MailHog settings coming back. That was a sink that
+     * accepted mail and delivered none of it, reachable by forgetting to configure
+     * anything. This needs a host AND credentials or the server refuses to start, and
+     * what it talks to actually sends.
+     */
+    SMTP_HOST: z.string().optional(),
+    SMTP_PORT: z.coerce.number().int().positive().default(587),
+    SMTP_USER: z.string().optional(),
+    SMTP_PASS: z.string().optional(),
+    /** STARTTLS on 587 (the default) vs implicit TLS on 465. */
+    SMTP_SECURE: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true' || v === '1'),
     MAIL_FROM: z.string().default('Gas Cylinder Tracker <no-reply@gct.local>'),
     /** The change spec's name for MAIL_FROM. Set either; this one wins. */
     EMAIL_FROM: z.string().optional(),
@@ -83,6 +102,20 @@ const EnvSchema = z
           'required when MAILER=resend — create one at resend.com and verify your ' +
           'sending domain first (see "Sending real email" in README.md)',
       });
+    }
+    if (cfg.MAILER === 'smtp') {
+      for (const key of ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS'] as const) {
+        if (!cfg[key]) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [key],
+            message:
+              'required when MAILER=smtp — for Gmail use SMTP_HOST=smtp.gmail.com, your ' +
+              'address as SMTP_USER, and a Google App Password (not your login password) ' +
+              'as SMTP_PASS. See "Sending real email" in README.md',
+          });
+        }
+      }
     }
     if (cfg.MAILER === 'sendgrid' && !cfg.SENDGRID_API_KEY) {
       ctx.addIssue({

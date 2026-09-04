@@ -147,6 +147,37 @@ that address. A batch belonging to anyone else queues, is refused with a 403, an
 — but nothing says so on the screen the operator is looking at, so pick the project
 manager deliberately or verify a domain first.
 
+## Sending to more than one person, for free
+
+Resend and SendGrid both refuse arbitrary recipients until a DOMAIN is verified, and
+verifying one needs a domain you own. Until then Resend delivers only to the address
+that owns the account.
+
+`MAILER=smtp` is the way round that at no cost: any SMTP account you already have
+sends to anybody, today, with no domain and no DNS. Gmail is the usual one.
+
+1. The Google account needs **2-Step Verification on**.
+2. Create an **App Password**: myaccount.google.com -> Security -> 2-Step
+   Verification -> App passwords. Google gives you 16 characters. It is not your
+   login password, and it can be revoked on its own.
+3. Set on the service:
+
+   ```
+   MAILER=smtp
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=587
+   SMTP_USER=you@gmail.com
+   SMTP_PASS=<the 16-character app password>
+   MAIL_FROM=Gas Cylinder Tracker <you@gmail.com>
+   ```
+
+   `MAIL_FROM` must be that same Gmail address; Gmail rewrites anything else.
+
+Limits worth knowing: about 500 messages a day, mail arrives from a personal-looking
+address, and Google may challenge a sign-in from a new server region once. It is the
+right answer for a demonstration and the wrong one for a company sending to customers
+— for that, buy the domain and use Resend.
+
 ## Why the web build has no baked-in API URL
 
 `EXPO_PUBLIC_API_URL` is deliberately unset in the Render build. The bundle asks the

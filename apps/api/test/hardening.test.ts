@@ -310,6 +310,48 @@ describe('env validation', () => {
     expect(() => loadEnv({ ...base, MAILER: 'postmark' })).toThrow();
   });
 
+  it('requires a host AND credentials for MAILER=smtp', () => {
+    // The free route out of "Resend only delivers to the account owner". It is held
+    // to the same rule as every other real transport: no half-configured server that
+    // starts up believing it can send.
+    const noKey = withoutMailKey();
+    expect(() => loadEnv({ ...noKey, MAILER: 'smtp' })).toThrow(/SMTP_HOST/);
+    expect(() => loadEnv({ ...noKey, MAILER: 'smtp', SMTP_HOST: 'smtp.gmail.com' })).toThrow(
+      /SMTP_USER/,
+    );
+    expect(() =>
+      loadEnv({ ...noKey, MAILER: 'smtp', SMTP_HOST: 'smtp.gmail.com', SMTP_USER: 'a@b.c' }),
+    ).toThrow(/SMTP_PASS/);
+
+    const env = loadEnv({
+      ...noKey,
+      MAILER: 'smtp',
+      SMTP_HOST: 'smtp.gmail.com',
+      SMTP_USER: 'a@b.c',
+      SMTP_PASS: 'app-password',
+    });
+    expect(env.MAILER).toBe('smtp');
+    // 587 with STARTTLS is the default; nothing here ever sends in the clear.
+    expect(env.SMTP_PORT).toBe(587);
+    expect(env.SMTP_SECURE).toBe(false);
+  });
+
+  it('reads SMTP_SECURE as a flag, since process.env only holds strings', () => {
+    const withSmtp = (extra: Record<string, string>) =>
+      loadEnv({
+        ...withoutMailKey(),
+        MAILER: 'smtp',
+        SMTP_HOST: 'smtp.example.com',
+        SMTP_USER: 'a@b.c',
+        SMTP_PASS: 'x',
+        ...extra,
+      });
+    expect(withSmtp({ SMTP_SECURE: 'true' }).SMTP_SECURE).toBe(true);
+    expect(withSmtp({ SMTP_SECURE: '1' }).SMTP_SECURE).toBe(true);
+    expect(withSmtp({ SMTP_SECURE: 'false' }).SMTP_SECURE).toBe(false);
+    expect(withSmtp({}).SMTP_SECURE).toBe(false);
+  });
+
   it('refuses to boot with a production mailer and no credentials', () => {
     // Caught here rather than at the first send. A server that starts happily and only
     // reveals the missing key when a technician's batch fails to reach its project
