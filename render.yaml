@@ -22,16 +22,20 @@ databases:
     databaseName: gct
     user: gct
     plan: free
-    # Frankfurt is the closest Render region to South Africa; it must match the
-    # service's region below or they cannot talk over the private network.
-    region: frankfurt
+    # Must match the service's region below, or the two cannot talk over the private
+    # network and DATABASE_URL has to become the (slower, public) external host.
+    #
+    # Frankfurt is the closest Render region to South Africa and is the better choice
+    # for a new deployment. This says singapore because that is where the existing
+    # free database was created, and a free account gets one.
+    region: singapore
 
 services:
   - type: web
     name: gct
     runtime: node
     plan: free
-    region: frankfurt
+    region: singapore
     buildCommand: ./scripts/render-build.sh
     startCommand: ./scripts/render-start.sh
     healthCheckPath: /health
