@@ -1,5 +1,12 @@
 /**
- * Wipe the operational data and leave a clean install: catalogue + logins, nothing else.
+ * Wipe the operational data and leave a clean install: the catalogue and the two
+ * owners' logins, nothing else.
+ *
+ * Run this after `npm test`. The suite shares this database and leaves residue behind
+ * — its own `@demo.local` accounts, throwaway project managers and suppliers — and it
+ * TRUNCATES ProjectManager, so a test run removes the real ones until the seed puts
+ * them back. `reset:data` followed by `db:seed` is what returns the database to
+ * something you would want to demonstrate.
  *
  * This is NOT `prisma migrate reset` — the schema and the migration history are left
  * completely alone. It empties the tables that hold *work* (batches, cylinders, the
@@ -66,16 +73,18 @@ async function main(): Promise<void> {
     ]);
   }
 
-  // Accounts the suite created. The seed's own are restored by the seed itself, so
-  // anything it does not know about is residue.
-  await prisma.user.deleteMany({
-    where: {
-      email: { endsWith: '@demo.local' },
-      NOT: {
-        email: { in: ['technician@demo.local', 'stores@demo.local', 'admin@demo.local'] },
-      },
-    },
+  // Every `@demo.local` account, including the three the integration suite creates
+  // for itself (`ensureTestUsers` in test/helpers.ts). They are fixtures, not people:
+  // the seed does not create them, `npm test` recreates them on demand, and an
+  // install that has finished testing should not be offering them a login.
+  //
+  // Safe to delete rather than deactivate only because everything that could
+  // reference a user was removed above. A user with history must be deactivated —
+  // the audit trail has to stay resolvable.
+  await prisma.refreshToken.deleteMany({
+    where: { user: { email: { endsWith: '@demo.local' } } },
   });
+  await prisma.user.deleteMany({ where: { email: { endsWith: '@demo.local' } } });
 
   const after = await counts();
   console.table(

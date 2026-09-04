@@ -121,5 +121,14 @@ when the export looks right but the app cannot reach the API.
 3. `npm run typecheck && npm run lint && npm test` — 359 tests baseline
    (63 shared, 242 API, 54 mobile). **Stop the dev API server first**: it shares the database
    with the test run, and its email worker polling across `resetDb()` fails tests at random.
+
+   **`npm test` also empties the database you were demonstrating.** The suite shares it,
+   truncates `ProjectManager` (so the two real ones vanish until re-seeded), and leaves
+   its own `@demo.local` accounts and throwaway suppliers behind. Put it back with:
+
+   ```bash
+   npm run -w @gct/api reset:data -- --yes && npm run -w @gct/api db:seed
+   ```
+
 4. If the change touched a `Platform.OS` file above, state in your summary what the native
    path does differently and why it is still correct.

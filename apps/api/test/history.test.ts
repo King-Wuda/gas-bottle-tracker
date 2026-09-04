@@ -16,6 +16,7 @@ import {
   loginAs,
   bearer,
   DEMO,
+  DEMO_NAMES,
   initializeBatch,
   makeProjectManager,
   resetDb,
@@ -224,8 +225,8 @@ describe('GET /cylinders/:serialCode/history', () => {
     const by = (type: MovementEventDto['type']) =>
       body.events.find((e) => e.type === type)?.userName;
 
-    expect(by('TRANSFER')).toBe('Demo Technician');
-    expect(by('RETURN')).toBe('Demo Stores Manager');
+    expect(by('TRANSFER')).toBe(DEMO_NAMES.technician);
+    expect(by('RETURN')).toBe(DEMO_NAMES.stores);
   });
 
   it('links each hop to the Transfer or ReturnRecord that produced it', async () => {

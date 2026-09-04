@@ -5,8 +5,8 @@ import { PrismaClient } from '../src/generated/prisma/client.js';
 
 /**
  * Idempotent seed: gas types with prefixes, the supplier catalogue and its gas
- * pairings, the project managers who receive batch mail, 3 users (one per role) with
- * argon2id hashes computed here, and one demo Project + Site. Re-runnable.
+ * pairings, and the two people who own this system — as project managers (who receive
+ * batch mail) and as ADMIN logins, with argon2id hashes computed here. Re-runnable.
  * SerialSequence rows are intentionally NOT seeded — the allocator creates each
  * (prefix, year) lazily via INSERT ... ON CONFLICT.
  */
@@ -60,15 +60,18 @@ const OWNERS = [
 /** Recipients of QR sheets and delivery notes. Not app logins — see the schema. */
 const PROJECT_MANAGERS = OWNERS;
 
-const USERS = [
-  // Kept because the integration suite signs in as one of each role; deleting them
-  // would 401 every test in the repo.
-  { email: 'technician@demo.local', name: 'Demo Technician', role: 'TECHNICIAN' as const },
-  { email: 'stores@demo.local', name: 'Demo Stores Manager', role: 'STORES_MANAGER' as const },
-  { email: 'admin@demo.local', name: 'Demo Admin', role: 'ADMIN' as const },
-  // The real admins.
-  ...OWNERS.map((o) => ({ email: o.email, name: o.name, role: 'ADMIN' as const })),
-];
+/**
+ * The only accounts this system ships with.
+ *
+ * There were three `@demo.local` logins here — one per role — kept because the
+ * integration suite signed in as them. They are gone: a seed is what a real install
+ * starts as, and a real install must not come with three publicly-known passwords on
+ * accounts nobody owns. The suite now creates its own accounts (`ensureTestUsers` in
+ * test/helpers.ts), which is where test fixtures belonged in the first place.
+ *
+ * Everyone else is added through the admin console, by one of these two.
+ */
+const USERS = OWNERS.map((o) => ({ email: o.email, name: o.name, role: 'ADMIN' as const }));
 
 const DEV_PASSWORD = process.env.SEED_PASSWORD ?? 'password';
 

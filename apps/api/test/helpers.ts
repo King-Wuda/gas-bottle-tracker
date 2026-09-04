@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import argon2 from 'argon2';
 import type { FastifyInstance } from 'fastify';
 import type { Role } from '@gct/shared';
 import { prisma } from '../src/db.js';
@@ -9,6 +10,7 @@ import { qrPayloadFor } from '../src/services/qr.js';
  * clean slate for the mutable tables, keeping the seed's Users and GasTypes.
  */
 export async function resetDb(): Promise<void> {
+  await ensureTestUsers();
   await prisma.$executeRawUnsafe(
     'TRUNCATE ' +
       [
@@ -47,8 +49,8 @@ export async function resetDb(): Promise<void> {
   }
 }
 
-/** Whatever the seed hashed — `prisma/seed.ts` reads the same variable. Hardcoding it
- *  meant changing SEED_PASSWORD locally broke every suite with a 401. */
+/** The password `ensureTestUsers` hashes. `SEED_PASSWORD` is honoured so a developer
+ *  who sets it locally does not get a suite full of unexplained 401s. */
 export const DEMO_PASSWORD = process.env.SEED_PASSWORD ?? 'password';
 export const DEMO = {
   technician: 'technician@demo.local',
@@ -64,15 +66,73 @@ const SEED_ROLES = {
 } as const;
 
 /**
- * Every account `prisma/seed.ts` creates — the three demo roles AND the two real
- * admins (Jacques, Tumelo). resetDb deletes accounts outside this list, so leaving the
- * real ones out would mean a test run silently removed the logins the operator uses.
+ * The accounts `resetDb` is allowed to keep: this suite's own three, AND the two real
+ * admins the seed creates (Jacques, Tumelo). resetDb deletes every account outside
+ * this list, so leaving the real ones out would mean running the tests silently
+ * removed the logins the operator actually signs in with.
  */
 export const SEED_EMAILS = [
   ...Object.values(DEMO),
   'jacques.viljoen@gmail.com',
   'mashabaindustriesllc@gmail.com',
 ];
+
+/**
+ * Display names for the accounts this suite creates.
+ *
+ * Exported because the history feed attributes each movement to a user by NAME, and a
+ * test asserting on that string should read it from the same place that wrote it —
+ * otherwise renaming a fixture breaks a test three files away for no visible reason.
+ */
+export const DEMO_NAMES = {
+  technician: 'Test Technician',
+  stores: 'Test Stores Manager',
+  admin: 'Test Admin',
+} as const;
+
+const TEST_USER_NAMES: Record<string, string> = {
+  [DEMO.technician]: DEMO_NAMES.technician,
+  [DEMO.stores]: DEMO_NAMES.stores,
+  [DEMO.admin]: DEMO_NAMES.admin,
+};
+
+let testUsersReady = false;
+
+/**
+ * Create the three accounts this suite signs in as, if they are not already there.
+ *
+ * They used to come from `prisma/seed.ts`, which meant two things that were both
+ * wrong: `npm test` failed on a database nobody had seeded, and a real install
+ * shipped with three publicly-known logins that existed only to serve the tests.
+ * A suite's fixtures belong to the suite.
+ *
+ * The argon2 hash is the expensive part, so it is only computed when something is
+ * actually missing — on every run after the first this is one SELECT.
+ */
+export async function ensureTestUsers(): Promise<void> {
+  if (testUsersReady) return;
+  const wanted = Object.entries(SEED_ROLES).map(([role, email]) => ({ role: role as Role, email }));
+  const existing = await prisma.user.findMany({
+    where: { email: { in: wanted.map((w) => w.email) } },
+    select: { email: true },
+  });
+  const missing = wanted.filter((w) => !existing.some((e) => e.email === w.email));
+  if (missing.length > 0) {
+    const passwordHash = await argon2.hash(DEMO_PASSWORD, { type: argon2.argon2id });
+    for (const m of missing) {
+      await prisma.user.create({
+        data: {
+          email: m.email,
+          name: TEST_USER_NAMES[m.email] ?? m.email,
+          role: m.role,
+          active: true,
+          passwordHash,
+        },
+      });
+    }
+  }
+  testUsersReady = true;
+}
 
 /** Logs a seeded demo user in and returns their access token. */
 export async function loginAs(app: FastifyInstance, email: string): Promise<string> {
