@@ -1,6 +1,7 @@
 import type { ComponentProps } from 'react';
 import { Stack } from 'expo-router';
 import { HeaderLogo } from './GeaLogo';
+import { colors } from './theme';
 
 /**
  * The options every `Stack` in the app shares.
@@ -19,6 +20,14 @@ import { HeaderLogo } from './GeaLogo';
  * `@react-navigation/native-stack` package here to import the options type from.
  */
 export const stackScreenOptions: NonNullable<ComponentProps<typeof Stack>['screenOptions']> = {
-  headerTitleStyle: { fontWeight: '600' },
+  headerTitleStyle: { fontWeight: '700', fontSize: 17, color: colors.ink },
+  headerStyle: { backgroundColor: colors.surface },
+  headerTintColor: colors.brand,
+  // Flat, with the separation carried by a hairline instead. A drop shadow under the
+  // bar competes with the cards below it, and this app is mostly cards.
+  headerShadowVisible: false,
+  // The screens paint the canvas themselves, but this is what shows through during a
+  // push transition — without it the gap between screens flashes white.
+  contentStyle: { backgroundColor: colors.canvas },
   headerRight: () => <HeaderLogo />,
 };

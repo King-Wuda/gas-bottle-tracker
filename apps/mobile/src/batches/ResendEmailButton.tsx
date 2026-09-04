@@ -3,6 +3,7 @@ import { Text, View } from 'react-native';
 import { RESEND_LOCKOUT_SECONDS } from '@gct/shared';
 import { ApiError, apiResendBatchEmail } from '../api/client';
 import { PrimaryButton, SecondaryButton, styles as base } from '../ui/components';
+import { colors } from '../ui/theme';
 
 /**
  * "Resend email", locked for 60s after each send.
@@ -117,7 +118,7 @@ export function ResendEmailButton({
       ) : null}
 
       {count > 0 ? (
-        <Text style={base.label}>
+        <Text style={base.hint}>
           Resent {count} time{count === 1 ? '' : 's'}
         </Text>
       ) : null}
@@ -125,4 +126,4 @@ export function ResendEmailButton({
   );
 }
 
-const okStyle = { color: '#2f7a4d', fontSize: 14 } as const;
+const okStyle = { color: colors.success, fontSize: 14 } as const;

@@ -20,6 +20,7 @@ import {
   styles,
 } from '../../src/ui/components';
 import { Combobox } from '../../src/ui/controls';
+import { colors } from '../../src/ui/theme';
 
 export default function SelectProject() {
   const router = useRouter();
@@ -149,7 +150,7 @@ export default function SelectProject() {
             </Card>
           ))}
 
-          <Text style={[styles.label, { marginTop: 10 }]}>Add a new site to this project</Text>
+          <Text style={[styles.hint, { marginTop: 10 }]}>Add a new site to this project</Text>
           <Combobox
             label="Site"
             value={newSiteName}
@@ -176,7 +177,7 @@ export default function SelectProject() {
           />
 
           <Pressable onPress={() => setPicked(null)} style={{ paddingVertical: 12 }}>
-            <Text style={{ color: '#1f6feb', fontWeight: '600' }}>← Back to results</Text>
+            <Text style={{ color: colors.brand, fontWeight: '600' }}>← Back to results</Text>
           </Pressable>
         </>
       ) : null}

@@ -20,6 +20,7 @@ import {
   styles,
 } from '../../src/ui/components';
 import { Select, SegmentedToggle } from '../../src/ui/controls';
+import { colors } from '../../src/ui/theme';
 
 const DELIVERY_POINTS: { value: InitialDeliveryPoint; label: string }[] = [
   { value: 'STORES', label: INITIAL_DELIVERY_POINT_LABELS.STORES },
@@ -215,7 +216,7 @@ export default function LineItems() {
                   {l.quantity} × {l.gasTypeName}
                 </Text>
                 <Pressable role="button" onPress={() => flow.removeLine(l.key)}>
-                  <Text style={{ color: '#c0392b', fontWeight: '600' }}>Remove</Text>
+                  <Text style={{ color: colors.danger, fontWeight: '600' }}>Remove</Text>
                 </Pressable>
               </View>
               <Text style={{ opacity: 0.7 }}>
@@ -238,7 +239,7 @@ export default function LineItems() {
         disabled={flow.lines.length === 0}
         busy={submitting}
       />
-      <Text style={[styles.label, { textAlign: 'center' }]}>
+      <Text style={[styles.hint, { textAlign: 'center' }]}>
         Adding a line item does not create anything yet. Every line above is created together, as
         one batch, when you tap Create batch.
       </Text>

@@ -104,7 +104,7 @@ export default function CreateSite() {
           // address the batch mail will actually go to before committing to it.
           footer={
             selectedManager ? (
-              <Text style={styles.label}>Emails go to {selectedManager.email}</Text>
+              <Text style={styles.hint}>Emails go to {selectedManager.email}</Text>
             ) : null
           }
         />

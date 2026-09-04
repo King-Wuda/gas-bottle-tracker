@@ -17,6 +17,7 @@ import {
   SecondaryButton,
   styles as base,
 } from '../../../../src/ui/components';
+import { colors } from '../../../../src/ui/theme';
 
 /**
  * One change, in full — read-only, like everything reached from History.
@@ -29,7 +30,7 @@ import {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <View style={{ flexDirection: 'row', gap: 12, justifyContent: 'space-between' }}>
-      <Text style={[base.label, { flexShrink: 0 }]}>{label}</Text>
+      <Text style={[base.hint, { flexShrink: 0 }]}>{label}</Text>
       <Text style={{ flexShrink: 1, textAlign: 'right' }}>{value}</Text>
     </View>
   );
@@ -94,8 +95,10 @@ export default function EventDetail() {
         <PhotoCard photo={event.photo} />
       ) : event.photoOverridden ? (
         <Card>
-          <Text style={{ fontWeight: '700', color: '#b8860b' }}>No photo — admin override</Text>
-          <Text style={base.label}>
+          <Text style={{ fontWeight: '700', color: colors.warning }}>
+            No photo — admin override
+          </Text>
+          <Text style={base.hint}>
             An admin recorded this without a photo. That is a named person&apos;s assertion, not
             evidence that the batch was seen — which is exactly why it is shown as its own thing
             rather than left blank.
@@ -109,7 +112,7 @@ export default function EventDetail() {
           <View style={{ gap: 6, marginTop: 6 }}>
             {event.changes.map((c, i) => (
               <View key={`${c.field}-${i}`}>
-                <Text style={base.label}>{c.field}</Text>
+                <Text style={base.hint}>{c.field}</Text>
                 <Text>
                   {c.from ?? '—'} → {c.to ?? '—'}
                 </Text>
@@ -117,7 +120,7 @@ export default function EventDetail() {
             ))}
           </View>
           {event.reason ? (
-            <Text style={[base.label, { marginTop: 8 }]}>Reason given: {event.reason}</Text>
+            <Text style={[base.hint, { marginTop: 8 }]}>Reason given: {event.reason}</Text>
           ) : null}
         </Card>
       ) : null}
@@ -146,7 +149,7 @@ export default function EventDetail() {
               );
             })}
           </View>
-          <Text style={base.label}>
+          <Text style={base.hint}>
             Tap a serial for its full movement history.
             {event.overriddenSerials.length > 0
               ? ' Amber cylinders were selected without a scan.'
@@ -217,7 +220,7 @@ function PhotoCard({ photo }: { photo: BatchPhotoDto }) {
           {loading ? (
             <ActivityIndicator />
           ) : (
-            <Text style={{ color: '#1f6feb', fontWeight: '600' }}>Tap to load the photo</Text>
+            <Text style={{ color: colors.brand, fontWeight: '600' }}>Tap to load the photo</Text>
           )}
         </Pressable>
       )}
@@ -236,7 +239,7 @@ function PhotoCard({ photo }: { photo: BatchPhotoDto }) {
           }
         />
         {delayedHours >= 1 ? (
-          <Text style={base.label}>
+          <Text style={base.hint}>
             Reached the server {delayedHours} hour{delayedHours === 1 ? '' : 's'} after it was taken
             — it was captured offline and synced later.
           </Text>
@@ -244,7 +247,7 @@ function PhotoCard({ photo }: { photo: BatchPhotoDto }) {
       </View>
 
       {!hasFix ? (
-        <Text style={base.label}>
+        <Text style={base.hint}>
           No position was recorded. The photo and its timestamp still stand; only the location is
           missing, and the reason is above.
         </Text>
@@ -262,7 +265,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(127,127,127,0.12)',
+    backgroundColor: colors.sunken,
   },
   serial: {
     fontFamily: 'monospace',
@@ -270,7 +273,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 3,
     borderRadius: 6,
-    backgroundColor: 'rgba(127,127,127,0.15)',
+    backgroundColor: colors.sunken,
   },
-  serialUnscanned: { backgroundColor: 'rgba(184,134,11,0.28)' },
+  serialUnscanned: { backgroundColor: colors.warningTint },
 });

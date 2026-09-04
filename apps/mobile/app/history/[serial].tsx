@@ -11,6 +11,7 @@ import {
   ScreenScroll,
   styles,
 } from '../../src/ui/components';
+import { colors } from '../../src/ui/theme';
 
 /**
  * One cylinder's chain, oldest hop first — the evidence the narrative's mandatory
@@ -89,7 +90,7 @@ export default function CylinderHistory() {
               {data.cylinder.serialCode}
             </Text>
             <Text style={{ fontSize: 15 }}>Now at: {data.cylinder.currentLocation}</Text>
-            <Text style={styles.label}>
+            <Text style={styles.hint}>
               {data.batch.contents} · project {data.batch.projectNumber}
             </Text>
           </Card>
@@ -133,7 +134,7 @@ function Hop({ event, index, last }: { event: MovementEventDto; index: number; l
         <Text style={{ fontSize: 15 }}>
           {event.type === 'INTAKE' ? event.toName : `${event.fromName} → ${event.toName}`}
         </Text>
-        <Text style={styles.label}>
+        <Text style={styles.hint}>
           {stamp(event.deviceAt)} · {event.userName}
           {lag ? ` · ${lag}` : ''}
         </Text>
@@ -147,7 +148,7 @@ const dot = {
   height: 10,
   borderRadius: 5,
   marginTop: 5,
-  backgroundColor: '#1f6feb',
+  backgroundColor: colors.brand,
 };
-const dotLast = { backgroundColor: '#2e7d32' };
-const line = { flex: 1, width: 2, backgroundColor: 'rgba(127,127,127,0.35)', marginTop: 2 };
+const dotLast = { backgroundColor: colors.success };
+const line = { flex: 1, width: 2, backgroundColor: colors.border, marginTop: 2 };

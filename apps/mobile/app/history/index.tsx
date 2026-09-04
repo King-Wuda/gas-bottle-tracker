@@ -18,6 +18,7 @@ import {
   SecondaryButton,
   styles as base,
 } from '../../src/ui/components';
+import { colors } from '../../src/ui/theme';
 
 /**
  * Section 10 — History.
@@ -47,11 +48,11 @@ const KINDS: BatchEventKind[] = ['CREATED', 'INITIALIZED', 'TRANSFER', 'RETURN',
 
 /** The left-hand rail colour, so a kind is recognisable before the text is read. */
 const KIND_COLOUR: Record<BatchEventKind, string> = {
-  CREATED: '#1f6feb',
-  INITIALIZED: '#2f7a4d',
-  TRANSFER: '#b8860b',
-  RETURN: '#6f42c1',
-  AMENDED: '#c0392b',
+  CREATED: colors.brand,
+  INITIALIZED: colors.success,
+  TRANSFER: colors.warning,
+  RETURN: colors.brandLight,
+  AMENDED: colors.danger,
 };
 
 const SEARCH_DEBOUNCE_MS = 200;
@@ -146,7 +147,7 @@ export default function HistoryFeed() {
         />
       ) : (
         <>
-          <Text style={base.label}>
+          <Text style={base.hint}>
             {events.length} event{events.length === 1 ? '' : 's'}
             {truncated ? ' · showing the most recent only' : ''}
           </Text>
@@ -219,7 +220,7 @@ function EventRow({ event, onPress }: { event: BatchEventSummary; onPress: () =>
 function Tag({ label, tone }: { label: string; tone: 'ok' | 'warn' }) {
   return (
     <View style={[styles.tag, tone === 'ok' ? styles.tagOk : styles.tagWarn]}>
-      <Text style={[styles.tagText, tone === 'warn' && { color: '#8a6508' }]}>{label}</Text>
+      <Text style={[styles.tagText, tone === 'warn' && { color: colors.warning }]}>{label}</Text>
     </View>
   );
 }
@@ -227,7 +228,7 @@ function Tag({ label, tone }: { label: string; tone: 'ok' | 'warn' }) {
 function FilterPill({
   label,
   active,
-  colour = '#1f6feb',
+  colour = colors.brand,
   onPress,
 }: {
   label: string;
@@ -274,7 +275,7 @@ const styles = StyleSheet.create({
   filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   pill: {
     borderWidth: 1,
-    borderColor: 'rgba(127,127,127,0.45)',
+    borderColor: colors.borderStrong,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -290,7 +291,7 @@ const styles = StyleSheet.create({
   meta: { fontSize: 12, opacity: 0.6 },
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
   tag: { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
-  tagOk: { backgroundColor: 'rgba(47,122,77,0.18)' },
-  tagWarn: { backgroundColor: 'rgba(184,134,11,0.22)' },
+  tagOk: { backgroundColor: colors.successTint },
+  tagWarn: { backgroundColor: colors.warningTint },
   tagText: { fontSize: 11, fontWeight: '700' },
 });

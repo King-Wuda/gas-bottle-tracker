@@ -8,8 +8,16 @@ import { useScanFlow } from '../../src/scanning/ScanFlowContext';
 import { playCue } from '../../src/sound';
 import { useSync } from '../../src/sync/SyncContext';
 import { enqueueMutation } from '../../src/sync/worker';
-import { Card, ErrorText, PrimaryButton, ScreenScroll, styles } from '../../src/ui/components';
+import {
+  Card,
+  ErrorText,
+  Notice,
+  PrimaryButton,
+  ScreenScroll,
+  styles,
+} from '../../src/ui/components';
 import { Select } from '../../src/ui/controls';
+import { colors } from '../../src/ui/theme';
 
 type Choice = { kind: 'site'; id: string; name: string } | { kind: 'stores' };
 
@@ -127,19 +135,19 @@ export default function Destination() {
         Move {selectedCount} cylinder(s) from {batch.projectNumber}
       </Text>
       {overrides.length > 0 ? (
-        <Text style={{ color: '#b8860b', fontWeight: '600' }}>
-          {overrides.length} of these were not scanned — they will be recorded as an admin override.
-        </Text>
+        <Notice tone="warning" title={`${overrides.length} were not scanned`}>
+          They will be recorded as an admin override on the audit trail.
+        </Notice>
       ) : null}
       {photoOverride ? (
-        <Text style={{ color: '#b8860b', fontWeight: '600' }}>
-          No photo was taken — this transfer will be recorded as an admin camera override.
-        </Text>
+        <Notice tone="warning" title="No photo of the batch">
+          This transfer will be recorded as an admin camera override.
+        </Notice>
       ) : null}
       {!online ? (
-        <Text style={styles.label}>
+        <Notice tone="neutral" title="Offline">
           Offline — this transfer will be queued and sent automatically when signal returns.
-        </Text>
+        </Notice>
       ) : null}
 
       {destinations.map((d) => {
@@ -149,7 +157,7 @@ export default function Destination() {
             : choice?.kind === 'site' && choice.id === d.id;
         return (
           <Card key={d.kind === 'site' ? d.id : 'stores'} onPress={() => setChoice(d)}>
-            <Text style={{ fontWeight: '700', color: selected ? '#1f6feb' : undefined }}>
+            <Text style={{ fontWeight: '700', color: selected ? colors.brand : undefined }}>
               {selected ? '● ' : '○ '}
               {d.kind === 'site' ? d.name : 'Back to Stores'}
             </Text>
@@ -174,7 +182,7 @@ export default function Destination() {
             onChange={setManagerId}
             options={managers.map((m) => ({ value: m.id, label: m.name, hint: m.email }))}
           />
-          <Text style={styles.label}>
+          <Text style={styles.hint}>
             {mustReassign
               ? `${batch.projectManagerName} has been deactivated — choose who takes this batch on.`
               : managerChanged

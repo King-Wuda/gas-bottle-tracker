@@ -101,7 +101,7 @@ export default function QueueScreen() {
         />
       ) : (
         <>
-          <Text style={styles.label}>
+          <Text style={styles.hint}>
             {online ? 'Online' : 'Offline'} · {pending.length} waiting · {rejected.length} need
             attention
           </Text>
@@ -109,7 +109,7 @@ export default function QueueScreen() {
           {pending.length > 0 ? (
             <>
               <Text style={heading}>Waiting to sync</Text>
-              <Text style={styles.label}>
+              <Text style={styles.hint}>
                 Saved on this device. These send themselves — you can close the app.
               </Text>
               {pending.map((row) => (
@@ -126,7 +126,7 @@ export default function QueueScreen() {
           {rejected.length > 0 ? (
             <>
               <Text style={heading}>Needs attention</Text>
-              <Text style={styles.label}>
+              <Text style={styles.hint}>
                 The server refused these. Retrying sends the same submission again under its
                 original reference, so a resend can never create a duplicate.
               </Text>
@@ -154,9 +154,9 @@ function PendingRow({ row }: { row: OutboxRecord }) {
       <Text style={rowTitle}>
         {KIND_LABEL[row.kind]} · {row.label}
       </Text>
-      <Text style={styles.label}>Captured {when(row.createdAt)}</Text>
+      <Text style={styles.hint}>Captured {when(row.createdAt)}</Text>
       {row.attempts > 0 ? (
-        <Text style={styles.label}>
+        <Text style={styles.hint}>
           {row.attempts} failed attempt(s)
           {waiting ? ` · next try ${when(row.nextAttemptAt)}` : ''}
         </Text>
@@ -185,14 +185,14 @@ function RejectedRow({
       <Text style={rowTitle}>
         {KIND_LABEL[row.kind]} · {row.label}
       </Text>
-      <Text style={styles.label}>Captured {when(row.createdAt)}</Text>
+      <Text style={styles.hint}>Captured {when(row.createdAt)}</Text>
       <Text style={styles.error}>
         {refusal ? `${refusal.code}: ${refusal.message}` : 'The server refused this submission.'}
       </Text>
 
       {perScan.length > 0 ? (
         <View style={{ gap: 4, marginTop: 4 }}>
-          <Text style={styles.label}>{perScan.length} cylinder(s) rejected</Text>
+          <Text style={styles.hint}>{perScan.length} cylinder(s) rejected</Text>
           {perScan.map((r) => (
             <Text key={`${r.serialCode}-${r.code}`} style={{ fontSize: 13, opacity: 0.8 }}>
               <Text style={{ fontFamily: 'monospace' }}>{r.serialCode}</Text> — {r.message}

@@ -4,6 +4,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import type { CapturedPhoto } from '@gct/shared';
 import { buildCapturedPhoto } from '../photo/capture';
 import { PrimaryButton, SecondaryButton, styles as base } from '../ui/components';
+import { colors } from '../ui/theme';
 
 /**
  * Photographing the collection driver's ID document, on the driver details screen.
@@ -203,15 +204,15 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.8)',
     borderRadius: 8,
   },
-  preview: { height: 200, borderRadius: 12, backgroundColor: '#111' },
-  waived: { backgroundColor: 'rgba(184,134,11,0.18)', borderRadius: 10, padding: 12, gap: 4 },
-  waivedText: { fontWeight: '700', color: '#b8860b' },
+  preview: { height: 200, borderRadius: 12, backgroundColor: colors.ink },
+  waived: { backgroundColor: colors.warningTint, borderRadius: 10, padding: 12, gap: 4 },
+  waivedText: { fontWeight: '700', color: colors.warning },
   override: {
     borderWidth: 1,
-    borderColor: '#b8860b',
+    borderColor: colors.warning,
     borderRadius: 10,
     paddingVertical: 12,
     alignItems: 'center',
   },
-  overrideText: { color: '#b8860b', fontSize: 15, fontWeight: '700' },
+  overrideText: { color: colors.warning, fontSize: 15, fontWeight: '700' },
 });

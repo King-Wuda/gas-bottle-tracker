@@ -4,6 +4,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import type { CapturedPhoto } from '@gct/shared';
 import { buildCapturedPhoto, describeFix } from '../photo/capture';
 import { PrimaryButton, SecondaryButton, styles as base } from '../ui/components';
+import { colors } from '../ui/theme';
 
 /**
  * The batch photo step, shared by initialization, transfer and returns.
@@ -181,18 +182,18 @@ const styles = StyleSheet.create({
   preview: { height: 320, borderRadius: 14, backgroundColor: '#000' },
   note: { opacity: 0.7, fontSize: 14 },
   busyRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
-  stamp: { backgroundColor: 'rgba(30,126,52,0.15)', borderRadius: 10, padding: 12, gap: 2 },
-  stampWarn: { backgroundColor: 'rgba(184,134,11,0.18)' },
+  stamp: { backgroundColor: colors.successTint, borderRadius: 10, padding: 12, gap: 2 },
+  stampWarn: { backgroundColor: colors.warningTint },
   stampLine: { fontWeight: '600', fontSize: 14 },
   stampHint: { fontSize: 13, opacity: 0.75, marginTop: 4 },
   permission: { gap: 12, paddingVertical: 20 },
   permissionTitle: { fontSize: 17, fontWeight: '700' },
   override: {
     borderWidth: 1,
-    borderColor: '#b8860b',
+    borderColor: colors.warning,
     borderRadius: 10,
     paddingVertical: 13,
     alignItems: 'center',
   },
-  overrideText: { color: '#b8860b', fontSize: 16, fontWeight: '700' },
+  overrideText: { color: colors.warning, fontSize: 16, fontWeight: '700' },
 });

@@ -5,7 +5,7 @@
     "scheme": "gct",
     "version": "0.0.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "android": {
       "package": "com.gct.tracker",
       "permissions": [
@@ -28,6 +28,7 @@
     "experiments": {
       "typedRoutes": true,
       "baseUrl": "/app"
-    }
+    },
+    "backgroundColor": "#F1F5FA"
   }
 }

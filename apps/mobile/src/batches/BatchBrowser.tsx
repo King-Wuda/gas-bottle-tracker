@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   formatBatchDate,
   type BatchListScope,
@@ -23,11 +23,10 @@ import {
   Field,
   LoadingState,
   ScreenScroll,
-  SecondaryButton,
-  styles as base,
 } from '../ui/components';
 import { Chip, Select, StatusBadge, type BadgeTone } from '../ui/controls';
 import { BatchContents } from './BatchContents';
+import { colors, radius, space, type } from '../ui/theme';
 
 /**
  * The batch list, search and filter panel shared by Transfer, Returns and History.
@@ -226,7 +225,7 @@ export function BatchBrowser({
 
   return (
     <ScreenScroll>
-      <Text style={{ opacity: 0.7 }}>{config.intro}</Text>
+      <Text style={rowStyles.intro}>{config.intro}</Text>
 
       {headerExtra}
 
@@ -240,14 +239,21 @@ export function BatchBrowser({
         // keystroke, so there is nothing to submit.
       />
 
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-        <View style={{ flex: 1 }}>
-          <SecondaryButton
-            title={panelOpen ? 'Hide filters' : 'Filters'}
-            onPress={() => setPanelOpen((o) => !o)}
-          />
-        </View>
-        <Text style={{ opacity: 0.65, fontSize: 14 }}>
+      {/* The filter toggle sizes to its label rather than stretching: a full-width
+          secondary button reads as the screen's main action, and it is not. */}
+      <View style={rowStyles.filterRow}>
+        <Pressable
+          role="button"
+          aria-expanded={panelOpen}
+          onPress={() => setPanelOpen((o) => !o)}
+          style={({ pressed }) => [
+            rowStyles.filterButton,
+            (panelOpen || pressed) && rowStyles.filterButtonOn,
+          ]}
+        >
+          <Text style={rowStyles.filterButtonText}>{panelOpen ? 'Hide filters' : 'Filters'}</Text>
+        </Pressable>
+        <Text style={rowStyles.count}>
           {matched} of {total} batches
         </Text>
       </View>
@@ -279,12 +285,12 @@ export function BatchBrowser({
       ) : null}
 
       {chips.length > 0 ? (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+        <View style={rowStyles.chipRow}>
           {chips.map((c) => (
             <Chip key={c.key} label={c.label} onRemove={c.clear} />
           ))}
-          <Pressable role="button" onPress={clearAll} style={{ paddingHorizontal: 6 }}>
-            <Text style={{ color: '#1f6feb', fontWeight: '600', fontSize: 13 }}>Clear all</Text>
+          <Pressable role="button" onPress={clearAll} style={rowStyles.clearAll}>
+            <Text style={rowStyles.clearAllText}>Clear all</Text>
           </Pressable>
         </View>
       ) : null}
@@ -314,34 +320,29 @@ export function BatchBrowser({
           const outstanding = b.cylinderCount - b.returnedCount;
           return (
             <Card key={b.id} onPress={() => onPick(b)}>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  justifyContent: 'space-between',
-                  alignItems: 'flex-start',
-                  gap: 10,
-                }}
-              >
-                <Text style={{ fontSize: 16, fontWeight: '700', flexShrink: 1 }}>
-                  {b.projectNumber}
-                </Text>
+              <View style={rowStyles.cardHead}>
+                <Text style={rowStyles.projectNumber}>{b.projectNumber}</Text>
                 <StatusBadge label={badge.label} tone={badge.tone} />
               </View>
-              <Text style={{ opacity: 0.75 }}>
+              <Text style={rowStyles.where}>
                 {b.projectManagerName} · {b.siteName}
               </Text>
 
               {/* Contents AND where each gas actually is — the partial-movement fact
                   this list exists to communicate. */}
-              <View style={{ marginTop: 2 }}>
+              <View style={rowStyles.contents}>
                 <BatchContents lines={b.lines} distribution={b.distribution} compact />
               </View>
 
-              <Text style={base.label}>
-                {formatBatchDate(b.createdAt)} · {outstanding} of {b.cylinderCount} still out
-              </Text>
+              <View style={rowStyles.cardFoot}>
+                <Text style={rowStyles.meta}>{formatBatchDate(b.createdAt)}</Text>
+                <Text style={rowStyles.metaDot}>·</Text>
+                <Text style={[rowStyles.meta, outstanding > 0 && rowStyles.metaOut]}>
+                  {outstanding} of {b.cylinderCount} still out
+                </Text>
+              </View>
               {busyBatchId === b.id ? (
-                <ActivityIndicator style={{ alignSelf: 'flex-start' }} />
+                <ActivityIndicator color={colors.brand} style={rowStyles.busy} />
               ) : null}
             </Card>
           );
@@ -350,3 +351,41 @@ export function BatchBrowser({
     </ScreenScroll>
   );
 }
+
+const rowStyles = StyleSheet.create({
+  intro: { ...type.caption, fontSize: 14 },
+
+  filterRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  filterButton: {
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
+    paddingVertical: space.sm + 1,
+    paddingHorizontal: space.lg,
+  },
+  filterButtonOn: { borderColor: colors.brand, backgroundColor: colors.brandTint },
+  filterButtonText: { color: colors.brand, fontSize: 14, fontWeight: '700' },
+  count: { ...type.caption, marginLeft: 'auto' },
+
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, alignItems: 'center' },
+  clearAll: { paddingHorizontal: space.sm, paddingVertical: space.xs },
+  clearAllText: { color: colors.brand, fontWeight: '700', fontSize: 13 },
+
+  cardHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: space.md,
+  },
+  projectNumber: { fontSize: 17, fontWeight: '800', color: colors.ink, flexShrink: 1 },
+  where: { ...type.caption, fontSize: 14 },
+  contents: { marginTop: space.xs / 2 },
+  cardFoot: { flexDirection: 'row', alignItems: 'center', gap: space.xs + 2, flexWrap: 'wrap' },
+  meta: { ...type.overline, fontSize: 10.5 },
+  metaDot: { color: colors.inkFaint, fontSize: 11 },
+  /** Outstanding cylinders are the reason this row is in the list, so they are the
+   *  one piece of metadata allowed to carry colour. */
+  metaOut: { color: colors.warning },
+  busy: { alignSelf: 'flex-start' },
+});

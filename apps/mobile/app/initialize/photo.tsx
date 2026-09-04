@@ -9,7 +9,7 @@ import { PhotoCapture } from '../../src/components/PhotoCapture';
 import { useScanFlow } from '../../src/scanning/ScanFlowContext';
 import { useSync } from '../../src/sync/SyncContext';
 import { enqueueMutation } from '../../src/sync/worker';
-import { ScreenScroll, styles } from '../../src/ui/components';
+import { Notice, ScreenScroll, styles } from '../../src/ui/components';
 
 /**
  * Workflow A2's last step: photograph the batch, then submit.
@@ -78,15 +78,15 @@ export default function InitializePhoto() {
         {batch.projectNumber} · {batch.contents}
       </Text>
       {overrides.length > 0 ? (
-        <Text style={{ color: '#b8860b', fontWeight: '600' }}>
-          {overrides.length} of these were not scanned — they will be recorded as an admin override.
-        </Text>
+        <Notice tone="warning" title={`${overrides.length} were not scanned`}>
+          They will be recorded as an admin override on the audit trail.
+        </Notice>
       ) : null}
       {!online ? (
-        <Text style={styles.label}>
+        <Notice tone="neutral" title="Offline">
           Offline — this initialization is queued on the device and sent when signal returns. The
           photo goes with it.
-        </Text>
+        </Notice>
       ) : null}
 
       <PhotoCapture
@@ -113,7 +113,7 @@ export default function InitializePhoto() {
       {/* A photo already held from a failed submit — resubmit it rather than making
           the operator walk back to the batch and take it again. */}
       {(photo || photoOverride) && !submitting && error ? (
-        <Text style={styles.label}>
+        <Text style={styles.hint}>
           The photo is still held on this device. Tap the button above to try again.
         </Text>
       ) : null}

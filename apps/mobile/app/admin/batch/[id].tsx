@@ -36,6 +36,7 @@ import {
   styles,
 } from '../../../src/ui/components';
 import { SegmentedToggle, Select } from '../../../src/ui/controls';
+import { colors } from '../../../src/ui/theme';
 
 const DELIVERY_POINTS: { value: InitialDeliveryPoint; label: string }[] = [
   { value: 'STORES', label: INITIAL_DELIVERY_POINT_LABELS.STORES },
@@ -221,7 +222,7 @@ export default function AdminBatchEdit() {
       <Text style={{ opacity: 0.7 }}>
         Created {formatBatchDate(batch.createdAt)} · {batch.quantity} cylinder(s)
       </Text>
-      <Text style={styles.label}>
+      <Text style={styles.hint}>
         Every change here is recorded with your name. Cylinders that have already been transferred
         or returned cannot be edited away.
       </Text>
@@ -254,7 +255,7 @@ export default function AdminBatchEdit() {
             <Text style={{ fontWeight: '700' }}>
               {l.quantity} × {gasName}
             </Text>
-            <Text style={styles.label}>{summariseDistribution(here) || 'No cylinders'}</Text>
+            <Text style={styles.hint}>{summariseDistribution(here) || 'No cylinders'}</Text>
 
             <Select
               label="Supplier"
@@ -279,7 +280,7 @@ export default function AdminBatchEdit() {
               onChangeText={(t) => setDraft(l.id, { quantity: t.replace(/[^0-9]/g, '') })}
             />
             {moved ? (
-              <Text style={styles.label}>
+              <Text style={styles.hint}>
                 Some of these cylinders have already moved. The quantity can still go up, but it can
                 only go down as far as the ones that never left stores.
               </Text>
@@ -297,7 +298,7 @@ export default function AdminBatchEdit() {
 
       <ErrorText>{saveError}</ErrorText>
       {saved && !saveError ? (
-        <Text style={{ color: '#1e7e34', fontWeight: '600' }}>Corrections saved.</Text>
+        <Text style={{ color: colors.success, fontWeight: '600' }}>Corrections saved.</Text>
       ) : null}
 
       <PrimaryButton
@@ -310,7 +311,7 @@ export default function AdminBatchEdit() {
       {batch.lines.some(
         (l) => lineDrafts[l.id]?.supplierId && lineDrafts[l.id]?.supplierId !== l.supplierId,
       ) ? (
-        <Text style={styles.label}>
+        <Text style={styles.hint}>
           Changing the supplier does not reprint the QR labels — they carry the supplier name.
           Re-send the QR sheet from the batch page afterwards.
         </Text>
@@ -322,7 +323,7 @@ export default function AdminBatchEdit() {
           <View style={{ gap: 10, marginTop: 6 }}>
             {amendments.map((a) => (
               <View key={a.id}>
-                <Text style={styles.label}>
+                <Text style={styles.hint}>
                   {formatBatchDate(a.createdAt)} · {a.userName}
                 </Text>
                 {a.changes.map((c, i) => (

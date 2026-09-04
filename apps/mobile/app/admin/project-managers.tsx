@@ -19,6 +19,7 @@ import {
   styles,
 } from '../../src/ui/components';
 import { StatusBadge } from '../../src/ui/controls';
+import { colors } from '../../src/ui/theme';
 
 /** `Alert` is a no-op on react-native-web — see the note in admin/users.tsx. */
 const confirmAction = async (message: string): Promise<boolean> => {
@@ -184,7 +185,7 @@ export default function AdminProjectManagers() {
                 autoCorrect={false}
                 keyboardType="email-address"
               />
-              <Text style={styles.label}>
+              <Text style={styles.hint}>
                 Correcting the address changes where their FUTURE paperwork goes. Batches already
                 sent keep the address they actually went to.
               </Text>
@@ -199,7 +200,7 @@ export default function AdminProjectManagers() {
           ) : (
             <>
               <Text style={{ opacity: 0.75 }}>{pm.email}</Text>
-              <Text style={styles.label}>
+              <Text style={styles.hint}>
                 {pm.projectCount} project(s) · {pm.openBatchCount} batch(es) still open
               </Text>
 
@@ -210,7 +211,7 @@ export default function AdminProjectManagers() {
                     setEditEmail(pm.email);
                   }}
                 >
-                  <Text style={{ color: '#1f6feb', fontWeight: '600' }}>Correct email</Text>
+                  <Text style={{ color: colors.brand, fontWeight: '600' }}>Correct email</Text>
                 </Pressable>
 
                 <Pressable
@@ -229,7 +230,9 @@ export default function AdminProjectManagers() {
                     )
                   }
                 >
-                  <Text style={{ color: pm.active ? '#c0392b' : '#1f6feb', fontWeight: '600' }}>
+                  <Text
+                    style={{ color: pm.active ? colors.danger : colors.brand, fontWeight: '600' }}
+                  >
                     {busyId === pm.id ? 'Working…' : pm.active ? 'Deactivate' : 'Reactivate'}
                   </Text>
                 </Pressable>

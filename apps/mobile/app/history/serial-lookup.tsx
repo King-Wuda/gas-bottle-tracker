@@ -91,7 +91,7 @@ export default function SerialLookup() {
       {qrVerificationConfigured ? (
         <SecondaryButton title="Scan the label instead" onPress={() => setScanning(true)} />
       ) : (
-        <Text style={styles.label}>
+        <Text style={styles.hint}>
           Scanning is unavailable — this build has no QR verification key.
         </Text>
       )}

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Redirect, Stack, useRouter, type Href } from 'expo-router';
 import { useScanFlow } from './ScanFlowContext';
 import { useAuth } from '../auth/AuthContext';
@@ -7,7 +7,9 @@ import { verifyScannedCode, qrVerificationConfigured } from '../qr/verify';
 import { Scanner, type ScanOutcome } from '../components/Scanner';
 import { HeaderLogo } from '../ui/GeaLogo';
 import { RocketFlyby } from '../ui/RocketFlyby';
-import { ErrorText, PrimaryButton, ScreenScroll, styles } from '../ui/components';
+import { ErrorText, Notice, PrimaryButton, ScreenScroll } from '../ui/components';
+import { CheckIcon } from '../ui/icons';
+import { colors, radius, space, type } from '../ui/theme';
 
 /**
  * The mandatory physical scan, shared by Workflow B3 and C3. The spec marks this
@@ -119,13 +121,36 @@ export function ScanStep({
   }
 
   const checklist = (
-    <View style={{ gap: 10 }}>
-      <Text style={{ fontWeight: '700' }}>
-        {selectedCount} of {cylinders.length} selected
-        {overridden.size > 0 ? ` · ${overridden.size} without a scan` : ''}
-      </Text>
+    <View style={step.checklist}>
+      {/* A progress bar, because "17 of 40" is a number you have to read and a bar is
+          something you can see from arm's length with a cylinder in the other hand. */}
+      <View style={step.progressHead}>
+        <Text style={step.progressCount}>
+          {selectedCount} <Text style={step.progressTotal}>of {cylinders.length} selected</Text>
+        </Text>
+        {overridden.size > 0 ? (
+          <Text style={step.progressOverride}>{overridden.size} without a scan</Text>
+        ) : null}
+        {/* Only when everything here was genuinely scanned. A tick beside a set of
+            overrides would say "proved" about the one case that is not, which is the
+            distinction this whole screen exists to keep. */}
+        {complete && selectedCount > 0 && overridden.size === 0 ? <CheckIcon size={20} /> : null}
+      </View>
+      <View style={step.progressTrack}>
+        <View
+          style={[
+            step.progressFill,
+            {
+              width: `${cylinders.length ? (selectedCount / cylinders.length) * 100 : 0}%`,
+              // Amber while any of the progress is asserted rather than scanned, so
+              // the bar never reads as "all proved" when part of it was waved through.
+              backgroundColor: overridden.size > 0 ? colors.warning : colors.success,
+            },
+          ]}
+        />
+      </View>
 
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+      <View style={step.chips}>
         {cylinders.map((c) => {
           const isScanned = scanned.has(c.serialCode);
           const isOverridden = overridden.has(c.serialCode);
@@ -133,28 +158,18 @@ export function ScanStep({
           return (
             <Pressable
               key={c.serialCode}
+              role="button"
+              aria-label={`${c.serialCode}${selected ? ', selected — tap to remove' : ', not scanned'}`}
               onPress={() => selected && deselect(c.serialCode)}
-              style={{
-                paddingHorizontal: 8,
-                paddingVertical: 4,
-                borderRadius: 6,
+              style={[
+                step.chip,
                 // Green = physically scanned. Amber = an admin's assertion. The
                 // distinction is the whole point of the override, so the screen must
                 // not blur it into one "selected" colour.
-                backgroundColor: isScanned
-                  ? '#1e7e34'
-                  : isOverridden
-                    ? '#b8860b'
-                    : 'rgba(127,127,127,0.15)',
-              }}
+                isScanned ? step.chipScanned : isOverridden ? step.chipOverridden : step.chipIdle,
+              ]}
             >
-              <Text
-                style={{
-                  fontFamily: 'monospace',
-                  fontSize: 12,
-                  color: selected ? '#fff' : undefined,
-                }}
-              >
+              <Text style={[step.chipText, selected && step.chipTextOn]}>
                 {c.serialCode}
                 {c.gasTypeName ? ` · ${c.gasTypeName}` : ''}
               </Text>
@@ -162,7 +177,7 @@ export function ScanStep({
           );
         })}
       </View>
-      <Text style={styles.label}>
+      <Text style={step.hint}>
         Tap a selected serial to remove it. Only selected cylinders are submitted.
         {overridden.size > 0
           ? ' Amber cylinders were not scanned — they are recorded as an override.'
@@ -180,11 +195,9 @@ export function ScanStep({
             // here rather than silently dropped on the one screen an operator spends
             // the longest on.
             headerRight: () => (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Pressable onPress={overrideAll} hitSlop={12}>
-                  <Text style={{ color: '#b8860b', fontSize: 15, fontWeight: '700' }}>
-                    Override scan
-                  </Text>
+              <View style={step.headerRight}>
+                <Pressable role="button" onPress={overrideAll} hitSlop={12}>
+                  <Text style={step.overrideAction}>Override scan</Text>
                 </Pressable>
                 <HeaderLogo />
               </View>
@@ -193,15 +206,16 @@ export function ScanStep({
         />
       ) : null}
 
-      <Text style={{ fontSize: 16, fontWeight: '700' }}>
-        {batch.projectNumber} · {batch.contents}
-      </Text>
+      <View>
+        <Text style={type.title}>{batch.projectNumber}</Text>
+        <Text style={step.contents}>{batch.contents}</Text>
+      </View>
 
       {isAdmin ? (
-        <Text style={styles.label}>
-          Admin: &quot;Override scan&quot; selects every cylinder without scanning. Tap any you are
-          not moving to remove it. Overrides are recorded as unscanned on the audit trail.
-        </Text>
+        <Notice tone="warning" title="Admin override available">
+          &quot;Override scan&quot; selects every cylinder without scanning. Tap any you are not
+          moving to remove it. Overrides are recorded as unscanned on the audit trail.
+        </Notice>
       ) : null}
 
       {qrVerificationConfigured ? (
@@ -219,7 +233,7 @@ export function ScanStep({
       )}
 
       {requireAll ? (
-        <Text style={styles.label}>
+        <Text style={step.rule}>
           Every cylinder in this batch has to be scanned before it can be initialized — that is what
           &quot;the labels are all on&quot; means. A partial scan is refused.
         </Text>
@@ -237,10 +251,8 @@ export function ScanStep({
         disabled={selectedCount === 0 || !complete || flyby}
       />
       {selectedCount > 0 ? (
-        <Pressable onPress={clearScans} style={{ paddingVertical: 10 }}>
-          <Text style={{ color: '#c0392b', fontWeight: '600', textAlign: 'center' }}>
-            Clear all selections
-          </Text>
+        <Pressable role="button" onPress={clearScans} style={step.clear}>
+          <Text style={step.clearText}>Clear all selections</Text>
         </Pressable>
       ) : null}
 
@@ -250,3 +262,45 @@ export function ScanStep({
     </ScreenScroll>
   );
 }
+
+const step = StyleSheet.create({
+  contents: { ...type.caption, fontSize: 14, marginTop: 2 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
+  overrideAction: { color: colors.warning, fontSize: 15, fontWeight: '700' },
+
+  checklist: { gap: space.md },
+  progressHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  progressCount: { fontSize: 17, fontWeight: '800', color: colors.ink },
+  progressTotal: { fontSize: 14, fontWeight: '600', color: colors.inkMuted },
+  progressOverride: {
+    marginLeft: 'auto',
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.warning,
+  },
+  progressTrack: {
+    height: 8,
+    borderRadius: radius.pill,
+    backgroundColor: colors.sunken,
+    overflow: 'hidden',
+  },
+  progressFill: { height: '100%', borderRadius: radius.pill },
+
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm - 2 },
+  chip: {
+    paddingHorizontal: space.sm + 2,
+    paddingVertical: space.xs + 2,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+  },
+  chipIdle: { backgroundColor: colors.sunken, borderColor: colors.border },
+  chipScanned: { backgroundColor: colors.success, borderColor: colors.success },
+  chipOverridden: { backgroundColor: colors.warning, borderColor: colors.warning },
+  chipText: { fontFamily: 'monospace', fontSize: 12, color: colors.inkMuted },
+  chipTextOn: { color: colors.onBrand, fontWeight: '700' },
+
+  hint: type.caption,
+  rule: { ...type.caption, fontStyle: 'italic' },
+  clear: { paddingVertical: space.md },
+  clearText: { color: colors.danger, fontWeight: '700', textAlign: 'center', fontSize: 14 },
+});

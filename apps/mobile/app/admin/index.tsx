@@ -27,7 +27,7 @@ export default function AdminHome() {
         <Text style={{ opacity: 0.75 }}>
           Admins, stores managers and technicians — the accounts that can sign in.
         </Text>
-        <Text style={styles.label}>Add someone, change a role, or deactivate an account.</Text>
+        <Text style={styles.hint}>Add someone, change a role, or deactivate an account.</Text>
       </Card>
 
       <Card onPress={() => router.push('/admin/project-managers')}>
@@ -35,7 +35,7 @@ export default function AdminHome() {
         <Text style={{ opacity: 0.75 }}>
           The people QR sheets and delivery notes are emailed to. They do not sign in.
         </Text>
-        <Text style={styles.label}>Add a manager, correct an address, or deactivate one.</Text>
+        <Text style={styles.hint}>Add a manager, correct an address, or deactivate one.</Text>
       </Card>
 
       <Card onPress={() => router.push('/history')}>
@@ -43,7 +43,7 @@ export default function AdminHome() {
         <Text style={{ opacity: 0.75 }}>
           Find the batch in History, open it, then tap &quot;Correct these details&quot;.
         </Text>
-        <Text style={styles.label}>
+        <Text style={styles.hint}>
           Every correction is recorded with your name and what changed.
         </Text>
       </Card>

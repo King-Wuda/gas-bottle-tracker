@@ -16,6 +16,7 @@ import {
   Card,
   ErrorText,
   Field,
+  Notice,
   PrimaryButton,
   ScreenScroll,
   SecondaryButton,
@@ -201,22 +202,22 @@ export default function Sign() {
         {selectedCount} cylinder(s) from {batch.projectNumber}
       </Text>
       {overrides.length > 0 ? (
-        <Text style={{ color: '#b8860b', fontWeight: '600' }}>
-          {overrides.length} of these were not scanned. They will be listed on the delivery note as
-          &quot;no scan&quot; — make sure the driver sees that before signing.
-        </Text>
+        <Notice tone="warning" title={`${overrides.length} were not scanned`}>
+          They will be listed on the delivery note as &quot;no scan&quot; — make sure the driver
+          sees that before signing.
+        </Notice>
       ) : null}
       {photoOverride ? (
-        <Text style={{ color: '#b8860b', fontWeight: '600' }}>
-          No photo was taken — this return will be recorded as an admin camera override. Make sure
-          the driver knows before they sign.
-        </Text>
+        <Notice tone="warning" title="No photo of the batch">
+          This return will be recorded as an admin camera override. Make sure the driver knows
+          before they sign.
+        </Notice>
       ) : null}
       {!online ? (
-        <Text style={styles.label}>
+        <Notice tone="neutral" title="Offline">
           Offline — the signed return is queued on this device and sent when signal returns. The
           photo, the ID and the signature go with it.
-        </Text>
+        </Notice>
       ) : null}
 
       <Card>
@@ -237,7 +238,7 @@ export default function Sign() {
           placeholder="ID, passport or licence number"
           editable={!submitting}
         />
-        <Text style={styles.label}>
+        <Text style={styles.hint}>
           Whatever document they are carrying — an ID card, a passport, a foreign licence. Type it
           exactly as printed.
         </Text>
@@ -264,13 +265,13 @@ export default function Sign() {
         {/* What the server made of the photograph. Always a suggestion: the operator
             is holding the document, and the app is not. */}
         {reading.state === 'busy' ? (
-          <Text style={styles.label}>Reading the number off the photo…</Text>
+          <Text style={styles.hint}>Reading the number off the photo…</Text>
         ) : null}
         {reading.state === 'read' ? (
           <View style={{ gap: 6 }}>
             <Text style={{ fontWeight: '700' }}>Read from the photo</Text>
             <Text style={{ fontFamily: 'monospace' }}>{reading.description}</Text>
-            <Text style={styles.label}>
+            <Text style={styles.hint}>
               Check it against the card before you use it. The checksum on the number is valid,
               which is not the same as it being this driver&apos;s.
             </Text>
@@ -288,9 +289,9 @@ export default function Sign() {
             />
           </View>
         ) : null}
-        {reading.state === 'none' ? <Text style={styles.label}>{reading.reason}</Text> : null}
+        {reading.state === 'none' ? <Text style={styles.hint}>{reading.reason}</Text> : null}
         {!online && driverIdPhoto ? (
-          <Text style={styles.label}>
+          <Text style={styles.hint}>
             Offline — the number cannot be read off the photo from here. Type it in; the photo is
             queued with the return either way.
           </Text>
@@ -302,7 +303,7 @@ export default function Sign() {
         <SignaturePad onChange={onSign} />
       </View>
 
-      <Text style={styles.label}>
+      <Text style={styles.hint}>
         The driver signs above, then the return is submitted. A signed delivery note carrying the
         signature and the ID is emailed to the project manager.
       </Text>

@@ -20,6 +20,7 @@ import {
   styles,
 } from '../../src/ui/components';
 import { SegmentedToggle, StatusBadge } from '../../src/ui/controls';
+import { colors } from '../../src/ui/theme';
 
 const ROLES: { value: Role; label: string }[] = [
   { value: 'TECHNICIAN', label: 'Technician' },
@@ -207,7 +208,7 @@ export default function AdminUsers() {
               />
             </View>
             <Text style={{ opacity: 0.75 }}>{u.email}</Text>
-            <Text style={styles.label}>
+            <Text style={styles.hint}>
               {u.batchesCreated} batch(es) created · {u.movementsRecorded} movement(s) recorded
             </Text>
 
@@ -232,7 +233,7 @@ export default function AdminUsers() {
                   }
                 />
                 {isMe ? (
-                  <Text style={styles.label}>
+                  <Text style={styles.hint}>
                     You cannot change your own role or deactivate yourself.
                   </Text>
                 ) : null}
@@ -256,7 +257,7 @@ export default function AdminUsers() {
               >
                 <Text
                   style={{
-                    color: u.active ? '#c0392b' : '#1f6feb',
+                    color: u.active ? colors.danger : colors.brand,
                     fontWeight: '600',
                   }}
                 >

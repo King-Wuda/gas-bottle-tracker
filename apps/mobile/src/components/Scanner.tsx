@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { playCue } from '../sound';
+import { colors, radius, space, type } from '../ui/theme';
 
 export type ScanOutcome =
   | { kind: 'accepted'; serialCode: string; payload: string }
@@ -112,36 +113,49 @@ function ScanFeedback({ outcome }: { outcome: ScanOutcome }) {
 }
 
 const styles = StyleSheet.create({
-  wrap: { gap: 12 },
+  wrap: { gap: space.md },
   viewfinder: {
-    height: 280,
-    borderRadius: 14,
+    height: 300,
+    borderRadius: radius.lg,
     overflow: 'hidden',
-    backgroundColor: '#000',
+    backgroundColor: colors.viewfinder,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
   },
+  // Corner brackets rather than a full box: a closed rectangle reads as a frame the
+  // label must fit exactly inside, and it does not have to.
   reticle: {
     position: 'absolute',
-    top: '18%',
-    left: '18%',
-    right: '18%',
-    bottom: '18%',
+    top: '16%',
+    left: '14%',
+    right: '14%',
+    bottom: '16%',
     borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.85)',
-    borderRadius: 12,
+    borderColor: 'rgba(255,255,255,0.9)',
+    borderRadius: radius.md,
   },
-  note: { opacity: 0.7, fontSize: 14 },
-  feedback: { borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14 },
-  feedbackText: { fontWeight: '600', color: '#fff' },
-  ok: { backgroundColor: '#1e7e34' },
-  warn: { backgroundColor: '#b8860b' },
-  bad: { backgroundColor: '#c0392b' },
-  permission: { gap: 12, paddingVertical: 20 },
-  permissionTitle: { fontSize: 17, fontWeight: '700' },
-  grantButton: {
-    backgroundColor: '#1f6feb',
-    borderRadius: 10,
-    paddingVertical: 14,
+  note: { ...type.caption, textAlign: 'center' },
+  feedback: {
+    borderRadius: radius.md,
+    paddingVertical: space.md,
+    paddingHorizontal: space.lg,
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: space.sm,
   },
-  grantText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  feedbackText: { fontWeight: '700', color: '#fff', fontSize: 14, flex: 1 },
+  ok: { backgroundColor: colors.success },
+  warn: { backgroundColor: colors.warning },
+  bad: { backgroundColor: colors.danger },
+  permission: { gap: space.md, paddingVertical: space.xl, alignItems: 'center' },
+  permissionTitle: { ...type.title, textAlign: 'center' },
+  grantButton: {
+    backgroundColor: colors.brand,
+    borderRadius: radius.md,
+    paddingVertical: space.lg,
+    paddingHorizontal: space.xl,
+    alignItems: 'center',
+    alignSelf: 'stretch',
+  },
+  grantText: { color: colors.onBrand, fontSize: 16, fontWeight: '700' },
 });

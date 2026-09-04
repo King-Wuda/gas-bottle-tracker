@@ -12,6 +12,8 @@ import {
 import { useAuth, ApiError } from '../src/auth/AuthContext';
 import { configWarning } from '../src/config';
 import { GeaLogo } from '../src/ui/GeaLogo';
+import { CylinderIcon } from '../src/ui/icons';
+import { colors, radius, shadow, space, type } from '../src/ui/theme';
 
 export default function Login() {
   const { signIn } = useAuth();
@@ -47,86 +49,143 @@ export default function Login() {
           and this is the first screen anyone sees, so it is the one that must not
           be missing it. */}
       <View style={styles.brand} pointerEvents="none">
-        <GeaLogo width={78} />
+        <GeaLogo width={84} />
       </View>
 
       <View style={styles.container}>
-        <Text style={styles.title}>Gas Cylinder Tracker</Text>
-        <Text style={styles.subtitle}>Sign in with your work account</Text>
+        <View style={styles.card}>
+          <View style={styles.mark}>
+            <CylinderIcon color={colors.brand} size={30} />
+          </View>
+          <Text style={styles.title}>Gas Cylinder Tracker</Text>
+          <Text style={styles.subtitle}>Sign in with your work account</Text>
 
-        {/* A misconfigured standalone build cannot reach anything; say so here rather
-            than letting every request fail as an unexplained network error. */}
-        {configWarning ? <Text style={styles.configWarning}>{configWarning}</Text> : null}
+          {/* A misconfigured standalone build cannot reach anything; say so here
+              rather than letting every request fail as an unexplained network error. */}
+          {configWarning ? <Text style={styles.configWarning}>{configWarning}</Text> : null}
 
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="email-address"
-          textContentType="username"
-          value={email}
-          onChangeText={setEmail}
-          editable={!busy}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          secureTextEntry
-          textContentType="password"
-          value={password}
-          onChangeText={setPassword}
-          editable={!busy}
-          onSubmitEditing={() => canSubmit && onSubmit()}
-        />
+          <View style={styles.fields}>
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              placeholderTextColor={colors.inkFaint}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+              textContentType="username"
+              value={email}
+              onChangeText={setEmail}
+              editable={!busy}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor={colors.inkFaint}
+              secureTextEntry
+              textContentType="password"
+              value={password}
+              onChangeText={setPassword}
+              editable={!busy}
+              onSubmitEditing={() => canSubmit && onSubmit()}
+            />
+          </View>
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+          {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        <Pressable
-          style={[styles.button, !canSubmit && styles.buttonDisabled]}
-          onPress={onSubmit}
-          disabled={!canSubmit}
-        >
-          {busy ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Sign in</Text>
-          )}
-        </Pressable>
+          <Pressable
+            role="button"
+            accessibilityState={{ disabled: !canSubmit, busy }}
+            style={({ pressed }) => [
+              styles.button,
+              canSubmit && shadow.brand,
+              pressed && canSubmit && styles.buttonPressed,
+              !canSubmit && styles.buttonDisabled,
+            ]}
+            onPress={onSubmit}
+            disabled={!canSubmit}
+          >
+            {busy ? (
+              <ActivityIndicator color={colors.onBrand} />
+            ) : (
+              <Text style={styles.buttonText}>Sign in</Text>
+            )}
+          </Pressable>
+        </View>
+
+        <Text style={styles.footnote}>
+          Cylinder movements are recorded with a scan, a photo and a signature.
+        </Text>
       </View>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  brand: { position: 'absolute', top: 16, right: 20 },
-  container: { flex: 1, justifyContent: 'center', padding: 24, gap: 12 },
-  title: { fontSize: 26, fontWeight: '700', textAlign: 'center' },
-  subtitle: { fontSize: 15, opacity: 0.6, textAlign: 'center', marginBottom: 12 },
+  flex: { flex: 1, backgroundColor: colors.canvas },
+  brand: { position: 'absolute', top: space.lg, right: space.xl, zIndex: 1 },
+  container: { flex: 1, justifyContent: 'center', padding: space.xl, gap: space.lg },
+
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: space.xxl,
+    gap: space.md,
+    // Wider than a phone on a desktop browser would stretch the fields to silly
+    // lengths; centred so it reads as a panel rather than a full-bleed form.
+    maxWidth: 420,
+    width: '100%',
+    alignSelf: 'center',
+    ...shadow.raised,
+  },
+  mark: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.lg,
+    backgroundColor: colors.brandTint,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginBottom: space.xs,
+  },
+  title: { ...type.display, textAlign: 'center' },
+  subtitle: { ...type.caption, fontSize: 14, textAlign: 'center', marginBottom: space.sm },
+
+  fields: { gap: space.md },
   input: {
     borderWidth: 1,
-    borderColor: 'rgba(127,127,127,0.4)',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.md + 2,
     fontSize: 16,
+    color: colors.ink,
   },
-  error: { color: '#c0392b', fontSize: 14 },
+  error: { color: colors.danger, fontSize: 14, fontWeight: '500' },
   configWarning: {
-    backgroundColor: 'rgba(184,134,11,0.18)',
-    borderRadius: 8,
-    padding: 10,
+    backgroundColor: colors.warningTint,
+    color: colors.warning,
+    borderRadius: radius.sm,
+    padding: space.md,
     fontSize: 13,
-    marginBottom: 4,
+    lineHeight: 18,
+    fontWeight: '600',
   },
+
   button: {
-    backgroundColor: '#1f6feb',
-    borderRadius: 10,
-    paddingVertical: 14,
+    backgroundColor: colors.brand,
+    borderRadius: radius.md,
+    paddingVertical: space.lg,
     alignItems: 'center',
-    marginTop: 8,
+    justifyContent: 'center',
+    minHeight: 52,
+    marginTop: space.xs,
   },
-  buttonDisabled: { opacity: 0.5 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  buttonPressed: { backgroundColor: colors.brandDark },
+  buttonDisabled: { backgroundColor: colors.sunken, shadowOpacity: 0, elevation: 0 },
+  buttonText: { color: colors.onBrand, fontSize: 16, fontWeight: '700' },
+
+  footnote: { ...type.caption, textAlign: 'center', maxWidth: 420, alignSelf: 'center' },
 });

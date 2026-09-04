@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { Animated, Easing, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { GeaLogo } from './GeaLogo';
+import { colors } from './theme';
 
 /**
  * The celebration that plays when a scan session is finished: a squadron of GEA
@@ -131,7 +132,7 @@ const FLAME_W = 26;
 /** Where the body starts inside the craft row — the fins are absolutely positioned,
  *  so they have to be told where the thing they belong to actually is. */
 const BODY_X = TRAIL_W + FLAME_W;
-const GEA_BLUE = '#0A3CA8';
+const GEA_BLUE = colors.brand;
 
 const styles = StyleSheet.create({
   rocket: { position: 'absolute', left: 0 },
@@ -186,7 +187,7 @@ const styles = StyleSheet.create({
     height: 18,
     borderTopLeftRadius: 12,
     borderBottomLeftRadius: 12,
-    backgroundColor: '#ff8f1f',
+    backgroundColor: colors.flame,
   },
   trail: {
     width: TRAIL_W,

@@ -15,6 +15,7 @@ import {
   PROJECT_NUMBER_PLACEHOLDER,
 } from '@gct/shared';
 import { styles as base } from './components';
+import { colors, radius, space, type } from './theme';
 
 /**
  * Form controls for the batch-creation and batch-browsing screens.
@@ -69,7 +70,7 @@ export function ProjectNumberField({
         onChangeText={(t) => onChangeText(maskProjectNumber(t))}
         onBlur={() => setTouched(true)}
         placeholder={PROJECT_NUMBER_PLACEHOLDER}
-        placeholderTextColor="#9aa0a6"
+        placeholderTextColor={colors.inkFaint}
         keyboardType="number-pad"
         inputMode="numeric"
         editable={editable}
@@ -338,7 +339,7 @@ export function Combobox({
         }}
         onKeyPress={onKeyPress}
         placeholder={placeholder}
-        placeholderTextColor="#9aa0a6"
+        placeholderTextColor={colors.inkFaint}
         editable={editable}
         autoCorrect={false}
         role="combobox"
@@ -470,10 +471,12 @@ export function Chip({ label, onRemove }: { label: string; onRemove: () => void 
 export type BadgeTone = 'neutral' | 'moved' | 'done';
 
 const BADGE_TONE: Record<BadgeTone, { backgroundColor: string }> = {
-  neutral: { backgroundColor: 'rgba(127,127,127,0.22)' },
-  moved: { backgroundColor: '#b8860b' },
-  done: { backgroundColor: '#2f7a4d' },
+  neutral: { backgroundColor: colors.sunken },
+  moved: { backgroundColor: colors.warning },
+  done: { backgroundColor: colors.success },
 };
+
+/** Neutral badges keep body ink; the coloured ones are filled, so their text flips. */
 
 /**
  * The row's status marker — so an already-transferred batch cannot be mistaken for an
@@ -490,67 +493,68 @@ export function StatusBadge({ label, tone = 'neutral' }: { label: string; tone?:
 }
 
 const controls = StyleSheet.create({
-  inputInvalid: { borderColor: '#c0392b' },
-  hint: { fontSize: 13, opacity: 0.6 },
+  inputInvalid: { borderColor: colors.danger, backgroundColor: colors.dangerTint },
+  hint: type.caption,
   disabled: { opacity: 0.45 },
 
   selectBox: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  selectValue: { fontSize: 16 },
-  selectPlaceholder: { fontSize: 16, color: '#9aa0a6' },
-  caret: { fontSize: 11, opacity: 0.5 },
+  selectValue: { fontSize: 16, color: colors.ink },
+  selectPlaceholder: { fontSize: 16, color: colors.inkFaint },
+  caret: { fontSize: 11, color: colors.inkFaint },
 
   list: {
     borderWidth: 1,
-    borderColor: 'rgba(127,127,127,0.35)',
-    borderRadius: 10,
-    marginTop: 4,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    marginTop: space.xs + 2,
     overflow: 'hidden',
   },
-  listScroll: { maxHeight: 240 },
-  option: { paddingHorizontal: 14, paddingVertical: 11, gap: 2 },
-  optionHighlighted: { backgroundColor: 'rgba(31,111,235,0.12)' },
-  optionSelected: { backgroundColor: 'rgba(31,111,235,0.18)' },
-  optionLabel: { fontSize: 15 },
-  optionLabelSelected: { fontWeight: '700' },
-  optionHint: { fontSize: 13, opacity: 0.6 },
-  emptyOption: { padding: 14, fontSize: 14, opacity: 0.6 },
+  listScroll: { maxHeight: 260 },
+  option: { paddingHorizontal: space.lg, paddingVertical: space.md, gap: 2 },
+  optionHighlighted: { backgroundColor: colors.brandTint },
+  optionSelected: { backgroundColor: colors.brandTintStrong },
+  optionLabel: { fontSize: 15, color: colors.ink },
+  optionLabelSelected: { fontWeight: '700', color: colors.brand },
+  optionHint: { ...type.caption, fontSize: 13 },
+  emptyOption: { padding: space.lg, ...type.caption },
 
-  toggleRow: { flexDirection: 'row', gap: 10 },
+  toggleRow: { flexDirection: 'row', gap: space.sm },
   toggleButton: {
     flex: 1,
-    borderRadius: 10,
-    paddingVertical: 13,
+    borderRadius: radius.md,
+    paddingVertical: space.md + 2,
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 1.5,
   },
-  toggleButtonOn: { backgroundColor: '#1f6feb', borderColor: '#1f6feb' },
-  toggleButtonOff: { backgroundColor: 'transparent', borderColor: '#1f6feb' },
-  toggleTextOn: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  toggleTextOff: { color: '#1f6feb', fontSize: 16, fontWeight: '600' },
+  toggleButtonOn: { backgroundColor: colors.brand, borderColor: colors.brand },
+  toggleButtonOff: { backgroundColor: colors.surface, borderColor: colors.border },
+  toggleTextOn: { color: colors.onBrand, fontSize: 15, fontWeight: '700' },
+  toggleTextOff: { color: colors.inkMuted, fontSize: 15, fontWeight: '600' },
 
   switchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
-    paddingVertical: 8,
+    gap: space.md,
+    paddingVertical: space.sm,
   },
   switchLabels: { flex: 1, gap: 2 },
-  switchLabel: { fontSize: 15, fontWeight: '600' },
+  switchLabel: { fontSize: 15, fontWeight: '600', color: colors.ink },
   switchTrack: {
-    width: 46,
+    width: 48,
     height: 28,
-    borderRadius: 999,
+    borderRadius: radius.pill,
     padding: 3,
-    backgroundColor: 'rgba(127,127,127,0.35)',
+    backgroundColor: colors.borderStrong,
     justifyContent: 'center',
   },
-  switchTrackOn: { backgroundColor: '#1f6feb' },
+  switchTrackOn: { backgroundColor: colors.brand },
   switchKnob: {
     width: 22,
     height: 22,
-    borderRadius: 999,
-    backgroundColor: '#fff',
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
     alignSelf: 'flex-start',
   },
   switchKnobOn: { alignSelf: 'flex-end' },
@@ -558,21 +562,21 @@ const controls = StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 11,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: 'rgba(31,111,235,0.14)',
+    gap: space.xs + 2,
+    paddingHorizontal: space.md,
+    paddingVertical: space.xs + 2,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brandTint,
   },
-  chipText: { fontSize: 13, fontWeight: '600', color: '#1f6feb' },
-  chipX: { fontSize: 15, color: '#1f6feb', lineHeight: 16 },
+  chipText: { fontSize: 13, fontWeight: '700', color: colors.brand },
+  chipX: { fontSize: 16, color: colors.brand, lineHeight: 17 },
 
   badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+    paddingHorizontal: space.sm + 2,
+    paddingVertical: space.xs,
+    borderRadius: radius.pill,
     alignSelf: 'flex-start',
   },
-  badgeText: { fontSize: 12, fontWeight: '600' },
-  badgeTextStrong: { color: '#fff' },
+  badgeText: { fontSize: 11.5, fontWeight: '700', letterSpacing: 0.2 },
+  badgeTextStrong: { color: colors.onBrand },
 });

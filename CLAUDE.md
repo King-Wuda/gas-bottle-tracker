@@ -74,6 +74,28 @@ Two traps that cause silent divergence:
   interface with memory and is therefore always "migrated", so this class of bug is
   invisible on the surface the app is tested on and breaks only on the APK.
 
+## The look is a system, not a set of screens
+
+`apps/mobile/src/ui/theme.ts` holds every colour, gap, radius, shadow and text style
+the app uses, and `ui/components.tsx` builds the shared kit from them. Two rules keep
+it coherent:
+
+- **No screen invents a colour or a spacing.** If a value is not in `theme.ts`, either
+  reuse one that is or add it there. A hex code in a screen is how twenty screens end
+  up twenty slightly different shades of blue.
+- **Colour means one thing.** Blue is _action_, green is _physically scanned_, amber is
+  _an admin's assertion in place of evidence_, red is _failed_. The scan step, the
+  overrides and the delivery note all lean on that distinction; a green tick next to a
+  set of overrides would say "proved" about the one case that is not.
+
+The app is pinned to `userInterfaceStyle: light` in `app.json`. It is read outdoors at
+arm's length, and a half-themed dark mode reads as a broken app rather than a missing
+feature. Adding dark mode means doing every screen, not most of them.
+
+Icons are SVG paths in `ui/icons.tsx`, drawn on a 24x24 grid with a 1.8 stroke —
+`react-native-svg` is already a dependency for the signature pad, so they cost nothing
+and render identically on both targets.
+
 ## Rebuild the web export after every mobile change
 
 The browser serves a **static export**, so source edits are invisible until you re-export:

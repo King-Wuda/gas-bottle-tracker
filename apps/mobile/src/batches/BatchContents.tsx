@@ -42,13 +42,13 @@ export function BatchContents({
               </Text>
             </Text>
             {here.length > 0 ? (
-              <Text style={styles.label}>{summariseDistribution(here)}</Text>
+              <Text style={styles.hint}>{summariseDistribution(here)}</Text>
             ) : null}
           </View>
         );
       })}
       {hidden > 0 ? (
-        <Text style={styles.label}>
+        <Text style={styles.hint}>
           +{hidden} more line{hidden === 1 ? '' : 's'}
         </Text>
       ) : null}

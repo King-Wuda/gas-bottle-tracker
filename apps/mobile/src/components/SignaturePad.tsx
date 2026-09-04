@@ -12,6 +12,7 @@ import {
 import Svg, { Line, Path } from 'react-native-svg';
 import type { Point, Stroke } from '../signature/raster';
 import { hasInk } from '../signature/raster';
+import { colors } from '../ui/theme';
 
 /**
  * The driver's signature pad — a whiteboard drawn on directly with a finger.
@@ -201,7 +202,7 @@ const DRAW_SURFACE = { touchAction: 'none' } as unknown as ViewStyle;
 const styles = StyleSheet.create({
   pad: {
     borderWidth: 1,
-    borderColor: 'rgba(127,127,127,0.4)',
+    borderColor: colors.border,
     borderRadius: 10,
     backgroundColor: '#fff',
     overflow: 'hidden',
@@ -215,8 +216,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  placeholderText: { color: '#9aa0a6', fontSize: 15 },
+  placeholderText: { color: colors.inkFaint, fontSize: 15 },
   toolbar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   hint: { fontSize: 12, opacity: 0.6 },
-  clear: { color: '#c0392b', fontWeight: '700', fontSize: 14 },
+  clear: { color: colors.danger, fontWeight: '700', fontSize: 14 },
 });

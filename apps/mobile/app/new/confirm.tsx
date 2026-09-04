@@ -14,6 +14,7 @@ import {
   SecondaryButton,
   styles,
 } from '../../src/ui/components';
+import { colors } from '../../src/ui/theme';
 
 export default function Confirm() {
   const router = useRouter();
@@ -43,7 +44,7 @@ export default function Confirm() {
           {batch.quantity} cylinder(s) across {batch.lines.length} line
           {batch.lines.length === 1 ? '' : 's'}
         </Text>
-        <Text style={styles.label}>Created {formatBatchDate(batch.createdAt)}</Text>
+        <Text style={styles.hint}>Created {formatBatchDate(batch.createdAt)}</Text>
 
         <View style={{ gap: 4, marginTop: 8 }}>
           {batch.lines.map((l) => (
@@ -71,7 +72,7 @@ export default function Confirm() {
                 paddingHorizontal: 6,
                 paddingVertical: 3,
                 borderRadius: 6,
-                backgroundColor: 'rgba(127,127,127,0.15)',
+                backgroundColor: colors.sunken,
               }}
             >
               {s}
@@ -80,7 +81,7 @@ export default function Confirm() {
         </View>
 
         <View style={{ marginTop: 10, gap: 6 }}>
-          <Text style={styles.label}>Sent to {batch.projectManagerEmail}</Text>
+          <Text style={styles.hint}>Sent to {batch.projectManagerEmail}</Text>
           <ResendEmailButton
             batchId={batch.id}
             lastEmailSentAt={batch.lastEmailSentAt}
@@ -111,7 +112,7 @@ export default function Confirm() {
           reset();
         }}
       />
-      <Text style={[styles.label, { textAlign: 'center' }]}>
+      <Text style={[styles.hint, { textAlign: 'center' }]}>
         Each label on the sheet is printed with this batch&apos;s details. Tag every cylinder, then
         scan them all back in — this batch cannot be transferred or returned until you have.
       </Text>

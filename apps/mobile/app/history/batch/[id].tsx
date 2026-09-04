@@ -20,6 +20,7 @@ import {
   styles,
 } from '../../../src/ui/components';
 import { StatusBadge, type BadgeTone } from '../../../src/ui/controls';
+import { colors } from '../../../src/ui/theme';
 
 /**
  * One batch, in full — reached from the History list and from the confirmation screen.
@@ -123,7 +124,7 @@ export default function BatchDetail() {
                 {INITIAL_DELIVERY_POINT_LABELS[l.initialDeliveryPoint as InitialDeliveryPoint] ??
                   l.initialDeliveryPoint}
               </Text>
-              <Text style={styles.label}>
+              <Text style={styles.hint}>
                 {summariseDistribution(
                   batch.distribution.filter((d) => d.gasTypeId === l.gasTypeId),
                 ) || 'No cylinders'}
@@ -135,8 +136,10 @@ export default function BatchDetail() {
 
       {!batch.initializedAt ? (
         <Card>
-          <Text style={{ fontWeight: '700', color: '#b8860b' }}>Waiting for its first scan</Text>
-          <Text style={styles.label}>
+          <Text style={{ fontWeight: '700', color: colors.warning }}>
+            Waiting for its first scan
+          </Text>
+          <Text style={styles.hint}>
             Nothing in this batch can be transferred or returned until every label has been scanned
             back off its cylinder. Start that from New → Initialize a batch.
           </Text>
@@ -204,15 +207,14 @@ export default function BatchDetail() {
                 paddingHorizontal: 6,
                 paddingVertical: 3,
                 borderRadius: 6,
-                backgroundColor:
-                  c.status === 'RETURNED' ? 'rgba(47,122,77,0.18)' : 'rgba(127,127,127,0.15)',
+                backgroundColor: c.status === 'RETURNED' ? colors.successTint : colors.sunken,
               }}
             >
               {c.serialCode}
             </Text>
           ))}
         </View>
-        <Text style={styles.label}>Tap a serial for its full movement history.</Text>
+        <Text style={styles.hint}>Tap a serial for its full movement history.</Text>
       </Card>
 
       <SecondaryButton title="Refresh" onPress={() => void load()} />

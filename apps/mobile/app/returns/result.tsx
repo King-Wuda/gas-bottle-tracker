@@ -12,6 +12,7 @@ import {
   SecondaryButton,
   styles,
 } from '../../src/ui/components';
+import { colors } from '../../src/ui/theme';
 
 interface RejectionEnvelope {
   status: number;
@@ -92,7 +93,7 @@ function Accepted({ result }: { result: string | null }) {
       </Text>
 
       <Card>
-        <Text style={{ fontWeight: '700', color: complete ? '#1e7e34' : '#b8860b' }}>
+        <Text style={{ fontWeight: '700', color: complete ? colors.success : colors.warning }}>
           {complete
             ? 'Batch complete — every cylinder is back.'
             : `Partial return — ${returnRecord.outstandingCount} cylinder(s) still out.`}
@@ -129,10 +130,8 @@ function Queued({
         {row.label}. {online ? 'Sending…' : 'Waiting for a connection.'} The signature is saved on
         this device — you can close the app.
       </Text>
-      {row.lastError ? <Text style={styles.label}>Last attempt: {row.lastError}</Text> : null}
-      {row.attempts > 0 ? (
-        <Text style={styles.label}>{row.attempts} attempt(s) so far.</Text>
-      ) : null}
+      {row.lastError ? <Text style={styles.hint}>Last attempt: {row.lastError}</Text> : null}
+      {row.attempts > 0 ? <Text style={styles.hint}>{row.attempts} attempt(s) so far.</Text> : null}
       <SecondaryButton title={busy ? 'Retrying…' : 'Retry now'} onPress={onRetry} disabled={busy} />
     </>
   );
@@ -143,7 +142,9 @@ function Refused({ result }: { result: string | null }) {
   const rejected = body?.details?.rejected ?? [];
   return (
     <>
-      <Text style={{ fontSize: 17, fontWeight: '700', color: '#c0392b' }}>Return not accepted</Text>
+      <Text style={{ fontSize: 17, fontWeight: '700', color: colors.danger }}>
+        Return not accepted
+      </Text>
       <Text style={{ opacity: 0.7 }}>
         {body?.message ?? 'The server refused this return.'} Nothing was marked returned — re-scan
         to see the current state of these cylinders.
@@ -173,5 +174,5 @@ const chip = {
   paddingHorizontal: 6,
   paddingVertical: 3,
   borderRadius: 6,
-  backgroundColor: 'rgba(127,127,127,0.15)',
+  backgroundColor: colors.sunken,
 };
