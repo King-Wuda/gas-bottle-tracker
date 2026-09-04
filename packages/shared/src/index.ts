@@ -11,6 +11,7 @@ export * from './schemas/auth';
 export * from './schemas/project';
 export * from './schemas/batch';
 export * from './schemas/photo';
+export * from './schemas/driver';
 export * from './schemas/transfer';
 export * from './schemas/initialization';
 export * from './schemas/return';

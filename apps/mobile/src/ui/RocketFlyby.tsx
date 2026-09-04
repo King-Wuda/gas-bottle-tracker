@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { Animated, Easing, StyleSheet, useWindowDimensions, View } from 'react-native';
-import { GeaLogo } from './GeaLogo';
+import { GeaMark } from './GeaLogo';
 import { colors } from './theme';
 
 /**
@@ -114,7 +114,7 @@ export function RocketFlyby({ playing, onDone }: { playing: boolean; onDone?: ()
               <View style={styles.finTop} />
               <View style={styles.finBottom} />
               <View style={styles.body}>
-                <GeaLogo width={54} />
+                <GeaMark width={64} />
               </View>
               <View style={styles.nose} />
             </View>

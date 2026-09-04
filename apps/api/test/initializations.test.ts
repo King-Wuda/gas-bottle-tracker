@@ -16,6 +16,7 @@ import {
   testPhoto,
   uniqueProjectNumber,
   testDriverId,
+  testSignOff,
 } from './helpers.js';
 
 /**
@@ -341,6 +342,7 @@ describe('an uninitialized batch is inert', () => {
       url: '/transfers',
       headers: bearer(techToken),
       payload: {
+        ...testSignOff(),
         photo: testPhoto(),
         batchId,
         clientRequestId: randomUUID(),
@@ -390,6 +392,7 @@ describe('an uninitialized batch is inert', () => {
       url: '/transfers',
       headers: bearer(adminToken),
       payload: {
+        ...testSignOff(),
         photo: testPhoto(),
         batchId,
         clientRequestId: randomUUID(),
@@ -439,6 +442,7 @@ describe('transfers and returns carry the same evidence', () => {
       url: '/transfers',
       headers: bearer(techToken),
       payload: {
+        ...testSignOff(),
         photo: testPhoto({ latitude: -25.75, longitude: 28.19, accuracyM: 5 }),
         batchId,
         clientRequestId: randomUUID(),
@@ -467,6 +471,7 @@ describe('transfers and returns carry the same evidence', () => {
       url: '/transfers',
       headers: bearer(techToken),
       payload: {
+        ...testSignOff(),
         batchId,
         clientRequestId: randomUUID(),
         destination: { type: 'SITE', siteId: siteB },

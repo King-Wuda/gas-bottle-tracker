@@ -6,6 +6,13 @@ import {
   photoSubmissionFields,
   PHOTO_REQUIRED_MESSAGE,
 } from './photo';
+import {
+  driverIdFields,
+  driverSignOffDtoFields,
+  hasDriverIdEvidence,
+  signaturePngSchema,
+  DRIVER_ID_PHOTO_REQUIRED_MESSAGE,
+} from './driver';
 
 export const destinationTypeSchema = z.enum(['SITE', 'STORES']);
 export type DestinationType = z.infer<typeof destinationTypeSchema>;
@@ -77,12 +84,27 @@ export const createTransferRequestSchema = z
      * they were together, here, now. See `schemas/photo.ts`.
      */
     ...photoSubmissionFields,
+    /**
+     * Who is taking the cylinders away, on the same terms a return uses.
+     *
+     * A transfer hands physical cylinders to a driver exactly as a return does — the
+     * only difference is where they are going. Recording the mover on one and not the
+     * other left the more common movement as the less accountable one, which is
+     * backwards. See `schemas/driver.ts`.
+     */
+    driverName: z.string().min(1).max(200),
+    ...driverIdFields,
+    signaturePng: signaturePngSchema,
   })
   .refine((t) => t.scans.length + t.overrideSerials.length > 0, {
     message: 'Nothing to transfer: scan at least one cylinder.',
     path: ['scans'],
   })
-  .refine(hasPhotoEvidence, { message: PHOTO_REQUIRED_MESSAGE, path: ['photo'] });
+  .refine(hasPhotoEvidence, { message: PHOTO_REQUIRED_MESSAGE, path: ['photo'] })
+  .refine(hasDriverIdEvidence, {
+    message: DRIVER_ID_PHOTO_REQUIRED_MESSAGE,
+    path: ['driverIdPhoto'],
+  });
 export type CreateTransferRequest = z.infer<typeof createTransferRequestSchema>;
 
 /** Why one scanned serial could not be moved. The app highlights that row rather
@@ -125,6 +147,7 @@ export const transferDtoSchema = z.object({
   /** Null only when an admin overrode the camera. */
   photo: batchPhotoDtoSchema.nullable(),
   photoOverridden: z.boolean(),
+  ...driverSignOffDtoFields,
 });
 export type TransferDto = z.infer<typeof transferDtoSchema>;
 

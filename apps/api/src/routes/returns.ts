@@ -10,16 +10,11 @@ import {
   type ScanRejection,
 } from '@gct/shared';
 import { prisma, Prisma } from '../db.js';
+import { prepareDriverSignOff } from '../services/driverSignOff.js';
 import { readIdNumber } from '../services/idOcr.js';
-import {
-  decodePhoto,
-  InvalidPhotoError,
-  preparePhoto,
-  saveDriverIdPhoto,
-} from '../services/photo.js';
+import { preparePhoto } from '../services/photo.js';
 import { toPhotoDto, type PhotoRow } from '../services/photoView.js';
 import { resolveScans, scanRejection } from '../services/scans.js';
-import { decodeSignaturePng, InvalidSignatureError, saveSignature } from '../services/signature.js';
 
 /** Rolls the transaction back when nothing survived validation, so a submission that
  *  returned no cylinder leaves neither a ReturnRecord nor a queued email. */
@@ -142,19 +137,6 @@ export async function returnRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      // The ID camera override is the same kind of claim as the scan and batch-photo
-      // overrides: an admin's word in place of evidence. Refused outright for every
-      // other role rather than quietly ignored — an override that was silently
-      // dropped would let a tampered client believe it recorded a document nobody saw.
-      if (input.driverIdOverride && !input.driverIdPhoto && request.user.role !== 'ADMIN') {
-        return reply.code(403).send({
-          error: {
-            code: 'DRIVER_ID_OVERRIDE_FORBIDDEN',
-            message: 'Only an admin can record a return without photographing the driver’s ID.',
-          },
-        });
-      }
-
       const batch = await prisma.batch.findUnique({
         where: { id: input.batchId },
         include: {
@@ -181,46 +163,21 @@ export async function returnRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      // Decode and persist the signature BEFORE the transaction: it is filesystem
-      // IO, and holding a row lock across it would widen the contended window for
-      // no reason. The filename is derived from the idempotency key, so a retry
-      // overwrites its own file instead of littering.
-      let signaturePath: string;
-      try {
-        signaturePath = await saveSignature(
-          input.clientRequestId,
-          decodeSignaturePng(input.signaturePng),
-        );
-      } catch (err) {
-        if (err instanceof InvalidSignatureError) {
-          return reply
-            .code(400)
-            .send({ error: { code: 'INVALID_SIGNATURE', message: err.message } });
-        }
-        throw err;
+      // Who took them, and the proof: the signature and the photographed ID, both
+      // written before the transaction. See services/driverSignOff.ts.
+      const signOff = await prepareDriverSignOff({
+        clientRequestId: input.clientRequestId,
+        signaturePng: input.signaturePng,
+        driverIdPhoto: input.driverIdPhoto,
+        driverIdOverride: input.driverIdOverride,
+        role: request.user.role,
+        verb: 'return',
+      });
+      if (!signOff.ok) {
+        return reply
+          .code(signOff.status)
+          .send({ error: { code: signOff.code, message: signOff.message } });
       }
-
-      // Beside the signature, and for the same reason: filesystem IO belongs outside
-      // the transaction. Real evidence outranks an assertion, so a submission
-      // carrying both a photo and an override keeps the photo — the same rule scans
-      // and batch photos already follow.
-      let driverIdPath: string | null = null;
-      if (input.driverIdPhoto) {
-        try {
-          driverIdPath = await saveDriverIdPhoto(
-            input.clientRequestId,
-            decodePhoto(input.driverIdPhoto.imageBase64),
-          );
-        } catch (err) {
-          if (err instanceof InvalidPhotoError) {
-            return reply
-              .code(400)
-              .send({ error: { code: 'INVALID_DRIVER_ID_PHOTO', message: err.message } });
-          }
-          throw err;
-        }
-      }
-      const driverIdOverridden = driverIdPath === null;
 
       const userId = request.user.sub;
 
@@ -276,9 +233,9 @@ export async function returnRoutes(app: FastifyInstance): Promise<void> {
                 storesManagerId: userId,
                 driverName: input.driverName,
                 driverIdNumber: input.driverIdNumber,
-                driverIdPath,
-                driverIdOverridden,
-                signaturePath,
+                driverIdPath: signOff.driverIdPath,
+                driverIdOverridden: signOff.driverIdOverridden,
+                signaturePath: signOff.signaturePath,
                 photoOverridden: prepared.overridden,
                 clientRequestId: input.clientRequestId,
               },

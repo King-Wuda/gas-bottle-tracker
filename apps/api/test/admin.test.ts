@@ -15,6 +15,7 @@ import {
   testPhoto,
   uniqueProjectNumber,
   testDriverId,
+  testSignOff,
 } from './helpers.js';
 
 /**
@@ -514,6 +515,7 @@ describe('admin — correcting a batch', () => {
       url: '/transfers',
       headers: bearer(techToken),
       payload: {
+        ...testSignOff(),
         photo: testPhoto(),
         batchId,
         clientRequestId: randomUUID(),
@@ -560,6 +562,7 @@ describe('admin — correcting a batch', () => {
       url: '/transfers',
       headers: bearer(techToken),
       payload: {
+        ...testSignOff(),
         photo: testPhoto(),
         batchId,
         clientRequestId: randomUUID(),
@@ -632,6 +635,7 @@ describe('scan override', () => {
       url: '/transfers',
       headers: bearer(adminToken),
       payload: {
+        ...testSignOff(),
         photo: testPhoto(),
         batchId,
         clientRequestId: randomUUID(),
@@ -667,6 +671,7 @@ describe('scan override', () => {
       url: '/transfers',
       headers: bearer(techToken),
       payload: {
+        ...testSignOff(),
         photo: testPhoto(),
         batchId,
         clientRequestId: randomUUID(),
@@ -709,6 +714,7 @@ describe('scan override', () => {
       url: '/transfers',
       headers: bearer(adminToken),
       payload: {
+        ...testSignOff(),
         photo: testPhoto(),
         batchId,
         clientRequestId: randomUUID(),
@@ -735,6 +741,7 @@ describe('scan override', () => {
       url: '/transfers',
       headers: bearer(adminToken),
       payload: {
+        ...testSignOff(),
         photo: testPhoto(),
         batchId,
         clientRequestId: randomUUID(),
@@ -759,6 +766,7 @@ describe('transfer — project manager handover', () => {
       url: '/transfers',
       headers: bearer(techToken),
       payload: {
+        ...testSignOff(),
         photo: testPhoto(),
         batchId,
         clientRequestId: randomUUID(),
@@ -785,6 +793,7 @@ describe('transfer — project manager handover', () => {
       url: '/transfers',
       headers: bearer(techToken),
       payload: {
+        ...testSignOff(),
         photo: testPhoto(),
         batchId,
         clientRequestId: randomUUID(),
@@ -809,6 +818,7 @@ describe('transfer — project manager handover', () => {
       url: '/transfers',
       headers: bearer(techToken),
       payload: {
+        ...testSignOff(),
         photo: testPhoto(),
         batchId,
         clientRequestId: randomUUID(),
@@ -835,6 +845,7 @@ describe('partial movement', () => {
         url: '/transfers',
         headers: bearer(techToken),
         payload: {
+          ...testSignOff(),
           photo: testPhoto(),
           batchId,
           clientRequestId: randomUUID(),
@@ -884,6 +895,7 @@ describe('partial movement', () => {
       url: '/transfers',
       headers: bearer(techToken),
       payload: {
+        ...testSignOff(),
         photo: testPhoto(),
         batchId,
         clientRequestId: randomUUID(),

@@ -27,16 +27,19 @@ import { StyleSheet, type TextStyle, type ViewStyle } from 'react-native';
  * coloured says nothing about which of them matters.
  */
 
-const brand = '#0A3CA8';
+/** Taken from the wordmark itself — see ui/geaLogo.ts. The UI's blue and the logo's
+ *  blue being different shades is the kind of thing nobody can name and everybody
+ *  notices. */
+const brand = '#1414C8';
 
 export const colors = {
   /** GEA blue. Primary actions, links, the selected state. */
   brand,
-  brandDark: '#07307F',
-  brandLight: '#3763C9',
+  brandDark: '#0E0E9C',
+  brandLight: '#4B4BDA',
   /** Backgrounds for brand-coloured surfaces that still carry text. */
-  brandTint: '#EBF0FC',
-  brandTintStrong: '#D5E0F8',
+  brandTint: '#ECECFC',
+  brandTintStrong: '#D7D7F7',
 
   /** Text. `ink` is for content, `inkMuted` for supporting copy, `inkFaint` for
    *  placeholders and metadata that should recede until looked for. */

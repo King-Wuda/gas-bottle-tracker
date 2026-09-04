@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { createReturnRequestSchema } from '../src/schemas/return';
 import {
   createTransferRequestSchema,
   destinationTypeSchema,
@@ -13,7 +14,7 @@ const validScan = {
   scannedAt: '2026-08-28T07:00:00.000Z',
 };
 
-/** Every scan submission now carries the batch photo — see schemas/photo.ts. */
+/** Every scan submission carries the batch photo — see schemas/photo.ts. */
 const validPhoto = {
   imageBase64: `data:image/jpeg;base64,${'A'.repeat(200)}`,
   capturedAt: '2026-08-28T07:00:00.000Z',
@@ -21,6 +22,19 @@ const validPhoto = {
   longitude: 28.0473,
   accuracyM: 12,
   locationError: null,
+};
+
+/**
+ * A transfer also carries the driver sign-off now — the same four things a return
+ * asks for, because both hand cylinders to a named person who drives away with them.
+ * See schemas/driver.ts. Spread into every fixture so a test about scans or photos
+ * fails for the reason it is named after.
+ */
+const validSignOff = {
+  driverName: 'Sipho Ndlovu',
+  driverIdNumber: '8801015009087',
+  driverIdPhoto: { ...validPhoto, capturedAt: '2026-08-28T07:01:00.000Z' },
+  signaturePng: `data:image/png;base64,${'A'.repeat(200)}`,
 };
 
 describe('transfer schemas', () => {
@@ -59,6 +73,7 @@ describe('transfer schemas', () => {
       clientRequestId: '11111111-2222-3333-4444-555555555555',
       destination: { type: 'STORES' as const },
       photo: validPhoto,
+      ...validSignOff,
     };
     expect(createTransferRequestSchema.safeParse({ ...base, scans: [] }).success).toBe(false);
     expect(createTransferRequestSchema.safeParse({ ...base, scans: [validScan] }).success).toBe(
@@ -72,6 +87,7 @@ describe('transfer schemas', () => {
       clientRequestId: '11111111-2222-3333-4444-555555555555',
       destination: { type: 'STORES' as const },
       scans: [validScan],
+      ...validSignOff,
     };
     expect(createTransferRequestSchema.safeParse({ ...base, photo: null }).success).toBe(false);
     expect(
@@ -88,9 +104,86 @@ describe('transfer schemas', () => {
   });
 
   it('requires an idempotency key long enough to be a real UUID', () => {
-    const base = { batchId: 'b1', destination: { type: 'STORES' as const }, scans: [validScan] };
+    const base = {
+      batchId: 'b1',
+      destination: { type: 'STORES' as const },
+      scans: [validScan],
+      photo: validPhoto,
+      ...validSignOff,
+    };
     expect(createTransferRequestSchema.safeParse({ ...base, clientRequestId: 'x' }).success).toBe(
       false,
     );
+  });
+});
+
+describe('transfer driver sign-off', () => {
+  const base = {
+    batchId: 'b1',
+    clientRequestId: '11111111-2222-3333-4444-555555555555',
+    destination: { type: 'STORES' as const },
+    scans: [validScan],
+    photo: validPhoto,
+    ...validSignOff,
+  };
+
+  it('accepts a fully signed transfer', () => {
+    expect(createTransferRequestSchema.safeParse(base).success).toBe(true);
+  });
+
+  it('refuses a transfer with nobody named against it', () => {
+    // The whole point of adding this to transfers: a batch could previously cross the
+    // country with no record of who took it.
+    expect(createTransferRequestSchema.safeParse({ ...base, driverName: '' }).success).toBe(false);
+    expect(createTransferRequestSchema.safeParse({ ...base, driverIdNumber: '' }).success).toBe(
+      false,
+    );
+    expect(createTransferRequestSchema.safeParse({ ...base, signaturePng: '' }).success).toBe(
+      false,
+    );
+  });
+
+  it('refuses a transfer with neither an ID photo nor an admin override', () => {
+    expect(createTransferRequestSchema.safeParse({ ...base, driverIdPhoto: null }).success).toBe(
+      false,
+    );
+    expect(
+      createTransferRequestSchema.safeParse({
+        ...base,
+        driverIdPhoto: null,
+        driverIdOverride: true,
+      }).success,
+    ).toBe(true);
+  });
+
+  it('demands the same driver evidence a return does', () => {
+    // Behavioural parity, not a shape comparison: drop each field in turn from BOTH
+    // schemas and require that both reject it. If a future change relaxes one flow
+    // and not the other, this fails — which is the whole reason the rules live in
+    // schemas/driver.ts rather than being written out twice.
+    const returnBase = {
+      batchId: 'b1',
+      clientRequestId: base.clientRequestId,
+      scans: [validScan],
+      photo: validPhoto,
+      ...validSignOff,
+    };
+
+    for (const field of ['driverName', 'driverIdNumber', 'signaturePng'] as const) {
+      const transfer = { ...base, [field]: '' };
+      const ret = { ...returnBase, [field]: '' };
+      expect(createTransferRequestSchema.safeParse(transfer).success, `transfer.${field}`).toBe(
+        false,
+      );
+      expect(createReturnRequestSchema.safeParse(ret).success, `return.${field}`).toBe(false);
+    }
+
+    // And the ID photo, whose absence is only allowed alongside an override.
+    expect(createTransferRequestSchema.safeParse({ ...base, driverIdPhoto: null }).success).toBe(
+      false,
+    );
+    expect(
+      createReturnRequestSchema.safeParse({ ...returnBase, driverIdPhoto: null }).success,
+    ).toBe(false);
   });
 });

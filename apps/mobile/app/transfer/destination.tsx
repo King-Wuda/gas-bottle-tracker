@@ -1,13 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 import { Redirect, useRouter } from 'expo-router';
-import * as Crypto from 'expo-crypto';
-import type { CreateTransferRequest, ProjectManagerDto } from '@gct/shared';
+import type { ProjectManagerDto } from '@gct/shared';
 import { apiProjectManagers } from '../../src/api/client';
 import { useScanFlow } from '../../src/scanning/ScanFlowContext';
-import { playCue } from '../../src/sound';
 import { useSync } from '../../src/sync/SyncContext';
-import { enqueueMutation } from '../../src/sync/worker';
 import {
   Card,
   ErrorText,
@@ -25,10 +22,9 @@ type Choice = { kind: 'site'; id: string; name: string } | { kind: 'stores' };
 export default function Destination() {
   const router = useRouter();
   const { batch, scans, overrides, sites, photo, photoOverride } = useScanFlow();
-  const { sync, online } = useSync();
+  const { online } = useSync();
 
   const [choice, setChoice] = useState<Choice | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Who the batch is handed to. Prefilled with whoever holds it now, so leaving this
@@ -69,7 +65,16 @@ export default function Destination() {
   const currentManagerListed = managers.some((m) => m.id === batch.projectManagerId);
   const mustReassign = managers.length > 0 && !currentManagerListed;
 
-  const submit = async () => {
+  /**
+   * Hand off to the sign-off step rather than submitting here.
+   *
+   * The destination is the last thing the OPERATOR decides; the driver's details are
+   * the last thing the DRIVER provides, and they happen at the gate with the phone
+   * changing hands. Keeping them as two screens keeps the submission at the end of
+   * the second one, where the signature is — a transfer that submitted here would
+   * have to be amended afterwards to attach the person who took the cylinders.
+   */
+  const toSignOff = () => {
     if (!choice) return;
     if (mustReassign && !managerChanged) {
       setError(
@@ -78,55 +83,18 @@ export default function Destination() {
       );
       return;
     }
-    setSubmitting(true);
     setError(null);
-    // The submit cue: a struck steel cylinder. It fires on the press rather than on
-    // the server's reply, because it is confirming the TAP — and the reply may not
-    // come for hours, this being a submission that is durable in the outbox first
-    // and sent over the wire second.
-    playCue('clang');
-    try {
-      // The idempotency key is minted HERE, once, as the intent is formed — and it
-      // becomes the outbox row's id. Every retry, now or after three days in a dead
-      // spot, replays this same key, so the server can recognise it as one transfer.
-      const clientRequestId = Crypto.randomUUID();
-      const body: CreateTransferRequest = {
-        batchId: batch.id,
-        clientRequestId,
-        destination:
-          choice.kind === 'site' ? { type: 'SITE', siteId: choice.id } : { type: 'STORES' },
-        scans: scans.map((s) => ({
-          serialCode: s.serialCode,
-          qrPayload: s.qrPayload,
-          scannedAt: s.scannedAt,
-        })),
-        // Kept separate from `scans` the whole way, so the server can record which
-        // cylinders were actually seen and which were asserted.
-        overrideSerials: overrides,
-        // Held on the flow since the photo step, so choosing a destination — which can
-        // take a while with the manager list loading — never costs a retake.
-        photo,
-        photoOverride,
+    // Carried as params rather than on the scan flow: they are this screen's answer
+    // and nothing before it needs them, so widening the shared context that three
+    // flows use would be paying for one screen's convenience everywhere.
+    router.push({
+      pathname: '/transfer/sign',
+      params: {
+        destination: choice.kind === 'site' ? 'SITE' : 'STORES',
+        ...(choice.kind === 'site' ? { siteId: choice.id, siteName: choice.name } : {}),
         ...(managerChanged ? { projectManagerId: managerId! } : {}),
-      };
-
-      // Outbox first, network second: if the app dies between these two lines the
-      // work is already durable, and if the POST never happens the sync worker
-      // picks it up later.
-      await enqueueMutation({
-        id: clientRequestId,
-        kind: 'transfer',
-        path: '/transfers',
-        body,
-        label: `${selectedCount} cylinder(s) → ${choice.kind === 'site' ? choice.name : 'Stores'}`,
-      });
-      await sync();
-      router.replace({ pathname: '/transfer/result', params: { id: clientRequestId } });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not queue this transfer.');
-    } finally {
-      setSubmitting(false);
-    }
+      },
+    });
   };
 
   return (
@@ -196,10 +164,9 @@ export default function Destination() {
 
       <View style={{ marginTop: 8 }}>
         <PrimaryButton
-          title={choice ? 'Submit transfer' : 'Choose a destination'}
-          onPress={submit}
+          title={choice ? 'Driver sign-off' : 'Choose a destination'}
+          onPress={toSignOff}
           disabled={!choice}
-          busy={submitting}
         />
       </View>
     </ScreenScroll>

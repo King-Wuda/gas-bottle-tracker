@@ -10,6 +10,7 @@ export default function TransferLayout() {
         <Stack.Screen name="scan" options={{ title: 'Scan cylinders' }} />
         <Stack.Screen name="photo" options={{ title: 'Photo of the batch' }} />
         <Stack.Screen name="destination" options={{ title: 'Destination' }} />
+        <Stack.Screen name="sign" options={{ title: 'Driver sign-off' }} />
         <Stack.Screen name="result" options={{ title: 'Transfer submitted' }} />
       </Stack>
     </ScanFlowProvider>

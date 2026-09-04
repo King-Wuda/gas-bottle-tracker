@@ -6,6 +6,7 @@ import {
   type TransferDto,
 } from '@gct/shared';
 import { prisma, Prisma } from '../db.js';
+import { prepareDriverSignOff } from '../services/driverSignOff.js';
 import { preparePhoto } from '../services/photo.js';
 import { toPhotoDto, type PhotoRow } from '../services/photoView.js';
 import { resolveScans, scanRejection } from '../services/scans.js';
@@ -26,6 +27,10 @@ type TransferRow = {
   userId: string;
   projectManagerId: string | null;
   photoOverridden: boolean;
+  driverName: string | null;
+  driverIdNumber: string | null;
+  driverIdPath: string | null;
+  driverIdOverridden: boolean;
   createdAt: Date;
   destinationSite: { name: string } | null;
   projectManager: { name: string } | null;
@@ -57,6 +62,13 @@ const toTransferDto = (t: TransferRow): TransferDto => ({
   projectManagerName: t.projectManager?.name ?? null,
   photo: t.photo ? toPhotoDto(t.photo) : null,
   photoOverridden: t.photoOverridden,
+  driverName: t.driverName,
+  driverIdNumber: t.driverIdNumber,
+  driverIdOverridden: t.driverIdOverridden,
+  // Derived from the file actually on record rather than from the absence of an
+  // override, so a transfer that predates sign-off reads as "no document" instead of
+  // as "an admin waived it".
+  driverIdCaptured: t.driverIdPath !== null,
 });
 
 /** One row of the atomic claim below. `fromSiteId` is the cylinder's location as
@@ -159,6 +171,23 @@ export async function transferRoutes(app: FastifyInstance): Promise<void> {
         }
       }
 
+      // Who is taking the cylinders away, and the proof. Written before the
+      // transaction: blob IO must not run under a row lock. See
+      // services/driverSignOff.ts, which returns and transfers now share.
+      const signOff = await prepareDriverSignOff({
+        clientRequestId: input.clientRequestId,
+        signaturePng: input.signaturePng,
+        driverIdPhoto: input.driverIdPhoto,
+        driverIdOverride: input.driverIdOverride,
+        role: request.user.role,
+        verb: 'transfer',
+      });
+      if (!signOff.ok) {
+        return reply
+          .code(signOff.status)
+          .send({ error: { code: signOff.code, message: signOff.message } });
+      }
+
       const userId = request.user.sub;
       const newStatus = destSiteId ? 'DEPLOYED' : 'IN_STORES';
 
@@ -199,6 +228,11 @@ export async function transferRoutes(app: FastifyInstance): Promise<void> {
                 userId,
                 projectManagerId: newManager?.id ?? null,
                 photoOverridden: prepared.overridden,
+                driverName: input.driverName,
+                driverIdNumber: input.driverIdNumber,
+                driverIdPath: signOff.driverIdPath,
+                driverIdOverridden: signOff.driverIdOverridden,
+                signaturePath: signOff.signaturePath,
                 clientRequestId: input.clientRequestId,
               },
             });

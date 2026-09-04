@@ -5,6 +5,7 @@ import type { ScanInput, ScanRejection } from '@gct/shared';
 import { buildApp } from '../src/app.js';
 import { prisma } from '../src/db.js';
 import { qrPayloadFor } from '../src/services/qr.js';
+import { readFileAt } from '../src/services/storage.js';
 import {
   loginAs,
   bearer,
@@ -13,6 +14,7 @@ import {
   makeProjectManager,
   resetDb,
   supplierForGas,
+  testDriverId,
   testPhoto,
   uniqueProjectNumber,
 } from './helpers.js';
@@ -20,6 +22,7 @@ import {
 let app: FastifyInstance;
 let techToken: string;
 let storesToken: string;
+let adminToken: string;
 let projectId: string;
 let siteA: string;
 let siteB: string;
@@ -34,6 +37,7 @@ beforeAll(async () => {
   await app.ready();
   techToken = await loginAs(app, DEMO.technician);
   storesToken = await loginAs(app, DEMO.stores);
+  adminToken = await loginAs(app, DEMO.admin);
 
   const created = await app.inject({
     method: 'POST',
@@ -110,6 +114,10 @@ async function makeBatch(quantity: number): Promise<{ batchId: string; serials: 
   return { batchId, serials };
 }
 
+/** A 1x1 PNG — `services/signature.ts` checks the magic bytes, not the drawing. */
+const SIGNATURE =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
 /** A genuine scan: the payload is signed exactly as the printed label is. */
 const scan = (serialCode: string): ScanInput => ({
   serialCode,
@@ -117,13 +125,24 @@ const scan = (serialCode: string): ScanInput => ({
   scannedAt: new Date().toISOString(),
 });
 
-/** Every transfer carries a batch photo; a test that is about the photo overrides it. */
+/**
+ * Every transfer carries a batch photo AND the driver sign-off — the name, the ID
+ * number, a photo of the document and a signature. A test that is about one of those
+ * overrides it; every other test would otherwise be a 400 about something it is not
+ * testing.
+ */
 const postTransfer = (payload: Record<string, unknown>, token = techToken) =>
   app.inject({
     method: 'POST',
     url: '/transfers',
     headers: bearer(token),
-    payload: { photo: testPhoto(), ...payload },
+    payload: {
+      photo: testPhoto(),
+      driverName: 'Sipho Ndlovu',
+      signaturePng: SIGNATURE,
+      ...testDriverId(),
+      ...payload,
+    },
   });
 
 const toSite = (siteId: string) => ({ type: 'SITE' as const, siteId });
@@ -131,6 +150,125 @@ const toStores = { type: 'STORES' as const };
 
 const rejectionFor = (rejected: ScanRejection[], serialCode: string) =>
   rejected.find((r) => r.serialCode === serialCode);
+
+/**
+ * The driver sign-off (Workflow B5).
+ *
+ * A transfer hands physical cylinders to someone who drives away with them, exactly
+ * as a return does. These are the same rules `returns.test.ts` asserts, applied to the
+ * more common movement — which is the one that used to record nobody.
+ */
+describe('POST /transfers — driver sign-off', () => {
+  it('records the driver, the ID number and the document', async () => {
+    const { batchId, serials } = await makeBatch(2);
+    const res = await postTransfer({
+      batchId,
+      clientRequestId: randomUUID(),
+      destination: toSite(siteB),
+      scans: serials.map(scan),
+    });
+
+    expect(res.statusCode).toBe(201);
+    const { transfer } = res.json();
+    expect(transfer.driverName).toBe('Sipho Ndlovu');
+    expect(transfer.driverIdNumber).toBe('8801015009087');
+    expect(transfer.driverIdCaptured).toBe(true);
+    expect(transfer.driverIdOverridden).toBe(false);
+
+    const row = await prisma.transfer.findUniqueOrThrow({ where: { id: transfer.id } });
+    // Named from the idempotency key, like every other blob, so a retry overwrites
+    // its own file rather than littering one per attempt.
+    expect(row.signaturePath).toContain(`signature-${row.clientRequestId}`);
+    expect(row.driverIdPath).toContain(`driver-id-${row.clientRequestId}`);
+    await expect(readFileAt(row.signaturePath!)).resolves.toBeInstanceOf(Buffer);
+  });
+
+  it('refuses a transfer with no driver name, ID number or signature', async () => {
+    const { batchId, serials } = await makeBatch(1);
+    for (const missing of [
+      { driverName: '' },
+      { driverIdNumber: '' },
+      { signaturePng: '' },
+      { driverIdPhoto: null },
+    ]) {
+      const res = await postTransfer({
+        batchId,
+        clientRequestId: randomUUID(),
+        destination: toSite(siteB),
+        scans: serials.map(scan),
+        ...missing,
+      });
+      expect(res.statusCode, JSON.stringify(missing)).toBe(400);
+    }
+  });
+
+  it('refuses a signature that is not actually a PNG', async () => {
+    const { batchId, serials } = await makeBatch(1);
+    const res = await postTransfer({
+      batchId,
+      clientRequestId: randomUUID(),
+      destination: toSite(siteB),
+      scans: serials.map(scan),
+      signaturePng: `data:image/png;base64,${Buffer.from('x'.repeat(100)).toString('base64')}`,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('INVALID_SIGNATURE');
+  });
+
+  it('refuses a non-admin who claims the ID override, rather than ignoring it', async () => {
+    const { batchId, serials } = await makeBatch(1);
+    const res = await postTransfer({
+      batchId,
+      clientRequestId: randomUUID(),
+      destination: toSite(siteB),
+      scans: serials.map(scan),
+      driverIdPhoto: null,
+      driverIdOverride: true,
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.code).toBe('DRIVER_ID_OVERRIDE_FORBIDDEN');
+  });
+
+  it('lets an admin waive the ID photo, and records it as a waiver', async () => {
+    const { batchId, serials } = await makeBatch(1);
+    const res = await postTransfer(
+      {
+        batchId,
+        clientRequestId: randomUUID(),
+        destination: toSite(siteB),
+        scans: serials.map(scan),
+        driverIdPhoto: null,
+        driverIdOverride: true,
+      },
+      adminToken,
+    );
+    expect(res.statusCode).toBe(201);
+    const { transfer } = res.json();
+    expect(transfer.driverIdOverridden).toBe(true);
+    expect(transfer.driverIdCaptured).toBe(false);
+    // The number is still required — the waiver is of the camera, not of identity.
+    expect(transfer.driverIdNumber).toBe('8801015009087');
+  });
+
+  it('keeps the photo when a submission carries both a photo and an override', async () => {
+    // Real evidence outranks an assertion, exactly as a genuinely scanned serial
+    // keeps its scan even when it also appears in overrideSerials.
+    const { batchId, serials } = await makeBatch(1);
+    const res = await postTransfer(
+      {
+        batchId,
+        clientRequestId: randomUUID(),
+        destination: toSite(siteB),
+        scans: serials.map(scan),
+        driverIdOverride: true,
+      },
+      adminToken,
+    );
+    expect(res.statusCode).toBe(201);
+    expect(res.json().transfer.driverIdCaptured).toBe(true);
+    expect(res.json().transfer.driverIdOverridden).toBe(false);
+  });
+});
 
 describe('POST /transfers — happy paths', () => {
   it('moves scanned cylinders to a site, records TRANSFER events, leaves the rest alone', async () => {

@@ -15,6 +15,7 @@ import {
   resetDb,
   supplierForGas,
   testDriverId,
+  testSignOff,
   testPhoto,
   uniqueProjectNumber,
 } from './helpers.js';
@@ -139,6 +140,7 @@ const deployToB = (batchId: string, serials: string[]) =>
     url: '/transfers',
     headers: bearer(techToken),
     payload: {
+      ...testSignOff(),
       photo: testPhoto(),
       batchId,
       clientRequestId: randomUUID(),

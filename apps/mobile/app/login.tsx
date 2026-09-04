@@ -49,7 +49,7 @@ export default function Login() {
           and this is the first screen anyone sees, so it is the one that must not
           be missing it. */}
       <View style={styles.brand} pointerEvents="none">
-        <GeaLogo width={84} />
+        <GeaLogo width={172} />
       </View>
 
       <View style={styles.container}>

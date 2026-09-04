@@ -396,19 +396,31 @@ model MovementEvent {
 }
 
 model Transfer {
-  id                String          @id @default(cuid())
-  batchId           String
-  destinationType   DestinationType
-  destinationSiteId String? // set when destinationType = SITE
-  userId            String
+  id                 String          @id @default(cuid())
+  batchId            String
+  destinationType    DestinationType
+  destinationSiteId  String? // set when destinationType = SITE
+  userId             String
+  /// Who physically took the cylinders away, and how that was proved. Mirrors
+  /// ReturnRecord: a transfer hands cylinders to a named driver exactly as a return
+  /// does. NULLABLE because transfers recorded before sign-off was collected on this
+  /// flow genuinely have no driver — a backfilled '' would claim one was asked for.
+  driverName         String?
+  driverIdNumber     String?
+  /// Path to the photographed ID document; null when there is none.
+  driverIdPath       String?
+  /// TRUE when an ADMIN submitted this without photographing the ID.
+  driverIdOverridden Boolean         @default(false)
+  /// Path to the persisted signature PNG (storage service).
+  signaturePath      String?
   /// The manager this transfer handed the batch to, when it handed it to anyone.
   /// NULL means the transfer left the addressee alone — the ordinary case.
-  projectManagerId  String?
-  clientRequestId   String          @unique
+  projectManagerId   String?
+  clientRequestId    String          @unique
   /// TRUE when an ADMIN submitted this without a photo — see BatchInitialization.
-  photoOverridden   Boolean         @default(false)
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  photoOverridden    Boolean         @default(false)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 
   batch           Batch           @relation(fields: [batchId], references: [id])
   user            User            @relation(fields: [userId], references: [id])

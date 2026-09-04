@@ -1,91 +1,98 @@
+/**
+ * Generates the GEA artwork used by the app.
+ *
+ *     npm i --no-save @resvg/resvg-js && node scripts/gen-logo.mjs
+ *
+ * The rasteriser is installed on demand rather than carried as a devDependency: this
+ * runs when the brand artwork changes, which is roughly never, and everyone else would
+ * otherwise pay to install a native module they will not use.
+ *
+ * Two files come out, because one drawing does not serve both jobs:
+ *
+ *   gea-logo.png  the full lockup — the letters plus "Engineering for a better
+ *                 world." Used wherever there is room to read it.
+ *   gea-mark.png  the letters alone. Used where the lockup would be illegible or
+ *                 absurd: the nav bar's right edge, and the rockets, whose bodies
+ *                 are 92px wide.
+ *
+ * ## Provenance
+ *
+ * This is a REDRAW, built from the screenshot supplied with the request — vector
+ * paths at a size the screenshot could never provide. It is close, not identical:
+ * the letterforms are a custom typeface and the strike's exact geometry cannot be
+ * recovered from a 230px image. If GEA supply the real EPS/SVG, render it to these
+ * two filenames and re-run `gen-assets.mjs`; nothing else changes.
+ */
 import { Resvg } from '@resvg/resvg-js';
 import { writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const H = 200,
-  W = 52,
-  R = 100,
-  r = R - W,
-  cx = 100,
-  cy = 100;
-const rad = (d) => (d * Math.PI) / 180;
-const pt = (deg, R_) => [cx + R_ * Math.cos(rad(deg)), cy - R_ * Math.sin(rad(deg))];
-const f = (n) => n.toFixed(2);
-/** angle on a circle of radius R_ whose point sits at height y, on the right half */
-const angleAtY = (y, R_) => (Math.asin((cy - y) / R_) * 180) / Math.PI;
+const here = path.dirname(fileURLToPath(import.meta.url));
+const assets = path.resolve(here, '../assets');
 
-// --- G ---------------------------------------------------------------------
-// A ring whose aperture is cut horizontally top and bottom (a radial cut reads as a
-// swoosh, which is not what the wordmark does), closed by a mid-height spur bar that
-// runs from inside the bowl out to the right edge.
-const TOP_CUT = 56,
-  BOT_CUT = 100; // y of the aperture's two lips
-const [gox, goy] = pt(angleAtY(TOP_CUT, R), R); // outer, top lip
-const [gix, giy] = pt(angleAtY(TOP_CUT, r), r); // inner, top lip
-const [box_, boy] = pt(angleAtY(BOT_CUT, R), R); // outer, bottom lip
-const [bix, biy] = pt(angleAtY(BOT_CUT, r), r); // inner, bottom lip
-const gRing =
-  `M ${f(gox)},${f(goy)} A ${R},${R} 0 1 0 ${f(box_)},${f(boy)} ` +
-  `L ${f(bix)},${f(biy)} A ${r},${r} 0 1 1 ${f(gix)},${f(giy)} Z`;
-// The spur. Starts left of the bowl's inner edge so it reads as a bar crossing into
-// the counter rather than as a thickening of the ring.
-const gBar = `M 96,${BOT_CUT} H 200 V ${BOT_CUT + 48} H 96 Z`;
+const BLUE = '#1414C8';
+/** Constant stroke weight: the mark is outlined letterforms, not solid ones. */
+const S = 10;
+const H = 92; // cap height
+const T = 4; // top of the letters
+const MARK_W = 254; // where the letters end and the tagline may begin
 
-// --- E ---------------------------------------------------------------------
-const EW = 154,
-  ARM = 52,
-  MIDARM = 48;
-const eParts = [
-  `M 0,0 H ${W} V ${H} H 0 Z`,
-  `M 0,0 H ${EW} V ${ARM} H 0 Z`,
-  `M 0,${(H - MIDARM) / 2} H ${EW - 20} V ${(H + MIDARM) / 2} H 0 Z`,
-  `M 0,${H - ARM} H ${EW} V ${H} H 0 Z`,
-];
+const gcx = 52,
+  gcy = T + H / 2,
+  gr = 44;
+const G = `
+  <path d="M ${gcx + gr} ${gcy - 14} A ${gr} ${gr} 0 1 0 ${gcx + gr} ${gcy + 14}"
+        fill="none" stroke="${BLUE}" stroke-width="${S}"/>
+  <path d="M ${gcx + 6} ${gcy} H ${gcx + gr}" fill="none" stroke="${BLUE}" stroke-width="${S}"/>
+  <path d="M ${gcx + gr} ${gcy - 14} V ${gcy + 14}" fill="none" stroke="${BLUE}" stroke-width="${S}"/>`;
 
-// --- A ---------------------------------------------------------------------
-const AW = 200,
-  INNER_APEX_Y = 50,
-  INNER_BASE = 54;
-const outerX = (y) => (AW / 2) * (1 - y / H);
-const aOuter =
-  `M 0,${H} L ${AW / 2},0 L ${AW},${H} L ${AW - INNER_BASE},${H} ` +
-  `L ${AW / 2},${INNER_APEX_Y} L ${INNER_BASE},${H} Z`;
-const CB_TOP = 124,
-  CB_BOT = 170;
-const aBar =
-  `M ${f(outerX(CB_TOP))},${CB_TOP} L ${f(AW - outerX(CB_TOP))},${CB_TOP} ` +
-  `L ${f(AW - outerX(CB_BOT))},${CB_BOT} L ${f(outerX(CB_BOT))},${CB_BOT} Z`;
+const ex = 110,
+  ew = 52;
+const E = `
+  <path d="M ${ex} ${T} H ${ex + ew} M ${ex} ${T + H / 2} H ${ex + ew - 10}
+           M ${ex} ${T + H} H ${ex + ew} M ${ex} ${T} V ${T + H}"
+        fill="none" stroke="${BLUE}" stroke-width="${S}"/>`;
 
-// --- layout ----------------------------------------------------------------
-const GAP = 32,
-  PAD = 12;
-const xE = 200 + GAP,
-  xA = xE + EW + GAP;
-const VB_W = xA + AW + PAD * 2,
-  VB_H = H + PAD * 2;
+const ax = 174,
+  aw = 70;
+const A = `
+  <path d="M ${ax} ${T + H} L ${ax + aw / 2} ${T} L ${ax + aw} ${T + H}"
+        fill="none" stroke="${BLUE}" stroke-width="${S}"/>
+  <path d="M ${ax + 12} ${T + H / 2 + 16} H ${ax + aw - 12}"
+        fill="none" stroke="${BLUE}" stroke-width="${S}"/>`;
 
-const svg = (
-  blue,
-) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VB_W} ${VB_H}" width="${VB_W}" height="${VB_H}">
-  <g fill="${blue}" transform="translate(${PAD},${PAD})">
-    <path d="${gRing}"/><path d="${gBar}"/>
-    <g transform="translate(${xE},0)">${eParts.map((d) => `<path d="${d}"/>`).join('')}</g>
-    <g transform="translate(${xA},0)"><path d="${aOuter}"/><path d="${aBar}"/></g>
-  </g>
-</svg>`;
+/**
+ * The diagonal. It reads as a CUT — a white gap knocked through the letters with a
+ * thin blue rule along its lower edge — rather than as a bar laid on top of them,
+ * which is the difference between the real mark and a struck-through word.
+ */
+const STRIKE = `
+  <path d="M 2 ${T + H + 2} L 248 ${T + 26}" stroke="#fff" stroke-width="14" fill="none"/>
+  <path d="M 2 ${T + H + 7} L 248 ${T + 31}" stroke="${BLUE}" stroke-width="5" fill="none"/>`;
 
-const out = process.argv[2],
-  blue = process.argv[3] ?? '#0A3CA8';
-const width = Number(process.argv[4] ?? 1220);
-writeFileSync(out.replace(/\.png$/, '.svg'), svg(blue));
-const png = new Resvg(svg(blue), { fitTo: { mode: 'width', value: width } }).render().asPng();
-writeFileSync(out, png);
-console.log(
-  out,
-  png.length,
-  'bytes,  viewBox',
-  VB_W,
-  'x',
-  VB_H,
-  ' ratio',
-  (VB_W / VB_H).toFixed(2),
-);
+const TAG_X = 268;
+const TAGLINE = `
+  <g fill="${BLUE}" font-family="DejaVu Sans" font-size="20">
+    <text x="${TAG_X}" y="${T + 20}">Engineering</text>
+    <text x="${TAG_X}" y="${T + 44}">for a better</text>
+    <text x="${TAG_X}" y="${T + 68}">world.</text>
+  </g>`;
+
+const VB_H = 112;
+const svg = (width, withTagline) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${VB_H}" width="${width}" height="${VB_H}">` +
+  `${G}${E}${A}${STRIKE}${withTagline ? TAGLINE : ''}</svg>`;
+
+for (const [name, width, withTagline, render] of [
+  ['gea-logo', 470, true, 1400],
+  ['gea-mark', MARK_W, false, 760],
+]) {
+  const markup = svg(width, withTagline);
+  writeFileSync(path.join(assets, `${name}.svg`), markup);
+  const png = new Resvg(markup, { fitTo: { mode: 'width', value: render } }).render().asPng();
+  writeFileSync(path.join(assets, `${name}.png`), png);
+  console.log(
+    `${name}.png  ${png.length} bytes  viewBox ${width}x${VB_H}  ratio ${(width / VB_H).toFixed(3)}`,
+  );
+}

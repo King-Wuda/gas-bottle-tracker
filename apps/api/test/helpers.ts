@@ -241,6 +241,27 @@ export function testDriverId(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** A 1x1 PNG. `services/signature.ts` checks the magic bytes, not the drawing. */
+export const TEST_SIGNATURE =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+/**
+ * The whole driver sign-off a transfer or a return must carry: who took the
+ * cylinders, the number off their document, a photo of it, and their signature.
+ *
+ * One fixture for both flows, because the two schemas deliberately ask for the same
+ * things — see `schemas/driver.ts`. A test about scans or photos spreads this so it
+ * fails for the reason it is named after.
+ */
+export function testSignOff(overrides: Record<string, unknown> = {}) {
+  return {
+    driverName: 'Sipho Ndlovu',
+    signaturePng: TEST_SIGNATURE,
+    ...testDriverId(),
+    ...overrides,
+  };
+}
+
 /**
  * Scan a whole batch in, so it can then be transferred or returned.
  *

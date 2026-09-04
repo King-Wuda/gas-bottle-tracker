@@ -24,6 +24,7 @@ import {
   testPhoto,
   uniqueProjectNumber,
   testDriverId,
+  testSignOff,
 } from './helpers.js';
 
 /**
@@ -133,6 +134,7 @@ const transferTo = (batchId: string, serials: string[], siteId: string | null) =
     url: '/transfers',
     headers: bearer(techToken),
     payload: {
+      ...testSignOff(),
       photo: testPhoto(),
       batchId,
       clientRequestId: randomUUID(),

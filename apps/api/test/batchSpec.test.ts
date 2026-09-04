@@ -20,6 +20,7 @@ import {
   testPhoto,
   uniqueProjectNumber,
   testDriverId,
+  testSignOff,
 } from './helpers.js';
 
 const PNG_1X1 =
@@ -370,6 +371,7 @@ describe('GET /batches — the shared Transfer / Returns / History list', () => 
       url: '/transfers',
       headers: bearer(techToken),
       payload: {
+        ...testSignOff(),
         photo: testPhoto(),
         batchId: transferred,
         clientRequestId: randomUUID(),
@@ -444,6 +446,7 @@ describe('GET /batches — the shared Transfer / Returns / History list', () => 
       url: '/transfers',
       headers: bearer(techToken),
       payload: {
+        ...testSignOff(),
         photo: testPhoto(),
         batchId: transferred,
         clientRequestId: randomUUID(),
@@ -490,6 +493,7 @@ describe('GET /batches — the shared Transfer / Returns / History list', () => 
       url: '/transfers',
       headers: bearer(techToken),
       payload: {
+        ...testSignOff(),
         photo: testPhoto(),
         batchId: split.batchId,
         clientRequestId: randomUUID(),
