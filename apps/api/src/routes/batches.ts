@@ -20,6 +20,7 @@ import {
   batchInclude,
   batchRelations,
   distributionFor,
+  emailDeliveryFor,
   iso,
   loadBatchDto,
   toBatchBase,
@@ -409,7 +410,7 @@ export async function batchRoutes(app: FastifyInstance): Promise<void> {
     if (!batch) {
       return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Batch not found' } });
     }
-    const body: BatchDetailResponse = { batch };
+    const body: BatchDetailResponse = { batch, emailDelivery: await emailDeliveryFor(id) };
     return body;
   });
 

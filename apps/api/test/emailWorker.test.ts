@@ -5,6 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { prisma } from '../src/db.js';
 import { processPendingEmails } from '../src/services/emailWorker.js';
+import { emailDeliveryFor } from '../src/services/batchView.js';
 import { capturedMail, clearCapturedMail } from '../src/services/mailer/index.js';
 import { readFileAt } from '../src/services/storage.js';
 import { qrPayloadFor } from '../src/services/qr.js';
@@ -224,5 +225,100 @@ describe('email worker — delivery note', () => {
       .filter((m) => m.to === pmEmail)
       .flatMap((m) => m.attachments ?? []);
     expect(notes.some((a) => a.filename.toLowerCase().includes('delivery-note'))).toBe(true);
+  });
+});
+
+/**
+ * What `GET /batches/:id` says became of the mail.
+ *
+ * The batch's own `emailSentAt` is stamped when the outbox row is WRITTEN, so on its
+ * own it reports "sent" for mail the provider went on to refuse — which is exactly how
+ * a deployment can reject every message while the screen claims otherwise, with the
+ * reason sitting unread in `OutboundEmail.lastError`. These assertions exist so that
+ * gap cannot quietly reopen.
+ */
+describe('GET /batches/:id — emailDelivery', () => {
+  const detail = async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/batches/${batchId}`,
+      headers: bearer(techToken),
+    });
+    expect(res.statusCode).toBe(200);
+    return res.json() as { emailDelivery: null | Record<string, unknown> };
+  };
+
+  it('reports the drained QR sheet as SENT, with the address it went to', async () => {
+    const body = await detail();
+    expect(body.emailDelivery).toMatchObject({ status: 'SENT', to: pmEmail, lastError: null });
+    expect(body.emailDelivery?.sentAt).not.toBeNull();
+  });
+
+  it('surfaces a refusal instead of leaving it in the table', async () => {
+    const row = await prisma.outboundEmail.findFirstOrThrow({
+      where: { type: 'QR_SHEET', payload: { path: ['batchId'], equals: batchId } },
+      orderBy: { createdAt: 'desc' },
+    });
+    const refusal =
+      'Resend is in test mode: with no verified domain it delivers ONLY to the address ' +
+      'that owns the Resend account.';
+    await prisma.outboundEmail.update({
+      where: { id: row.id },
+      data: { status: 'FAILED', lastError: refusal, sentAt: null, attempts: 5 },
+    });
+
+    const body = await detail();
+    expect(body.emailDelivery).toMatchObject({
+      status: 'FAILED',
+      lastError: refusal,
+      attempts: 5,
+      sentAt: null,
+    });
+
+    await prisma.outboundEmail.update({
+      where: { id: row.id },
+      data: {
+        status: row.status,
+        lastError: row.lastError,
+        sentAt: row.sentAt,
+        attempts: row.attempts,
+      },
+    });
+  });
+
+  it('is null for a batch that has never had a QR sheet queued', async () => {
+    // Straight at the loader: reaching this through the API would need a batch built
+    // by a path that queues no mail, and no such path exists — creating one always
+    // writes the outbox row. Null is the "nothing queued yet" case the screen has to
+    // render, so it is worth asserting rather than assuming.
+    await expect(emailDeliveryFor(randomUUID())).resolves.toBeNull();
+  });
+
+  it('reports the NEWEST row, so a resend is what the screen shows', async () => {
+    const original = await prisma.outboundEmail.findFirstOrThrow({
+      where: { type: 'QR_SHEET', payload: { path: ['batchId'], equals: batchId } },
+      orderBy: { createdAt: 'desc' },
+    });
+    const resent = await prisma.outboundEmail.create({
+      data: {
+        to: 'someone-else@example.com',
+        type: 'QR_SHEET',
+        subject: '[Resent] QR codes',
+        bodyText: 'again',
+        payload: { batchId },
+        status: 'PENDING',
+      },
+    });
+
+    const body = await detail();
+    expect(body.emailDelivery).toMatchObject({
+      status: 'PENDING',
+      to: 'someone-else@example.com',
+    });
+    // The older SENT row is still there — it simply is not the answer to "did the
+    // last attempt land?".
+    expect(original.status).toBe('SENT');
+
+    await prisma.outboundEmail.delete({ where: { id: resent.id } });
   });
 });

@@ -47,25 +47,25 @@ that. This document is what it does not fit in a comment.
 
 3. **Fill in the four secrets** it asks for:
 
-   | Variable                  | Value                                                     |
-   | ------------------------- | --------------------------------------------------------- |
-   | `QR_SIGN_PRIVATE_KEY_HEX` | The private half from step 1. Never leaves the server.    |
-   | `QR_SIGN_PUBLIC_KEY_HEX`  | The public half. The web build's copy is derived from it. |
-   | `RESEND_API_KEY`          | From resend.com — see "Real email" below.                 |
-   | `MAIL_FROM`               | e.g. `GEA Cylinder Tracker <no-reply@yourdomain.co.za>`   |
+   | Variable                  | Value                                                      |
+   | ------------------------- | ---------------------------------------------------------- |
+   | `QR_SIGN_PRIVATE_KEY_HEX` | The private half from step 1. Never leaves the server.     |
+   | `QR_SIGN_PUBLIC_KEY_HEX`  | The public half. The web build's copy is derived from it.  |
+   | `BREVO_API_KEY`           | From brevo.com — see "Real email" below. No domain needed. |
+   | `MAIL_FROM`               | The sender address confirmed with Brevo, or your domain.   |
 
    Everything else — the database URL, the JWT secret, the storage driver — is set by
    the blueprint.
 
-   **All four are required for the service to start.** `MAILER=resend` with no
-   `RESEND_API_KEY` fails validation at boot rather than at the first send — on
-   purpose, because a server that starts happily and only reveals a missing key when a
-   technician's batch fails to reach its project manager has moved the error somewhere
-   nobody is watching. On Render that shows up as a deploy that will not come up; the
-   reason is the first line of the log.
+   **All four are required for the service to start.** `MAILER=brevo` with no
+   `BREVO_API_KEY` — like `MAILER=resend` with no `RESEND_API_KEY` — fails validation at
+   boot rather than at the first send, on purpose: a server that starts happily and only
+   reveals a missing key when a technician's batch fails to reach its project manager has
+   moved the error somewhere nobody is watching. On Render that shows up as a deploy that
+   will not come up; the reason is the first line of the log.
 
-   If Resend is not ready yet and you need the site up now, set `MAILER=capture` and
-   deploy without `RESEND_API_KEY`. Everything works except sending — delivery notes
+   If the mail account is not ready yet and you need the site up now, set
+   `MAILER=capture` and deploy without any provider key. Everything works except sending — delivery notes
    are still generated, attached to the queued message and stored, they just go into
    memory instead of out. Switch to `resend` when the key is ready; it is one
    environment variable and a restart.
@@ -111,10 +111,38 @@ See `apps/api/src/services/idOcr.ts`.
 
 ## Real email
 
-Delivery notes and QR sheets are emailed to the project manager. `resend` is the only
-transport that sends them, and it is the default — there is deliberately no
-configuration of this server that boots believing it can send mail and cannot. To set
-it up:
+Delivery notes and QR sheets are emailed to the project manager. There is deliberately
+no configuration of this server that boots believing it can send mail and cannot: the
+transport's key is checked at env-validation time, not at the first send.
+
+Two transports work from Render, because mail here has to leave over HTTPS (see
+"SMTP does not work on Render's free plan" below). Which to pick comes down to one
+question — **do you own a domain you can add DNS records to?**
+
+| You have…                | Use             | Reaches                         |
+| ------------------------ | --------------- | ------------------------------- |
+| no domain                | `MAILER=brevo`  | any project manager, 300/day    |
+| a domain with DNS access | `MAILER=resend` | any project manager, no ceiling |
+
+### Brevo — every project manager, no domain (the default)
+
+Brevo authenticates a single sender ADDRESS rather than a whole domain: it emails a
+confirmation link to the address you want to send from, and once you click it, an
+ordinary Gmail account is a legitimate `From:`. No DNS, nothing to propagate.
+
+1. Sign up at [brevo.com](https://www.brevo.com).
+2. **Senders, Domains & Dedicated IPs → Senders → Add a Sender.** Enter the sending
+   address and click the link Brevo emails to it.
+3. **SMTP & API → API Keys → Generate a new API key** → `BREVO_API_KEY`.
+4. Set `MAILER=brevo` and `MAIL_FROM` to the address confirmed in step 2. It must match
+   exactly; a mismatch is refused, and the batch screen will say so.
+
+The free tier is 300 emails a day, which is far above what a depot produces. Adding the
+DKIM record Brevo offers improves inbox placement, but is not needed to send.
+
+### Resend — better deliverability, needs a domain
+
+To set it up:
 
 1. Create an account at [resend.com](https://resend.com) and **verify the domain you
    want to send from**. This is the step that takes the longest, because it needs DNS
@@ -143,9 +171,13 @@ address, so `MAIL_FROM` must be `onboarding@resend.dev` until then.
 
 That is enough to demonstrate with, as long as the project manager on the batch IS
 that address. A batch belonging to anyone else queues, is refused with a 403, and sits
-`PENDING` with the reason in `OutboundEmail.lastError`. The app records that faithfully
-— but nothing says so on the screen the operator is looking at, so pick the project
-manager deliberately or verify a domain first.
+`PENDING` with the reason in `OutboundEmail.lastError`.
+
+The batch detail screen reports that: its QR-sheet card shows **Delivered**, **Queued**,
+**Retrying** or **Failed** from the outbox row itself, with the provider's reason
+underneath, and its timestamps say "queued" rather than "sent" because that is what they
+record. A refusal we recognise — Resend's test-mode 403 among them — is rewritten to
+name the fix rather than repeat the provider's wording.
 
 ## SMTP does not work on Render's free plan
 
@@ -171,11 +203,17 @@ allows SMTP (a VPS, a company server); it is simply not an option here.
 
 ## Sending to more than one person, for free
 
+**Short answer: `MAILER=brevo`.** It is the only one of the four that needs neither a
+domain nor an SMTP port, which are the two things this deployment cannot supply. See
+"Brevo" above for the four-step setup.
+
+The others, and why each falls short here:
+
 Resend and SendGrid both refuse arbitrary recipients until a DOMAIN is verified, and
 verifying one needs a domain you own. Until then Resend delivers only to the address
 that owns the account.
 
-`MAILER=smtp` is the way round that at no cost — **on a host that allows outbound
+`MAILER=smtp` is the other way round that at no cost — **on a host that allows outbound
 SMTP**. Render's free plan does not (see above), so this applies to a VPS or a
 company server, not to the current deployment. Any SMTP account you already have
 sends to anybody, with no domain and no DNS. Gmail is the usual one.

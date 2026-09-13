@@ -468,12 +468,16 @@ export function Chip({ label, onRemove }: { label: string; onRemove: () => void 
   );
 }
 
-export type BadgeTone = 'neutral' | 'moved' | 'done';
+export type BadgeTone = 'neutral' | 'moved' | 'done' | 'failed';
 
 const BADGE_TONE: Record<BadgeTone, { backgroundColor: string }> = {
   neutral: { backgroundColor: colors.sunken },
   moved: { backgroundColor: colors.warning },
   done: { backgroundColor: colors.success },
+  // Red is reserved for "this did not happen" — see the colour rules in CLAUDE.md.
+  // Amber already means "asserted rather than proved", so a refused email cannot
+  // borrow it without blurring the one distinction the delivery note depends on.
+  failed: { backgroundColor: colors.danger },
 };
 
 /** Neutral badges keep body ink; the coloured ones are filled, so their text flips. */

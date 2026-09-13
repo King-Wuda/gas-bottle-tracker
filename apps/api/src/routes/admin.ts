@@ -23,7 +23,7 @@ import { prisma, Prisma } from '../db.js';
 import { env } from '../env.js';
 import { hashPassword } from '../lib/password.js';
 import { allocateSerials } from '../services/serial.js';
-import { loadBatchDto } from '../services/batchView.js';
+import { emailDeliveryFor, loadBatchDto } from '../services/batchView.js';
 
 /**
  * The admin console: who can use the system, who the paperwork goes to, and fixing a
@@ -441,7 +441,10 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const dto = await loadBatchDto(id);
-    const body: BatchDetailResponse = { batch: dto! };
+    const body: BatchDetailResponse = {
+      batch: dto!,
+      emailDelivery: await emailDeliveryFor(dto!.id),
+    };
     return body;
   });
 }

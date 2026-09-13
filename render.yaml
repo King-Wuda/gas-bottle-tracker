@@ -82,19 +82,30 @@ services:
       - key: QR_SIGN_PUBLIC_KEY_HEX
         sync: false
 
-      # Real email through Resend. Create a key at resend.com.
+      # Real email. Two transports work from here; SMTP does not, because Render's
+      # free plan blocks outbound SMTP on every port (measured — see docs/DEPLOY.md),
+      # so mail has to leave over HTTPS.
       #
-      # With no verified domain, MAIL_FROM must be "onboarding@resend.dev" and Resend
-      # delivers ONLY to the address that owns the account - everything else is
-      # refused with a 403 and left PENDING in the queue. Verify a domain at
-      # resend.com/domains to send to anyone, then point MAIL_FROM at it.
+      # MAILER=brevo is the one to use if you do NOT own a domain. Brevo verifies a
+      # single sender ADDRESS by emailing it a confirmation link, and then delivers to
+      # any project manager. Set BREVO_API_KEY, and MAIL_FROM to the address you
+      # confirmed. 300 emails/day free.
       #
-      # BOTH ARE REQUIRED TO BOOT. MAILER=resend without a key fails env validation at
+      # MAILER=resend has the better deliverability but authenticates by DOMAIN: with
+      # none verified, MAIL_FROM must be "onboarding@resend.dev" and Resend delivers
+      # ONLY to the address that owns the account - everything else is refused with a
+      # 403 and left PENDING in the queue. Verify a domain at resend.com/domains to
+      # send to anyone, then point MAIL_FROM at it.
+      #
+      # THE KEY FOR WHICHEVER YOU PICK IS REQUIRED TO BOOT. MAILER=brevo without
+      # BREVO_API_KEY (or MAILER=resend without RESEND_API_KEY) fails env validation at
       # startup rather than at the first send, which is deliberate — see apps/api/src/
-      # env.ts. If Resend is not ready yet, set MAILER=mailhog and leave the key empty:
+      # env.ts. If neither is ready yet, set MAILER=capture and leave the keys empty:
       # everything works except sending, and it is one variable to switch back.
       - key: MAILER
-        value: resend
+        value: brevo
+      - key: BREVO_API_KEY
+        sync: false
       - key: RESEND_API_KEY
         sync: false
       - key: MAIL_FROM
