@@ -1,22 +1,37 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import {
+  createGasTypeRequestSchema,
   createProjectManagerRequestSchema,
+  createSupplierRequestSchema,
   createUserRequestSchema,
+  gasSupplierPairingRequestSchema,
   serialYear,
   systemClock,
   updateBatchRequestSchema,
+  updateGasTypeRequestSchema,
   updateProjectManagerRequestSchema,
+  updateSupplierRequestSchema,
   updateUserRequestSchema,
+  type AdminClientDto,
+  type AdminClientsResponse,
+  type AdminGasTypeDto,
+  type AdminGasTypeResponse,
+  type AdminGasTypesResponse,
   type AdminProjectManagerDto,
   type AdminProjectManagerResponse,
   type AdminProjectManagersResponse,
+  type AdminSupplierDto,
+  type AdminSupplierResponse,
+  type AdminSuppliersResponse,
   type AdminUserDto,
   type AdminUserResponse,
   type AdminUsersResponse,
   type BatchAmendmentDto,
   type BatchAmendmentsResponse,
   type BatchDetailResponse,
+  type DeletionImpactResponse,
+  type DeletionResponse,
   type MovementType,
 } from '@gct/shared';
 import { prisma, Prisma } from '../db.js';
@@ -24,17 +39,36 @@ import { env } from '../env.js';
 import { hashPassword } from '../lib/password.js';
 import { allocateSerials } from '../services/serial.js';
 import { emailDeliveryFor, loadBatchDto } from '../services/batchView.js';
+import {
+  deleteAllSitesOfProject,
+  deleteGasType,
+  deleteProject,
+  deleteSite,
+  deleteSupplier,
+  gasTypeImpact,
+  projectImpact,
+  siteImpact,
+  supplierImpact,
+} from '../services/adminDelete.js';
 
 /**
  * The admin console: who can use the system, who the paperwork goes to, and fixing a
  * batch that was booked in wrong.
  *
  * Every route here is ADMIN-only, and every one of them is careful about the same
- * thing: this system's product is *evidence*. A user who scanned a cylinder in March
- * is the answer to "who moved this?" forever, so nobody is deleted — they are
- * deactivated. A batch that was mis-keyed can be corrected, but only in ways that do
- * not contradict what the movement log already proves, and never without recording
- * that the correction happened.
+ * thing: this system's product is *evidence*. A batch that was mis-keyed can be
+ * corrected, but only in ways that do not contradict what the movement log already
+ * proves, and never without recording that the correction happened.
+ *
+ * Deactivating remains the everyday way to retire a person, a gas or a supplier, and
+ * it is what the pickers respect. The DELETE routes below are the deliberate
+ * exception: a depot that has finished with a client wants the client gone, not
+ * greyed out. They are destructive on purpose, they report exactly what they removed,
+ * and every one of them has a matching `/impact` route so the screen can say "3
+ * batches, 41 cylinders and 2 signed delivery notes" before anyone confirms.
+ *
+ * Users are the one thing a delete does NOT cascade through, because their foreign
+ * keys run into other clients' records — see DELETE /admin/users/:id.
  */
 
 /** One recorded field change, as stored in `BatchAmendment.changes`. */
@@ -91,6 +125,10 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/admin/users', adminOnly, async () => {
     const rows = await prisma.user.findMany({
+      // A deleted account is not an account any more: it survives only to give the
+      // history a name, and listing it would invite someone to "reactivate" a login
+      // whose password was scrambled on the way out.
+      where: { deletedAt: null },
       include: userCounts,
       // Active first, then by role, then by name: the list is read to find someone,
       // and a deactivated account is the one you are least likely to be looking for.
@@ -444,6 +482,457 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const body: BatchDetailResponse = {
       batch: dto!,
       emailDelivery: await emailDeliveryFor(dto!.id),
+    };
+    return body;
+  });
+
+  // ------------------------------------------------------------ deleting a user
+
+  /**
+   * Delete an account — including another admin's.
+   *
+   * Two outcomes, and which one happens is decided by the data rather than by a
+   * setting. An account that has never authored anything is deleted outright: nothing
+   * points at it, so there is nothing to keep. An account that HAS is tombstoned —
+   * password scrambled, email released for reuse, every session revoked — and its name
+   * stays on the batches, scans and sign-offs it produced.
+   *
+   * That asymmetry is not a hedge. `Batch.createdByUserId` and five more are required
+   * foreign keys, so a true cascade here would delete every batch the person ever
+   * booked in, which for a depot technician means other clients' deliveries, their
+   * signed delivery notes and their movement log. Removing one employee must not be a
+   * way to destroy four customers' records.
+   */
+  app.delete('/admin/users/:id', adminOnly, async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const target = await prisma.user.findUnique({
+      where: { id },
+      include: {
+        _count: {
+          select: {
+            batchesCreated: true,
+            movementEvents: true,
+            transfers: true,
+            returnsManaged: true,
+            amendments: true,
+            initializations: true,
+            batchPhotos: true,
+          },
+        },
+      },
+    });
+    if (!target || target.deletedAt) {
+      return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'User not found' } });
+    }
+
+    // The same two guards the PATCH route applies, for the same reason: an admin who
+    // deletes themselves, or the last admin, locks the organisation out of this
+    // console entirely — and unlike a deactivation there is no undoing it.
+    if (target.id === request.user.sub) {
+      return reply.code(400).send({
+        error: {
+          code: 'CANNOT_DELETE_SELF',
+          message: 'You cannot delete your own account. Ask another admin to do it.',
+        },
+      });
+    }
+    if (target.role === 'ADMIN') {
+      const otherAdmins = await prisma.user.count({
+        where: { role: 'ADMIN', active: true, deletedAt: null, id: { not: target.id } },
+      });
+      if (otherAdmins === 0) {
+        return reply.code(400).send({
+          error: {
+            code: 'LAST_ADMIN',
+            message: 'This is the only active admin. Promote someone else first.',
+          },
+        });
+      }
+    }
+
+    const authored = Object.values(target._count).reduce((n, c) => n + c, 0);
+
+    await prisma.$transaction(async (tx) => {
+      // Sessions die first either way: the access token already in their pocket is
+      // still signed, and only revoking the refresh tokens stops it being renewed.
+      await tx.refreshToken.deleteMany({ where: { userId: id } });
+
+      if (authored === 0) {
+        await tx.user.delete({ where: { id } });
+        return;
+      }
+
+      await tx.user.update({
+        where: { id },
+        data: {
+          deletedAt: new Date(),
+          active: false,
+          // Released so the address can be given to a new account, and scrambled so
+          // the old hash cannot be checked against anything. The name is deliberately
+          // untouched — it is what History attributes their work to.
+          email: `deleted+${id}@deleted.invalid`,
+          passwordHash: await hashPassword(randomUUID() + randomUUID()),
+        },
+      });
+    });
+
+    request.log.warn(
+      { userId: id, name: target.name, authored, purged: authored === 0 },
+      'admin deleted a user account',
+    );
+    return { deleted: true, authoredRecordsKept: authored };
+  });
+
+  // --------------------------------------------------------------- gases
+
+  const gasInclude = {
+    suppliers: { include: { supplier: { select: { id: true, name: true } } } },
+    _count: { select: { batchLines: true } },
+  } as const;
+
+  type GasRow = {
+    id: string;
+    name: string;
+    prefix: string;
+    active: boolean;
+    suppliers: { supplier: { id: string; name: string } }[];
+    _count: { batchLines: number };
+  };
+
+  const toGasDto = (g: GasRow): AdminGasTypeDto => ({
+    id: g.id,
+    name: g.name,
+    prefix: g.prefix,
+    active: g.active,
+    suppliers: g.suppliers.map((s) => s.supplier).sort((a, b) => a.name.localeCompare(b.name)),
+    usageCount: g._count.batchLines,
+  });
+
+  app.get('/admin/gas-types', adminOnly, async () => {
+    const rows = await prisma.gasType.findMany({
+      include: gasInclude,
+      orderBy: [{ active: 'desc' }, { name: 'asc' }],
+    });
+    const body: AdminGasTypesResponse = { gasTypes: rows.map(toGasDto) };
+    return body;
+  });
+
+  app.post('/admin/gas-types', adminOnly, async (request, reply) => {
+    const input = createGasTypeRequestSchema.parse(request.body);
+    try {
+      const gasType = await prisma.gasType.create({
+        data: { name: input.name, prefix: input.prefix },
+        include: gasInclude,
+      });
+      const body: AdminGasTypeResponse = { gasType: toGasDto(gasType) };
+      return reply.code(201).send(body);
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        // Both name and prefix are unique, and the prefix is the one that matters:
+        // two gases sharing it would issue serials that collide on a label.
+        const field = (err.meta?.target as string[] | undefined)?.includes('prefix')
+          ? 'prefix'
+          : 'name';
+        return reply.code(409).send({
+          error: {
+            code: 'GAS_TYPE_EXISTS',
+            message: `A gas with that ${field} already exists.`,
+          },
+        });
+      }
+      throw err;
+    }
+  });
+
+  /** Rename, or take it out of the pickers without destroying anything. */
+  app.patch('/admin/gas-types/:id', adminOnly, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const input = updateGasTypeRequestSchema.parse(request.body);
+    const existing = await prisma.gasType.findUnique({ where: { id } });
+    if (!existing) {
+      return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Gas not found' } });
+    }
+    // The prefix is deliberately not editable: it is stamped into every serial the gas
+    // has already issued, and those are printed on labels stuck to physical cylinders.
+    const gasType = await prisma.gasType.update({
+      where: { id },
+      data: {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.active !== undefined ? { active: input.active } : {}),
+      },
+      include: gasInclude,
+    });
+    const body: AdminGasTypeResponse = { gasType: toGasDto(gasType) };
+    return body;
+  });
+
+  app.get('/admin/gas-types/:id/impact', adminOnly, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (!(await prisma.gasType.findUnique({ where: { id } }))) {
+      return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Gas not found' } });
+    }
+    const body: DeletionImpactResponse = { impact: await gasTypeImpact(id) };
+    return body;
+  });
+
+  app.delete('/admin/gas-types/:id', adminOnly, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (!(await prisma.gasType.findUnique({ where: { id } }))) {
+      return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Gas not found' } });
+    }
+    const body: DeletionResponse = { deleted: true, impact: await deleteGasType(id, request.log) };
+    return body;
+  });
+
+  // ------------------------------------------------- suppliers for a gas
+
+  /**
+   * Offer a supplier for a gas, or stop offering it.
+   *
+   * The only reversible delete in this console: `BatchLine` snapshots the supplier's
+   * NAME at intake, so unpairing changes what tomorrow's batch form offers and nothing
+   * about what yesterday's recorded. No impact preview, because there is no impact.
+   */
+  app.post('/admin/gas-types/:id/suppliers', adminOnly, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { supplierId } = gasSupplierPairingRequestSchema.parse(request.body);
+
+    const [gas, supplier] = await Promise.all([
+      prisma.gasType.findUnique({ where: { id } }),
+      prisma.supplier.findUnique({ where: { id: supplierId } }),
+    ]);
+    if (!gas || !supplier) {
+      return reply
+        .code(404)
+        .send({ error: { code: 'NOT_FOUND', message: 'Gas or supplier not found' } });
+    }
+
+    // Idempotent: pairing something already paired is the same end state, and the
+    // screen should not have to care whether its list was a second stale.
+    await prisma.gasSupplier.upsert({
+      where: { gasTypeId_supplierId: { gasTypeId: id, supplierId } },
+      create: { gasTypeId: id, supplierId },
+      update: {},
+    });
+
+    const gasType = await prisma.gasType.findUniqueOrThrow({ where: { id }, include: gasInclude });
+    const body: AdminGasTypeResponse = { gasType: toGasDto(gasType) };
+    return body;
+  });
+
+  app.delete('/admin/gas-types/:id/suppliers/:supplierId', adminOnly, async (request, reply) => {
+    const { id, supplierId } = request.params as { id: string; supplierId: string };
+    if (!(await prisma.gasType.findUnique({ where: { id } }))) {
+      return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Gas not found' } });
+    }
+    await prisma.gasSupplier.deleteMany({ where: { gasTypeId: id, supplierId } });
+    const gasType = await prisma.gasType.findUniqueOrThrow({ where: { id }, include: gasInclude });
+    const body: AdminGasTypeResponse = { gasType: toGasDto(gasType) };
+    return body;
+  });
+
+  // --------------------------------------------------------------- suppliers
+
+  const supplierInclude = {
+    gasTypes: { include: { gasType: { select: { id: true, name: true } } } },
+    _count: { select: { batchLines: true } },
+  } as const;
+
+  type SupplierRow = {
+    id: string;
+    name: string;
+    active: boolean;
+    gasTypes: { gasType: { id: string; name: string } }[];
+    _count: { batchLines: number };
+  };
+
+  const toSupplierDto = (s: SupplierRow): AdminSupplierDto => ({
+    id: s.id,
+    name: s.name,
+    active: s.active,
+    gasTypes: s.gasTypes.map((g) => g.gasType).sort((a, b) => a.name.localeCompare(b.name)),
+    usageCount: s._count.batchLines,
+  });
+
+  app.get('/admin/suppliers', adminOnly, async () => {
+    const rows = await prisma.supplier.findMany({
+      include: supplierInclude,
+      orderBy: [{ active: 'desc' }, { name: 'asc' }],
+    });
+    const body: AdminSuppliersResponse = { suppliers: rows.map(toSupplierDto) };
+    return body;
+  });
+
+  app.post('/admin/suppliers', adminOnly, async (request, reply) => {
+    const input = createSupplierRequestSchema.parse(request.body);
+    try {
+      const supplier = await prisma.supplier.create({
+        data: {
+          name: input.name,
+          ...(input.gasTypeIds?.length
+            ? { gasTypes: { create: input.gasTypeIds.map((gasTypeId) => ({ gasTypeId })) } }
+            : {}),
+        },
+        include: supplierInclude,
+      });
+      const body: AdminSupplierResponse = { supplier: toSupplierDto(supplier) };
+      return reply.code(201).send(body);
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError) {
+        if (err.code === 'P2002') {
+          return reply.code(409).send({
+            error: {
+              code: 'SUPPLIER_EXISTS',
+              message: 'A supplier with that name already exists.',
+            },
+          });
+        }
+        // A gas id that does not exist — a stale form, not a reason to create one.
+        if (err.code === 'P2003' || err.code === 'P2025') {
+          return reply.code(400).send({
+            error: { code: 'UNKNOWN_GAS_TYPE', message: 'One of those gases no longer exists.' },
+          });
+        }
+      }
+      throw err;
+    }
+  });
+
+  app.patch('/admin/suppliers/:id', adminOnly, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const input = updateSupplierRequestSchema.parse(request.body);
+    if (!(await prisma.supplier.findUnique({ where: { id } }))) {
+      return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Supplier not found' } });
+    }
+    const supplier = await prisma.supplier.update({
+      where: { id },
+      data: {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.active !== undefined ? { active: input.active } : {}),
+      },
+      include: supplierInclude,
+    });
+    const body: AdminSupplierResponse = { supplier: toSupplierDto(supplier) };
+    return body;
+  });
+
+  app.get('/admin/suppliers/:id/impact', adminOnly, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (!(await prisma.supplier.findUnique({ where: { id } }))) {
+      return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Supplier not found' } });
+    }
+    const body: DeletionImpactResponse = { impact: await supplierImpact(id) };
+    return body;
+  });
+
+  app.delete('/admin/suppliers/:id', adminOnly, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (!(await prisma.supplier.findUnique({ where: { id } }))) {
+      return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Supplier not found' } });
+    }
+    const body: DeletionResponse = { deleted: true, impact: await deleteSupplier(id, request.log) };
+    return body;
+  });
+
+  // ----------------------------------------------------- clients and locations
+
+  const clientInclude = {
+    projectManager: { select: { id: true, name: true } },
+    sites: {
+      orderBy: { name: 'asc' as const },
+      include: { _count: { select: { batches: true } } },
+    },
+    _count: { select: { batches: true } },
+  } as const;
+
+  type ClientRow = {
+    id: string;
+    projectNumber: string;
+    projectManagerId: string;
+    status: 'ACTIVE' | 'CLOSED';
+    createdAt: Date;
+    projectManager: { id: string; name: string };
+    sites: { id: string; name: string; location: string; _count: { batches: number } }[];
+    _count: { batches: number };
+  };
+
+  const toClientDto = (p: ClientRow): AdminClientDto => ({
+    id: p.id,
+    projectNumber: p.projectNumber,
+    projectManagerId: p.projectManagerId,
+    projectManagerName: p.projectManager.name,
+    status: p.status,
+    createdAt: p.createdAt.toISOString(),
+    locations: p.sites.map((s) => ({
+      id: s.id,
+      name: s.name,
+      location: s.location,
+      batchCount: s._count.batches,
+    })),
+    batchCount: p._count.batches,
+  });
+
+  app.get('/admin/clients', adminOnly, async () => {
+    const rows = await prisma.project.findMany({
+      include: clientInclude,
+      orderBy: [{ status: 'asc' }, { projectNumber: 'asc' }],
+    });
+    const body: AdminClientsResponse = { clients: rows.map(toClientDto) };
+    return body;
+  });
+
+  app.get('/admin/clients/:id/impact', adminOnly, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (!(await prisma.project.findUnique({ where: { id } }))) {
+      return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Client not found' } });
+    }
+    const body: DeletionImpactResponse = { impact: await projectImpact(id) };
+    return body;
+  });
+
+  /** The client, every location under it, and everything those locations hold. */
+  app.delete('/admin/clients/:id', adminOnly, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (!(await prisma.project.findUnique({ where: { id } }))) {
+      return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Client not found' } });
+    }
+    const body: DeletionResponse = { deleted: true, impact: await deleteProject(id, request.log) };
+    return body;
+  });
+
+  app.get('/admin/clients/:id/locations/:siteId/impact', adminOnly, async (request, reply) => {
+    const { id, siteId } = request.params as { id: string; siteId: string };
+    const site = await prisma.site.findUnique({ where: { id: siteId } });
+    if (!site || site.projectId !== id) {
+      return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Location not found' } });
+    }
+    const body: DeletionImpactResponse = { impact: await siteImpact(siteId) };
+    return body;
+  });
+
+  /** One location of a client. */
+  app.delete('/admin/clients/:id/locations/:siteId', adminOnly, async (request, reply) => {
+    const { id, siteId } = request.params as { id: string; siteId: string };
+    const site = await prisma.site.findUnique({ where: { id: siteId } });
+    // Checked against the client in the path, not just by id: a mistyped site id that
+    // happens to exist under a DIFFERENT client must not silently delete that one.
+    if (!site || site.projectId !== id) {
+      return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Location not found' } });
+    }
+    const body: DeletionResponse = { deleted: true, impact: await deleteSite(siteId, request.log) };
+    return body;
+  });
+
+  /** Every location of a client, keeping the client itself. */
+  app.delete('/admin/clients/:id/locations', adminOnly, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (!(await prisma.project.findUnique({ where: { id } }))) {
+      return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Client not found' } });
+    }
+    const body: DeletionResponse = {
+      deleted: true,
+      impact: await deleteAllSitesOfProject(id, request.log),
     };
     return body;
   });
