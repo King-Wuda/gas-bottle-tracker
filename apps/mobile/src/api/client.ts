@@ -1,6 +1,11 @@
 import type {
+  AdminClientsResponse,
+  AdminGasTypeResponse,
+  AdminGasTypesResponse,
   AdminProjectManagerResponse,
   AdminProjectManagersResponse,
+  AdminSupplierResponse,
+  AdminSuppliersResponse,
   AdminUserResponse,
   AdminUsersResponse,
   BatchAmendmentsResponse,
@@ -42,6 +47,12 @@ import type {
   UpdateBatchRequest,
   UpdateProjectManagerRequest,
   UpdateUserRequest,
+  CreateGasTypeRequest,
+  CreateSupplierRequest,
+  DeletionImpactResponse,
+  DeletionResponse,
+  UpdateGasTypeRequest,
+  UpdateSupplierRequest,
 } from '@gct/shared';
 import { API_URL, configNote } from '../config';
 import { loadTokens, saveTokens, clearTokens, type StoredTokens } from '../auth/tokenStore';
@@ -399,6 +410,137 @@ export function apiAdminUpdateBatch(
 
 export function apiAdminBatchAmendments(id: string): Promise<BatchAmendmentsResponse> {
   return apiRequest<BatchAmendmentsResponse>(`/admin/batches/${encodeURIComponent(id)}/amendments`);
+}
+
+// ---- Admin: destructive deletes ----
+//
+// Each delete has a matching `…Impact` call. The screens ALWAYS fetch the impact
+// first and show it in the confirmation: these routes remove batches, cylinders,
+// movement history, signatures and delivery notes, and nothing that destructive
+// should happen behind a button whose label is the only warning.
+
+const enc = encodeURIComponent;
+
+/**
+ * Delete an account.
+ *
+ * Reports how many records the person authored, because the server keeps those under
+ * their name rather than cascading into other clients' batches — the screen says so
+ * instead of implying everything went.
+ */
+export function apiAdminDeleteUser(
+  id: string,
+): Promise<{ deleted: true; authoredRecordsKept: number }> {
+  return apiRequest(`/admin/users/${enc(id)}`, { method: 'DELETE' });
+}
+
+export function apiAdminGasTypes(): Promise<AdminGasTypesResponse> {
+  return apiRequest<AdminGasTypesResponse>('/admin/gas-types');
+}
+
+export function apiAdminCreateGasType(body: CreateGasTypeRequest): Promise<AdminGasTypeResponse> {
+  return apiRequest<AdminGasTypeResponse>('/admin/gas-types', { method: 'POST', body });
+}
+
+export function apiAdminUpdateGasType(
+  id: string,
+  body: UpdateGasTypeRequest,
+): Promise<AdminGasTypeResponse> {
+  return apiRequest<AdminGasTypeResponse>(`/admin/gas-types/${enc(id)}`, { method: 'PATCH', body });
+}
+
+export function apiAdminGasTypeImpact(id: string): Promise<DeletionImpactResponse> {
+  return apiRequest<DeletionImpactResponse>(`/admin/gas-types/${enc(id)}/impact`);
+}
+
+export function apiAdminDeleteGasType(id: string): Promise<DeletionResponse> {
+  return apiRequest<DeletionResponse>(`/admin/gas-types/${enc(id)}`, { method: 'DELETE' });
+}
+
+/** Offer a supplier for a gas. Safe and reversible — see the route. */
+export function apiAdminPairSupplier(
+  gasTypeId: string,
+  supplierId: string,
+): Promise<AdminGasTypeResponse> {
+  return apiRequest<AdminGasTypeResponse>(`/admin/gas-types/${enc(gasTypeId)}/suppliers`, {
+    method: 'POST',
+    body: { supplierId },
+  });
+}
+
+export function apiAdminUnpairSupplier(
+  gasTypeId: string,
+  supplierId: string,
+): Promise<AdminGasTypeResponse> {
+  return apiRequest<AdminGasTypeResponse>(
+    `/admin/gas-types/${enc(gasTypeId)}/suppliers/${enc(supplierId)}`,
+    { method: 'DELETE' },
+  );
+}
+
+export function apiAdminSuppliers(): Promise<AdminSuppliersResponse> {
+  return apiRequest<AdminSuppliersResponse>('/admin/suppliers');
+}
+
+export function apiAdminCreateSupplier(
+  body: CreateSupplierRequest,
+): Promise<AdminSupplierResponse> {
+  return apiRequest<AdminSupplierResponse>('/admin/suppliers', { method: 'POST', body });
+}
+
+export function apiAdminUpdateSupplier(
+  id: string,
+  body: UpdateSupplierRequest,
+): Promise<AdminSupplierResponse> {
+  return apiRequest<AdminSupplierResponse>(`/admin/suppliers/${enc(id)}`, {
+    method: 'PATCH',
+    body,
+  });
+}
+
+export function apiAdminSupplierImpact(id: string): Promise<DeletionImpactResponse> {
+  return apiRequest<DeletionImpactResponse>(`/admin/suppliers/${enc(id)}/impact`);
+}
+
+export function apiAdminDeleteSupplier(id: string): Promise<DeletionResponse> {
+  return apiRequest<DeletionResponse>(`/admin/suppliers/${enc(id)}`, { method: 'DELETE' });
+}
+
+export function apiAdminClients(): Promise<AdminClientsResponse> {
+  return apiRequest<AdminClientsResponse>('/admin/clients');
+}
+
+export function apiAdminClientImpact(id: string): Promise<DeletionImpactResponse> {
+  return apiRequest<DeletionImpactResponse>(`/admin/clients/${enc(id)}/impact`);
+}
+
+export function apiAdminDeleteClient(id: string): Promise<DeletionResponse> {
+  return apiRequest<DeletionResponse>(`/admin/clients/${enc(id)}`, { method: 'DELETE' });
+}
+
+export function apiAdminLocationImpact(
+  clientId: string,
+  siteId: string,
+): Promise<DeletionImpactResponse> {
+  return apiRequest<DeletionImpactResponse>(
+    `/admin/clients/${enc(clientId)}/locations/${enc(siteId)}/impact`,
+  );
+}
+
+export function apiAdminDeleteLocation(
+  clientId: string,
+  siteId: string,
+): Promise<DeletionResponse> {
+  return apiRequest<DeletionResponse>(`/admin/clients/${enc(clientId)}/locations/${enc(siteId)}`, {
+    method: 'DELETE',
+  });
+}
+
+/** Every location of a client, keeping the client. */
+export function apiAdminDeleteAllLocations(clientId: string): Promise<DeletionResponse> {
+  return apiRequest<DeletionResponse>(`/admin/clients/${enc(clientId)}/locations`, {
+    method: 'DELETE',
+  });
 }
 
 // ---- M5 audit trail ----

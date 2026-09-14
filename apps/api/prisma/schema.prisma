@@ -79,6 +79,18 @@ model User {
   name         String
   role         Role
   active       Boolean  @default(true)
+  /// Set when an admin DELETED this account, as opposed to deactivating it.
+  ///
+  /// The row survives only because `Batch.createdByUserId`, `MovementEvent.userId` and
+  /// four more are required foreign keys: the person who booked in a batch is part of
+  /// what the batch records, and cascading a user delete into those would erase other
+  /// clients' deliveries as collateral for one technician leaving. So the ACCOUNT is
+  /// destroyed — password scrambled, email released, every session revoked — and what
+  /// remains is a name for the history to attribute work to.
+  ///
+  /// A user who has authored nothing is deleted outright instead; there is nothing
+  /// pointing at them and nothing to attribute.
+  deletedAt    DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { env } from '../env.js';
 import { prisma } from '../db.js';
@@ -94,4 +94,39 @@ export async function readFileAt(relPath: string): Promise<Buffer> {
     return Buffer.from(row.bytes);
   }
   return readFile(absolutePath(relPath));
+}
+
+/**
+ * Remove stored blobs, whichever driver holds them.
+ *
+ * Exists for the admin cascade deletes: "delete this client" has to mean the
+ * photographs, signatures and delivery notes go too, not just the rows that point at
+ * them. Leaving the bytes behind would keep the evidence on disk under a key nothing
+ * references any more — the worst of both worlds, since it is neither retrievable
+ * through the app nor actually gone.
+ *
+ * Best effort per path, and never throws. A blob that is already missing is the
+ * desired end state, and one that cannot be removed must not roll back a deletion the
+ * admin has confirmed: the caller is inside a transaction that has already dropped the
+ * rows. Returns how many it actually removed, for the log.
+ */
+export async function deleteFiles(relPaths: readonly string[]): Promise<number> {
+  const unique = [...new Set(relPaths.filter((p) => p.length > 0))];
+  if (unique.length === 0) return 0;
+
+  if (usingDatabase()) {
+    const { count } = await prisma.storedFile.deleteMany({ where: { path: { in: unique } } });
+    return count;
+  }
+
+  let removed = 0;
+  for (const rel of unique) {
+    try {
+      await rm(path.join(root(), rel), { force: false });
+      removed++;
+    } catch {
+      // Already gone, or unreadable. Either way there is nothing useful to do here.
+    }
+  }
+  return removed;
 }
