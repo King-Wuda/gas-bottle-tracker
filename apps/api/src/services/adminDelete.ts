@@ -278,29 +278,61 @@ async function purgeBatches(tx: Tx, batchIds: string[]): Promise<string[]> {
 }
 
 /**
- * Detach a site from records that SURVIVE it.
+ * Deal with records that outlive a location.
  *
- * A location is not only referenced by its own batches. A cylinder from another
- * client's batch can be parked there after a transfer, and the movement log records
- * the hop by site id. Those rows outlive the site, so they have to stop pointing at
- * it or the delete is refused.
+ * A location is not only referenced by its own batches. Within one client, cylinders
+ * move freely between sites, so a Delmas batch can be sitting at Cape Town when Cape
+ * Town is deleted — and that batch survives, because it belongs to Delmas.
  *
- * The cylinders go back to Stores, which is true — they are no longer at a location
- * this system knows about. The movement events that named the site are deleted rather
- * than nulled, because a NULL site id in this schema does not mean "somewhere gone",
- * it means Stores, and rewriting history to claim a cylinder went to the depot when it
- * went to Delmas would be a worse lie than the gap.
+ * Two kinds of leftover, handled differently, and the schema's CHECK constraints are
+ * what decide which is which:
+ *
+ *  - **Cylinders** go back to Stores. `Cylinder_deployed_has_site` says a DEPLOYED
+ *    cylinder must have a site, so this is status AND location or the write is
+ *    rejected. Terminal RETURNED cylinders are left alone: putting them back in stock
+ *    would return cylinders to the yard that came home months ago.
+ *  - **Transfers that delivered TO the location cannot survive it.**
+ *    `Transfer_site_destination_has_site` says a SITE-bound transfer must name one, so
+ *    the alternatives are to delete the transfer or to rewrite it as having gone to
+ *    Stores. The second is a lie about where the cylinders went, so the record goes,
+ *    with the movement events and photo that evidence it.
+ *
+ * Movement events that merely NAME the site go too, for the same reason: NULL there
+ * does not mean "somewhere gone", it means Stores.
+ *
+ * Returns the blob keys it orphaned, for the caller to remove after the commit.
  */
-async function detachSurvivorsFromSites(tx: Tx, siteIds: string[]): Promise<void> {
+async function detachSurvivorsFromSites(tx: Tx, siteIds: string[]): Promise<string[]> {
   const site = { in: siteIds };
+
+  await tx.cylinder.updateMany({
+    where: { currentSiteId: site, status: 'DEPLOYED' },
+    data: { currentSiteId: null, status: 'IN_STORES' },
+  });
   await tx.cylinder.updateMany({ where: { currentSiteId: site }, data: { currentSiteId: null } });
-  await tx.transfer.updateMany({
+
+  const doomed = await tx.transfer.findMany({
     where: { destinationSiteId: site },
-    data: { destinationSiteId: null },
+    select: { id: true, signaturePath: true, driverIdPath: true },
   });
-  await tx.movementEvent.deleteMany({
-    where: { OR: [{ fromSiteId: site }, { toSiteId: site }] },
-  });
+  const transferIds = doomed.map((t) => t.id);
+  const paths = doomed
+    .flatMap((t) => [t.signaturePath, t.driverIdPath])
+    .filter((p): p is string => typeof p === 'string' && p.length > 0);
+
+  if (transferIds.length > 0) {
+    const photos = await tx.batchPhoto.findMany({
+      where: { transferId: { in: transferIds } },
+      select: { path: true },
+    });
+    paths.push(...photos.map((p) => p.path));
+    await tx.batchPhoto.deleteMany({ where: { transferId: { in: transferIds } } });
+    await tx.movementEvent.deleteMany({ where: { transferId: { in: transferIds } } });
+    await tx.transfer.deleteMany({ where: { id: { in: transferIds } } });
+  }
+
+  await tx.movementEvent.deleteMany({ where: { OR: [{ fromSiteId: site }, { toSiteId: site }] } });
+  return paths;
 }
 
 /** Remove one location, its batches, and everything they hold. */
@@ -311,7 +343,7 @@ export async function deleteSite(siteId: string, log?: FastifyBaseLogger): Promi
       (b) => b.id,
     );
     const orphaned = await purgeBatches(tx, ids);
-    await detachSurvivorsFromSites(tx, [siteId]);
+    orphaned.push(...(await detachSurvivorsFromSites(tx, [siteId])));
     await tx.site.delete({ where: { id: siteId } });
     return orphaned;
   }, TX_OPTIONS);
@@ -337,7 +369,7 @@ export async function deleteProject(
       (s) => s.id,
     );
     if (siteIds.length > 0) {
-      await detachSurvivorsFromSites(tx, siteIds);
+      orphaned.push(...(await detachSurvivorsFromSites(tx, siteIds)));
       await tx.site.deleteMany({ where: { id: { in: siteIds } } });
     }
     await tx.project.delete({ where: { id: projectId } });
@@ -373,7 +405,7 @@ export async function deleteAllSitesOfProject(
       (b) => b.id,
     );
     const orphaned = await purgeBatches(tx, ids);
-    await detachSurvivorsFromSites(tx, siteIds);
+    orphaned.push(...(await detachSurvivorsFromSites(tx, siteIds)));
     await tx.site.deleteMany({ where: { id: { in: siteIds } } });
     return orphaned;
   }, TX_OPTIONS);

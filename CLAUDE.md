@@ -25,8 +25,7 @@ touches one of these:
 | `apps/mobile/src/db/index.ts`                 | in-memory store (does not persist)   | expo-sqlite                |
 | `apps/mobile/src/auth/tokenStore.ts`          | `localStorage`                       | expo-secure-store          |
 | `apps/mobile/app/queue.tsx`                   | `confirm()`                          | `Alert.alert`              |
-| `apps/mobile/app/admin/users.tsx`             | `confirm()`                          | `Alert.alert`              |
-| `apps/mobile/app/admin/project-managers.tsx`  | `confirm()`                          | `Alert.alert`              |
+| `apps/mobile/src/ui/confirm.ts`               | `confirm()` / `prompt()`             | `Alert.alert` / `.prompt`  |
 | `apps/mobile/src/components/Scanner.tsx`      | getUserMedia + BarcodeDetector       | native camera scanner      |
 | `apps/mobile/src/components/PhotoCapture.tsx` | canvas frame from getUserMedia       | device camera file         |
 | `apps/mobile/src/photo/capture.ts`            | `navigator.geolocation` (HTTPS only) | Play Services / GPS        |
@@ -53,9 +52,12 @@ Two things deliberately have NO platform path at all, and should be kept that wa
 
 Two traps that cause silent divergence:
 
-- **`Alert` is a no-op on react-native-web.** Any new `Alert.alert` needs the same
-  `Platform.OS === 'web'` fallback that `app/queue.tsx` already uses, or it does nothing on
-  web with no error.
+- **`Alert` is a no-op on react-native-web.** It does not throw and does not warn — the
+  promise simply never settles, so the action is silently swallowed on the surface this
+  project is tested on. **Use `src/ui/confirm.ts`** (`confirmAction`, and `confirmByTyping`
+  for anything destructive) rather than writing the branch again; three screens had grown
+  their own copy before it was extracted. `Alert.prompt` is worse — it is iOS-only, so
+  `confirmByTyping` degrades to a plain confirm on Android.
 - **The offline outbox does not persist on web.** A sync-queue behaviour that looks correct in
   the browser may still be wrong on device, where the queue survives a restart. Reason
   through the SQLite path explicitly; do not infer it from web behaviour. This now matters
@@ -73,6 +75,28 @@ Two traps that cause silent divergence:
   dropping is safe — `outbox` is deliberately never dropped). The web build backs the same
   interface with memory and is therefore always "migrated", so this class of bug is
   invisible on the surface the app is tested on and breaks only on the APK.
+
+## Deleting is the one place evidence may be destroyed — treat it as such
+
+Every foreign key into the movement log is `onDelete: Restrict`, deliberately, so that
+nothing can quietly erase the trail. `apps/api/src/services/adminDelete.ts` is the single
+sanctioned exception, and three things about it are load-bearing:
+
+- **The order is not stylistic.** Photos point at the transfer/return/initialization they
+  evidence; movement events point at all three plus the cylinder; cylinders point at the
+  line they were allocated from. Reorder these and the database refuses partway through.
+- **The CHECK constraints decide what "detach" means.** `Cylinder_deployed_has_site` and
+  `Transfer_site_destination_has_site` mean a record that outlives a deleted site cannot
+  simply have its site nulled — a DEPLOYED cylinder must also be stood down to
+  `IN_STORES`, and a SITE-bound transfer cannot survive its destination at all. Both were
+  found by tests, not by reading the schema.
+- **Nothing deletes without a preview.** Every entry point has a matching `*Impact()` and
+  an `/impact` route so the screen can say what will go before it goes. A new delete that
+  skips this is not finished.
+
+Users are the deliberate exception to the cascade: `Batch.createdByUserId` and five more
+are REQUIRED, so cascading would delete every batch that person booked in — for other
+clients. The account is destroyed and the name is kept. Don't "fix" that asymmetry.
 
 ## The look is a system, not a set of screens
 
@@ -118,8 +142,8 @@ when the export looks right but the app cannot reach the API.
    its place — so the browser gets HTML where it asked for JavaScript and the app is a blank
    white page with `Unexpected token '<'` in the console. Nothing about the export looks
    wrong; only the restart fixes it.
-3. `npm run typecheck && npm run lint && npm test` — 359 tests baseline
-   (63 shared, 242 API, 54 mobile). **Stop the dev API server first**: it shares the database
+3. `npm run typecheck && npm run lint && npm test` — 412 tests baseline
+   (67 shared, 286 API, 59 mobile). **Stop the dev API server first**: it shares the database
    with the test run, and its email worker polling across `resetDb()` fails tests at random.
 
    **`npm test` also empties the database you were demonstrating.** The suite shares it,

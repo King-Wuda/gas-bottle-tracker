@@ -629,11 +629,12 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(201).send(body);
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        // Both name and prefix are unique, and the prefix is the one that matters:
-        // two gases sharing it would issue serials that collide on a label.
-        const field = (err.meta?.target as string[] | undefined)?.includes('prefix')
-          ? 'prefix'
-          : 'name';
+        // Both name and prefix are unique, and which one clashed is the useful half of
+        // the message — the prefix especially, since two gases sharing it would issue
+        // serials that collide on a physical label. `err.meta.target` does not survive
+        // every driver, so the answer is read back from the table instead of guessed.
+        const clash = await prisma.gasType.findUnique({ where: { prefix: input.prefix } });
+        const field = clash ? 'prefix' : 'name';
         return reply.code(409).send({
           error: {
             code: 'GAS_TYPE_EXISTS',

@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Platform, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { PASSWORD_MIN, type AdminUserDto, type Role } from '@gct/shared';
 import {
   ApiError,
   apiAdminCreateUser,
+  apiAdminDeleteUser,
   apiAdminUpdateUser,
   apiAdminUsers,
 } from '../../src/api/client';
 import { useAuth } from '../../src/auth/AuthContext';
+import { confirmAction, confirmByTyping } from '../../src/ui/confirm';
 import {
   Card,
   ErrorState,
@@ -32,22 +34,6 @@ const ROLE_LABEL: Record<Role, string> = {
   TECHNICIAN: 'Technician',
   STORES_MANAGER: 'Stores manager',
   ADMIN: 'Admin',
-};
-
-/**
- * `Alert` is a no-op on react-native-web, so a confirmation written with it would
- * silently do nothing in the browser — the surface this project is actually tested on.
- * `app/queue.tsx` set this precedent; it is the same shape here.
- */
-const confirmAction = async (message: string): Promise<boolean> => {
-  if (Platform.OS === 'web') return globalThis.confirm(message);
-  const { Alert } = await import('react-native');
-  return new Promise((resolve) => {
-    Alert.alert('Are you sure?', message, [
-      { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-      { text: 'Continue', style: 'destructive', onPress: () => resolve(true) },
-    ]);
-  });
 };
 
 export default function AdminUsers() {
@@ -111,6 +97,38 @@ export default function AdminUsers() {
       setActionError(e instanceof ApiError ? e.message : 'Could not add this person.');
     } finally {
       setCreating(false);
+    }
+  };
+
+  /**
+   * Delete the account outright.
+   *
+   * Typed confirmation rather than a yes/no: this cannot be undone, and unlike
+   * deactivation there is no reactivating afterwards. The message states plainly that
+   * the person's work stays on record, because an admin who expects a delete to erase
+   * the movement log would otherwise be surprised in the wrong direction.
+   */
+  const remove = async (target: AdminUserDto) => {
+    const ok = await confirmByTyping(
+      `Permanently delete ${target.name}?\n\n` +
+        `Their account, password and sessions are destroyed and the email address is ` +
+        `freed for reuse. Batches they booked in and cylinders they scanned STAY on ` +
+        `record under their name — deleting a person does not delete the work.\n\n` +
+        `This cannot be undone. Type ${target.name} to confirm.`,
+      target.name,
+    );
+    if (!ok) return;
+
+    setBusyId(target.id);
+    setActionError(null);
+    try {
+      await apiAdminDeleteUser(target.id);
+      await load();
+    } catch (e) {
+      // Self-deletion and the last admin are refused by the server, as for PATCH.
+      setActionError(e instanceof ApiError ? e.message : 'Could not delete this person.');
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -263,6 +281,16 @@ export default function AdminUsers() {
                 >
                   {busyId === u.id ? 'Working…' : u.active ? 'Deactivate' : 'Reactivate'}
                 </Text>
+              </Pressable>
+            ) : null}
+
+            {!isMe ? (
+              <Pressable
+                disabled={busyId === u.id}
+                onPress={() => void remove(u)}
+                style={{ paddingVertical: 10 }}
+              >
+                <Text style={{ color: colors.danger, fontWeight: '600' }}>Delete permanently</Text>
               </Pressable>
             ) : null}
           </Card>

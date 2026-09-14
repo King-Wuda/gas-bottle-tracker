@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Platform, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import type { AdminProjectManagerDto } from '@gct/shared';
 import {
   ApiError,
@@ -18,20 +18,9 @@ import {
   SecondaryButton,
   styles,
 } from '../../src/ui/components';
+import { confirmAction } from '../../src/ui/confirm';
 import { StatusBadge } from '../../src/ui/controls';
 import { colors } from '../../src/ui/theme';
-
-/** `Alert` is a no-op on react-native-web — see the note in admin/users.tsx. */
-const confirmAction = async (message: string): Promise<boolean> => {
-  if (Platform.OS === 'web') return globalThis.confirm(message);
-  const { Alert } = await import('react-native');
-  return new Promise((resolve) => {
-    Alert.alert('Are you sure?', message, [
-      { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-      { text: 'Continue', style: 'destructive', onPress: () => resolve(true) },
-    ]);
-  });
-};
 
 /**
  * Project managers — the addressees of QR sheets and delivery notes. They never log in.
