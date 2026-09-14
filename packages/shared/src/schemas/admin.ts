@@ -187,6 +187,7 @@ export type BatchAmendmentsResponse = z.infer<typeof batchAmendmentsResponseSche
  * with four hundred, and the button should not look the same for both.
  */
 export const deletionImpactSchema = z.object({
+  projects: z.number().int().nonnegative(),
   sites: z.number().int().nonnegative(),
   batches: z.number().int().nonnegative(),
   cylinders: z.number().int().nonnegative(),
@@ -229,6 +230,7 @@ export const describeImpact = (i: DeletionImpact): string | null => {
   const push = (n: number, one: string, many: string): void => {
     if (n > 0) parts.push(`${n} ${n === 1 ? one : many}`);
   };
+  push(i.projects, 'project', 'projects');
   push(i.sites, 'location', 'locations');
   push(i.batches, 'batch', 'batches');
   push(i.cylinders, 'cylinder', 'cylinders');
@@ -340,15 +342,15 @@ export type GasSupplierPairingRequest = z.infer<typeof gasSupplierPairingRequest
 // --------------------------------- clients ---------------------------------
 
 /**
- * A client and its locations — "McCains", with Delmas, Cape Town and Durban under it.
+ * A client and its locations — "McCains", with Durban, Cape Town and Midrand under it.
  *
- * This is the `Project` row and its `Site` rows, named the way the depot names them.
- * The app's own vocabulary grew from the paperwork (a project number identifies the
- * job), but nobody in the yard says "project 4521", they say "McCains".
+ * This is the directory the batch form picks from, and it is the reason the schema
+ * moved Site off Project. Before, a site belonged to the job that typed it, so the
+ * same customer's Durban existed once per project and nothing could group them.
  */
 export const adminClientLocationDtoSchema = z.object({
   id: z.string(),
-  name: z.string(),
+  /** The place — "Durban". The client carries the name. */
   location: z.string(),
   batchCount: z.number().int().nonnegative(),
 });
@@ -356,12 +358,11 @@ export type AdminClientLocationDto = z.infer<typeof adminClientLocationDtoSchema
 
 export const adminClientDtoSchema = z.object({
   id: z.string(),
-  projectNumber: z.string(),
-  projectManagerId: z.string(),
-  projectManagerName: z.string(),
-  status: z.enum(['ACTIVE', 'CLOSED']),
+  name: z.string(),
+  active: z.boolean(),
   createdAt: z.string(),
   locations: z.array(adminClientLocationDtoSchema),
+  projectCount: z.number().int().nonnegative(),
   batchCount: z.number().int().nonnegative(),
 });
 export type AdminClientDto = z.infer<typeof adminClientDtoSchema>;
@@ -371,3 +372,62 @@ export type AdminClientsResponse = z.infer<typeof adminClientsResponseSchema>;
 
 export const adminClientResponseSchema = z.object({ client: adminClientDtoSchema });
 export type AdminClientResponse = z.infer<typeof adminClientResponseSchema>;
+
+/**
+ * Add a client, and usually its first location, from the two boxes on the screen.
+ *
+ * `attachToExisting` is what makes the duplicate prompt work. Posting a name that is
+ * already in the directory comes back 409 with the existing client and its locations,
+ * the screen asks "add Durban to the existing McCains?", and a yes re-posts with this
+ * set. Refusing outright would leave the operator stuck; merging silently would hide
+ * that they had just matched somebody else's customer.
+ */
+export const createClientRequestSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  /** Optional: a client can be registered before anyone knows where they take delivery. */
+  location: z.string().trim().min(1).max(200).optional(),
+  attachToExisting: z.boolean().optional(),
+});
+export type CreateClientRequest = z.infer<typeof createClientRequestSchema>;
+
+export const updateClientRequestSchema = z
+  .object({
+    name: z.string().trim().min(1).max(200).optional(),
+    active: z.boolean().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: 'Nothing to update' });
+export type UpdateClientRequest = z.infer<typeof updateClientRequestSchema>;
+
+/** The shape the 409 carries, so the screen can phrase its question in one round trip. */
+export const clientExistsDetailsSchema = z.object({
+  clientId: z.string(),
+  name: z.string(),
+  locations: z.array(z.string()),
+});
+export type ClientExistsDetails = z.infer<typeof clientExistsDetailsSchema>;
+
+// --------------------------------- projects ---------------------------------
+
+/**
+ * A job for a client, on the one admin screen that can destroy delivery history.
+ *
+ * Deliberately not the directory: a client and its locations are reference data an
+ * admin edits without consequence, while deleting a project takes its batches,
+ * cylinders, movement log and signed delivery notes with it.
+ */
+export const adminProjectDtoSchema = z.object({
+  id: z.string(),
+  projectNumber: z.string(),
+  status: z.enum(['ACTIVE', 'CLOSED']),
+  clientId: z.string(),
+  clientName: z.string(),
+  projectManagerName: z.string(),
+  batchCount: z.number().int().nonnegative(),
+  createdAt: z.string(),
+});
+export type AdminProjectDto = z.infer<typeof adminProjectDtoSchema>;
+
+export const adminProjectsResponseSchema = z.object({
+  projects: z.array(adminProjectDtoSchema),
+});
+export type AdminProjectsResponse = z.infer<typeof adminProjectsResponseSchema>;

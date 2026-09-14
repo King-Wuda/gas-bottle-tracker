@@ -39,7 +39,8 @@ beforeAll(async () => {
     payload: {
       projectNumber: uniqueProjectNumber(),
       projectManagerId: pm.id,
-      site: { name: 'Batch Yard', location: 'JHB' },
+      clientName: 'Batch Yard',
+      location: 'JHB',
     },
   });
   projectId = created.json().project.id;
@@ -136,7 +137,8 @@ describe('POST /batches', () => {
       payload: {
         projectNumber: uniqueProjectNumber(),
         projectManagerId: (await makeProjectManager('Other')).id,
-        site: { name: 'Elsewhere', location: 'X' },
+        clientName: 'Elsewhere',
+        location: 'X',
       },
     });
     const otherSiteId = other.json().project.sites[0].id;
@@ -192,7 +194,8 @@ describe('POST /batches', () => {
       payload: {
         projectNumber: uniqueProjectNumber(),
         projectManagerId: (await makeProjectManager('Conc PM')).id,
-        site: { name: 'Conc Yard', location: 'X' },
+        clientName: 'Conc Yard',
+        location: 'X',
       },
     });
     const cpId = concProject.json().project.id;

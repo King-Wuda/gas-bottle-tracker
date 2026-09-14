@@ -54,7 +54,7 @@ export default function Destination() {
   // site is still offered — some of the scanned cylinders may have moved away from
   // it — but the server rejects any individual no-op per serial.
   const destinations: Choice[] = [
-    ...sites.map((s) => ({ kind: 'site' as const, id: s.id, name: s.name })),
+    ...sites.map((s) => ({ kind: 'site' as const, id: s.id, name: s.location })),
     { kind: 'stores' as const },
   ];
 

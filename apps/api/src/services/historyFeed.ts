@@ -36,7 +36,7 @@ const batchContext = {
   projectId: true,
   siteId: true,
   project: { select: { projectNumber: true } },
-  site: { select: { name: true } },
+  site: { select: { location: true, client: { select: { name: true } } } },
   lines: {
     select: { quantity: true, gasType: { select: { name: true } } },
     orderBy: { createdAt: 'asc' },
@@ -47,7 +47,7 @@ type BatchContextRow = {
   id: string;
   projectId: string;
   project: { projectNumber: string };
-  site: { name: string };
+  site: { location: string; client: { name: string } };
   lines: { quantity: number; gasType: { name: string } }[];
 };
 
@@ -55,7 +55,7 @@ const contextFields = (b: BatchContextRow) => ({
   batchId: b.id,
   projectId: b.projectId,
   projectNumber: b.project.projectNumber,
-  siteName: b.site.name,
+  siteName: b.site.client.name,
   contents: summariseLines(
     b.lines.map((l) => ({ quantity: l.quantity, gasTypeName: l.gasType.name })),
   ),
@@ -164,7 +164,7 @@ export async function historyFeed(
             photoOverridden: true,
             destinationSiteId: true,
             user: { select: { name: true } },
-            destinationSite: { select: { name: true } },
+            destinationSite: { select: { location: true } },
             batch: { select: batchContext },
             photo: { include: { user: { select: { name: true } } } },
             _count: { select: { movementEvents: true } },
@@ -221,7 +221,7 @@ export async function historyFeed(
       userId: b.createdByUserId,
       userName: b.createdBy.name,
       headline: `Batch created — ${plural(b._count.cylinders, 'cylinder')}`,
-      detail: `Serials allocated and the QR sheet queued for ${b.site.name}.`,
+      detail: `Serials allocated and the QR sheet queued for ${b.site.client.name}.`,
       cylinderCount: b._count.cylinders,
       overriddenCount: 0,
       // A batch is created at a desk from a delivery note, not in front of the
@@ -239,7 +239,7 @@ export async function historyFeed(
       userId: i.userId,
       userName: i.user.name,
       headline: `Batch initialized — ${plural(i._count.movementEvents, 'cylinder')} scanned in`,
-      detail: `Labels verified at ${i.batch.site.name}.`,
+      detail: `Labels verified at ${i.batch.site.client.name}.`,
       cylinderCount: i._count.movementEvents,
       overriddenCount: i.movementEvents.length,
       ...photoFields(i.photo, i.photoOverridden),
@@ -253,10 +253,10 @@ export async function historyFeed(
       userId: t.userId,
       userName: t.user.name,
       headline: `${plural(t._count.movementEvents, 'cylinder')} moved to ${
-        t.destinationSite?.name ?? STORES
+        t.destinationSite?.location ?? STORES
       }`,
       detail: t.destinationSiteId
-        ? `Transferred to site ${t.destinationSite?.name ?? ''}.`
+        ? `Transferred to site ${t.destinationSite?.location ?? ''}.`
         : 'Returned to the depot.',
       cylinderCount: t._count.movementEvents,
       overriddenCount: t.movementEvents.length,
@@ -396,9 +396,9 @@ export async function historyEvent(
       ? await prisma.transfer
           .findUnique({
             where: { id: recordId },
-            select: { destinationSite: { select: { name: true } } },
+            select: { destinationSite: { select: { location: true } } },
           })
-          .then((t) => ({ destinationName: t ? (t.destinationSite?.name ?? STORES) : null }))
+          .then((t) => ({ destinationName: t ? (t.destinationSite?.location ?? STORES) : null }))
       : kind === 'RETURN'
         ? await prisma.returnRecord
             .findUnique({

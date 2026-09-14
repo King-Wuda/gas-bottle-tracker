@@ -4,6 +4,7 @@ import type { AdminProjectManagerDto } from '@gct/shared';
 import {
   ApiError,
   apiAdminCreateProjectManager,
+  apiAdminDeleteProjectManager,
   apiAdminProjectManagers,
   apiAdminUpdateProjectManager,
 } from '../../src/api/client';
@@ -18,7 +19,7 @@ import {
   SecondaryButton,
   styles,
 } from '../../src/ui/components';
-import { confirmAction } from '../../src/ui/confirm';
+import { confirmAction, confirmByTyping } from '../../src/ui/confirm';
 import { StatusBadge } from '../../src/ui/controls';
 import { colors } from '../../src/ui/theme';
 
@@ -81,6 +82,36 @@ export default function AdminProjectManagers() {
       setActionError(e instanceof ApiError ? e.message : 'Could not add this project manager.');
     } finally {
       setCreating(false);
+    }
+  };
+
+  /**
+   * Delete the manager outright.
+   *
+   * Typed confirmation, because unlike deactivating there is no way back. The message
+   * says plainly that their deliveries stay: an admin expecting a delete to erase the
+   * paperwork addressed to them would otherwise be surprised in the wrong direction.
+   */
+  const remove = async (target: AdminProjectManagerDto) => {
+    const ok = await confirmByTyping(
+      `Permanently delete ${target.name}?\n\n` +
+        `They disappear from every picker and their email address is freed for reuse. ` +
+        `Projects and delivery notes addressed to them STAY on record under their name ` +
+        `— deleting a manager does not delete the deliveries.\n\n` +
+        `This cannot be undone. Type ${target.name} to confirm.`,
+      target.name,
+    );
+    if (!ok) return;
+
+    setBusyId(target.id);
+    setActionError(null);
+    try {
+      await apiAdminDeleteProjectManager(target.id);
+      await load();
+    } catch (e) {
+      setActionError(e instanceof ApiError ? e.message : 'Could not delete this project manager.');
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -223,6 +254,12 @@ export default function AdminProjectManagers() {
                     style={{ color: pm.active ? colors.danger : colors.brand, fontWeight: '600' }}
                   >
                     {busyId === pm.id ? 'Working…' : pm.active ? 'Deactivate' : 'Reactivate'}
+                  </Text>
+                </Pressable>
+
+                <Pressable disabled={busyId === pm.id} onPress={() => void remove(pm)}>
+                  <Text style={{ color: colors.danger, fontWeight: '600' }}>
+                    Delete permanently
                   </Text>
                 </Pressable>
               </View>

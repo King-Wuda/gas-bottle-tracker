@@ -61,8 +61,7 @@ export function BatchPicker({ next, config }: { next: Href; config: BatchBrowser
         }));
       const sites = project.sites.map((s) => ({
         id: s.id,
-        projectId: s.projectId,
-        name: s.name,
+        clientId: s.clientId,
         location: s.location,
       }));
 

@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { describeImpact, impactIsDestructive, type AdminSupplierDto } from '@gct/shared';
+import {
+  describeImpact,
+  impactIsDestructive,
+  type AdminGasTypeDto,
+  type AdminSupplierDto,
+} from '@gct/shared';
 import {
   ApiError,
   apiAdminCreateSupplier,
+  apiAdminGasTypes,
   apiAdminDeleteSupplier,
   apiAdminSupplierImpact,
   apiAdminSuppliers,
@@ -12,6 +18,7 @@ import {
 import { confirmAction, confirmByTyping } from '../../src/ui/confirm';
 import {
   Card,
+  Checkbox,
   ErrorState,
   ErrorText,
   Field,
@@ -47,6 +54,17 @@ export default function AdminSuppliers() {
   const [name, setName] = useState('');
   const [creating, setCreating] = useState(false);
 
+  /**
+   * Which gases the new supplier carries.
+   *
+   * Asked for at creation rather than left to a second trip through the Gases screen:
+   * a supplier that carries nothing appears in no picker, so adding one without this
+   * produces a row that looks saved and changes nothing about the batch form. The
+   * pairing is still editable afterwards, on either screen.
+   */
+  const [gases, setGases] = useState<AdminGasTypeDto[]>([]);
+  const [pickedGasIds, setPickedGasIds] = useState<string[]>([]);
+
   /** Which supplier is being renamed, and to what. */
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
@@ -55,8 +73,9 @@ export default function AdminSuppliers() {
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await apiAdminSuppliers();
-      setSuppliers(res.suppliers);
+      const [sup, gas] = await Promise.all([apiAdminSuppliers(), apiAdminGasTypes()]);
+      setSuppliers(sup.suppliers);
+      setGases(gas.gasTypes.filter((g) => g.active));
     } catch (e) {
       setLoadError(e instanceof ApiError ? e.message : 'Could not load suppliers.');
     } finally {
@@ -72,8 +91,9 @@ export default function AdminSuppliers() {
     setCreating(true);
     setActionError(null);
     try {
-      await apiAdminCreateSupplier({ name: name.trim() });
+      await apiAdminCreateSupplier({ name: name.trim(), gasTypeIds: pickedGasIds });
       setName('');
+      setPickedGasIds([]);
       setFormOpen(false);
       await load();
     } catch (e) {
@@ -186,6 +206,32 @@ export default function AdminSuppliers() {
       {formOpen ? (
         <Card>
           <Field label="Supplier name" value={name} onChangeText={setName} placeholder="Afrox" />
+
+          <Text style={{ fontWeight: '600', marginTop: 8 }}>Which gases do they supply?</Text>
+          {gases.length === 0 ? (
+            <Text style={styles.hint}>
+              No gases yet — add one on the Gases screen first, or save the supplier and pair them
+              later.
+            </Text>
+          ) : (
+            gases.map((g) => (
+              <Checkbox
+                key={g.id}
+                label={`${g.name} (${g.prefix})`}
+                value={pickedGasIds.includes(g.id)}
+                onChange={(next) =>
+                  setPickedGasIds((ids) =>
+                    next ? [...ids, g.id] : ids.filter((id) => id !== g.id),
+                  )
+                }
+              />
+            ))
+          )}
+          <Text style={styles.hint}>
+            A supplier carrying no gases appears in no picker. You can change this later on either
+            screen.
+          </Text>
+
           <PrimaryButton
             title="Add supplier"
             onPress={() => void create()}

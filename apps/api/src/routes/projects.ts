@@ -11,25 +11,26 @@ import {
   type ProjectManagersResponse,
   type ProjectSearchResponse,
   type SiteDto,
-  type SiteOptionsResponse,
+  type ClientOptionsResponse,
   type SuppliersResponse,
 } from '@gct/shared';
 import { prisma } from '../db.js';
 
 type PmRow = { id: string; name: string; email: string; active: boolean };
-type SiteRow = { id: string; projectId: string; name: string; location: string };
+type SiteRow = { id: string; clientId: string; location: string };
+type ClientRow = { id: string; name: string; sites: SiteRow[] };
 type ProjectRow = {
   id: string;
   projectNumber: string;
   status: 'ACTIVE' | 'CLOSED';
   projectManager: PmRow;
-  sites: SiteRow[];
+  client: ClientRow;
 };
 
-const toSiteDto = (s: SiteRow): SiteDto => ({
+const toSiteDto = (s: SiteRow, clientName: string): SiteDto => ({
   id: s.id,
-  projectId: s.projectId,
-  name: s.name,
+  clientId: s.clientId,
+  clientName,
   location: s.location,
 });
 
@@ -37,15 +38,21 @@ const toProjectDto = (p: ProjectRow, activeBatchCount: number): ProjectDto => ({
   id: p.id,
   projectNumber: p.projectNumber,
   status: p.status,
+  clientId: p.client.id,
+  clientName: p.client.name,
   projectManager: {
     id: p.projectManager.id,
     name: p.projectManager.name,
     email: p.projectManager.email,
     active: p.projectManager.active,
   },
-  sites: p.sites.map(toSiteDto),
+  // The CLIENT's sites: every place this project can deliver to, not a private copy.
+  sites: p.client.sites.map((site) => toSiteDto(site, p.client.name)),
   activeBatchCount,
 });
+
+/** The client + sites shape every project view needs. */
+const clientInclude = { include: { sites: { orderBy: { location: 'asc' as const } } } } as const;
 
 async function activeBatchCounts(projectIds: string[]): Promise<Map<string, number>> {
   if (projectIds.length === 0) return new Map();
@@ -127,13 +134,28 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
    * foreign key — `Site` rows stay project-scoped underneath (see @@unique
    * [projectId, name]).
    */
-  app.get('/sites', { preHandler: app.authenticate }, async () => {
-    const rows = await prisma.$queryRaw<{ name: string; location: string }[]>`
-      SELECT DISTINCT ON ("name") "name", "location"
-      FROM "Site"
-      ORDER BY "name" ASC, "createdAt" DESC
-    `;
-    const body: SiteOptionsResponse = { sites: rows };
+  /**
+   * The client directory, for the batch form's Site and Location boxes.
+   *
+   * This used to be `SELECT DISTINCT ON ("name")` over the Site table — the best a
+   * project-owned Site could do. It surfaced each spelling once and had no idea which
+   * of them were the same customer, so "McCains" and "McCain's" were two sites and
+   * nothing could group Durban and Cape Town under either. Now the grouping is the
+   * data model, and this just reads it.
+   */
+  app.get('/clients', { preHandler: app.authenticate }, async () => {
+    const rows = await prisma.client.findMany({
+      where: { active: true },
+      include: { sites: { orderBy: { location: 'asc' } } },
+      orderBy: { name: 'asc' },
+    });
+    const body: ClientOptionsResponse = {
+      clients: rows.map((c) => ({
+        id: c.id,
+        name: c.name,
+        sites: c.sites.map((s) => ({ id: s.id, location: s.location })),
+      })),
+    };
     return body;
   });
 
@@ -151,7 +173,7 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
 
     const rows = await prisma.project.findMany({
       where,
-      include: { projectManager: true, _count: { select: { sites: true } } },
+      include: { projectManager: true, client: clientInclude },
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
@@ -168,7 +190,9 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
           email: r.projectManager.email,
           active: r.projectManager.active,
         },
-        siteCount: r._count.sites,
+        clientId: r.client.id,
+        clientName: r.client.name,
+        siteCount: r.client.sites.length,
         activeBatchCount: counts.get(r.id) ?? 0,
       })),
     };
@@ -179,7 +203,7 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string };
     const project = await prisma.project.findUnique({
       where: { id },
-      include: { projectManager: true, sites: { orderBy: { name: 'asc' } } },
+      include: { projectManager: true, client: clientInclude },
     });
     if (!project) {
       return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
@@ -211,21 +235,54 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
+      // The client and the place arrive as TEXT, because the form's two boxes are
+      // comboboxes: picking McCains from the directory and typing it because it is new
+      // both have to work. Matched case-insensitively so "mccains" joins the existing
+      // McCains rather than founding a second one — which is the whole failure the
+      // directory exists to prevent.
+      const { client, site } = await prisma.$transaction(async (tx) => {
+        const existing = await tx.client.findFirst({
+          where: { name: { equals: input.clientName, mode: 'insensitive' } },
+        });
+        const client = existing ?? (await tx.client.create({ data: { name: input.clientName } }));
+        const site =
+          (await tx.site.findFirst({
+            where: {
+              clientId: client.id,
+              location: { equals: input.location, mode: 'insensitive' },
+            },
+          })) ??
+          (await tx.site.create({ data: { clientId: client.id, location: input.location } }));
+        return { client, site };
+      });
+
       const project = await prisma.project.create({
         data: {
           projectNumber: input.projectNumber,
           projectManagerId: pm.id,
-          sites: { create: { name: input.site.name, location: input.site.location } },
+          clientId: client.id,
         },
-        include: { projectManager: true, sites: true },
+        include: { projectManager: true, client: clientInclude },
       });
 
-      const body: CreateProjectResponse = { project: toProjectDto(project, 0) };
+      const body: CreateProjectResponse = {
+        project: toProjectDto(project, 0),
+        // Which of the client's sites this project was started for, so the flow can
+        // carry straight on to the batch without guessing when the client has three.
+        siteId: site.id,
+      };
       return reply.code(201).send(body);
     },
   );
 
-  // Workflow A — "Edit Existing Site": attach a new site to an existing project.
+  /**
+   * Add a place to the client THIS PROJECT belongs to.
+   *
+   * A convenience over the route below, kept because "add a site to this project" is
+   * how the yard says it and the project is what the flow has in hand. It resolves to
+   * the client, so the new place is immediately available to every other job for the
+   * same customer — which is the behaviour the old per-project sites could not give.
+   */
   app.post(
     '/projects/:id/sites',
     { preHandler: app.requireRole('TECHNICIAN', 'ADMIN') },
@@ -233,16 +290,61 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
       const { id } = request.params as { id: string };
       const input = createSiteRequestSchema.parse(request.body);
 
-      const project = await prisma.project.findUnique({ where: { id } });
+      const project = await prisma.project.findUnique({
+        where: { id },
+        include: { client: { select: { id: true, name: true } } },
+      });
       if (!project) {
         return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
       }
 
-      const site = await prisma.site.create({
-        data: { projectId: id, name: input.name, location: input.location },
+      const existing = await prisma.site.findFirst({
+        where: {
+          clientId: project.client.id,
+          location: { equals: input.location, mode: 'insensitive' },
+        },
       });
-      const body: CreateSiteResponse = { site: toSiteDto(site) };
-      return reply.code(201).send(body);
+      const site =
+        existing ??
+        (await prisma.site.create({
+          data: { clientId: project.client.id, location: input.location },
+        }));
+
+      const body: CreateSiteResponse = { site: toSiteDto(site, project.client.name) };
+      return reply.code(existing ? 200 : 201).send(body);
+    },
+  );
+
+  /**
+   * Add a place to a CLIENT.
+   *
+   * Addressed by client rather than by project now: a site belongs to the customer, so
+   * adding Midrand to McCains makes it available to every McCains project at once
+   * instead of to the one that happened to type it.
+   */
+  app.post(
+    '/clients/:id/sites',
+    { preHandler: app.requireRole('TECHNICIAN', 'ADMIN') },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const input = createSiteRequestSchema.parse(request.body);
+
+      const client = await prisma.client.findUnique({ where: { id } });
+      if (!client) {
+        return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Client not found' } });
+      }
+
+      // Idempotent on the place: asking for a site the client already has is the same
+      // end state, and the operator should not have to care that someone beat them.
+      const existing = await prisma.site.findFirst({
+        where: { clientId: id, location: { equals: input.location, mode: 'insensitive' } },
+      });
+      const site =
+        existing ??
+        (await prisma.site.create({ data: { clientId: id, location: input.location } }));
+
+      const body: CreateSiteResponse = { site: toSiteDto(site, client.name) };
+      return reply.code(existing ? 200 : 201).send(body);
     },
   );
 }

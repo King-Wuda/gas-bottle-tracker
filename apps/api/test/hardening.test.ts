@@ -43,7 +43,8 @@ beforeAll(async () => {
     payload: {
       projectNumber: uniqueProjectNumber(),
       projectManagerId: (await makeProjectManager('Hardening PM')).id,
-      site: { name: 'Hardening Yard', location: 'JHB' },
+      clientName: 'Hardening Yard',
+      location: 'JHB',
     },
   });
   projectId = project.json().project.id;

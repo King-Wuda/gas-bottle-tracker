@@ -76,8 +76,9 @@ export interface CachedCylinder {
 
 export interface CachedSite {
   id: string;
-  projectId: string;
-  name: string;
+  /** Sites hang off the CLIENT now, so this is what scopes the offline lookup. */
+  clientId: string;
+  /** The place — "Durban". The client carries the name. */
   location: string;
 }
 
@@ -114,5 +115,5 @@ export interface Store {
   cacheBatch(batch: CachedBatch, cylinders: CachedCylinder[], sites: CachedSite[]): Promise<void>;
   getCachedBatch(batchId: string): Promise<CachedBatch | null>;
   getCachedCylinders(batchId: string): Promise<CachedCylinder[]>;
-  getCachedSites(projectId: string): Promise<CachedSite[]>;
+  getCachedSites(clientId: string): Promise<CachedSite[]>;
 }

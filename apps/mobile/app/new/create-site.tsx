@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Text } from 'react-native';
 import { useRouter } from 'expo-router';
-import { isValidProjectNumber, type ProjectManagerDto, type SiteOption } from '@gct/shared';
+import { isValidProjectNumber, type ClientOption, type ProjectManagerDto } from '@gct/shared';
 import {
   ApiError,
+  apiClientOptions,
   apiCreateProject,
   apiProjectManagers,
-  apiSiteOptions,
 } from '../../src/api/client';
 import { useNewFlow } from '../../src/new/NewFlowContext';
-import { ErrorText, Field, PrimaryButton, ScreenScroll, styles } from '../../src/ui/components';
+import { ErrorText, PrimaryButton, ScreenScroll, styles } from '../../src/ui/components';
 import { Combobox, ProjectNumberField, Select } from '../../src/ui/controls';
 
 export default function CreateSite() {
@@ -19,7 +19,7 @@ export default function CreateSite() {
   const [projectNumber, setProjectNumber] = useState('');
   const [managers, setManagers] = useState<ProjectManagerDto[]>([]);
   const [projectManagerId, setProjectManagerId] = useState<string | null>(null);
-  const [siteOptions, setSiteOptions] = useState<SiteOption[]>([]);
+  const [directory, setDirectory] = useState<ClientOption[]>([]);
   const [siteName, setSiteName] = useState('');
   const [location, setLocation] = useState('');
   const [busy, setBusy] = useState(false);
@@ -27,16 +27,20 @@ export default function CreateSite() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void Promise.allSettled([apiProjectManagers(), apiSiteOptions()]).then(([pm, sites]) => {
+    void Promise.allSettled([apiProjectManagers(), apiClientOptions()]).then(([pm, dir]) => {
       if (pm.status === 'fulfilled') setManagers(pm.value.projectManagers);
       else setError('Could not load the project managers. Check your connection.');
-      // The site list is a convenience — free entry works without it, so a failure
-      // here is not worth blocking the form for.
-      if (sites.status === 'fulfilled') setSiteOptions(sites.value.sites);
+      // The directory is a convenience — free entry still works without it, and a
+      // technician in a yard must not be blocked by a client nobody has registered.
+      if (dir.status === 'fulfilled') setDirectory(dir.value.clients);
     });
   }, []);
 
   const selectedManager = managers.find((m) => m.id === projectManagerId) ?? null;
+
+  /** The directory entry the Site box currently names, if it names a known one. */
+  const pickedClient =
+    directory.find((c) => c.name.trim().toLowerCase() === siteName.trim().toLowerCase()) ?? null;
 
   const ready =
     isValidProjectNumber(projectNumber) &&
@@ -55,16 +59,21 @@ export default function CreateSite() {
     setBusy(true);
     setError(null);
     try {
-      const { project } = await apiCreateProject({
+      // Sent as text, not ids: picking McCains from the directory and typing it
+      // because it is new both have to work. The server matches an existing client
+      // case-insensitively and creates one only when there is no match, so the
+      // directory grows by being used without ever growing a second McCains.
+      const { project, siteId } = await apiCreateProject({
         projectNumber,
         projectManagerId,
-        site: { name: siteName.trim(), location: location.trim() },
+        clientName: siteName.trim(),
+        location: location.trim(),
       });
       setTarget({
         projectId: project.id,
-        siteId: project.sites[0]!.id,
+        siteId,
         projectNumber: project.projectNumber,
-        siteName: project.sites[0]!.name,
+        siteName: project.clientName,
       });
       router.push('/new/line-items');
     } catch (e) {
@@ -109,24 +118,54 @@ export default function CreateSite() {
           }
         />
 
+        {/* The two boxes are the client and their place. Both read the directory, and
+            the second is scoped to whichever client the first names — so picking
+            McCains offers Durban, Cape Town and Midrand and nothing else. */}
         <Combobox
           label="Site"
           value={siteName}
           onChangeText={setSiteName}
           placeholder="Start typing, or pick from the list"
-          options={siteOptions.map((s) => ({ value: s.name, label: s.name, hint: s.location }))}
-          // Picking a known site prefills the location it was last recorded with;
-          // typing a new one leaves it for the operator, since nothing is known yet.
+          options={directory.map((c) => ({
+            value: c.name,
+            label: c.name,
+            hint:
+              c.sites.length === 0
+                ? 'No locations yet'
+                : c.sites.map((site) => site.location).join(', '),
+          }))}
+          // Picking a client with exactly one place fills it in: there is nothing to
+          // choose, and making them type it invites a spelling the directory will not
+          // match. More than one, and the choice is theirs.
           onPick={(option) => {
             if (!option) return;
-            const match = siteOptions.find((s) => s.name === option.label);
-            if (match && !location.trim()) setLocation(match.location);
+            const match = directory.find((c) => c.name === option.label);
+            if (match?.sites.length === 1 && !location.trim()) {
+              setLocation(match.sites[0]!.location);
+            }
           }}
           editable={!busy}
-          emptyHint="No sites on record yet — type the name of this one."
+          emptyHint="No clients on record yet — type this one's name."
         />
 
-        <Field label="Location" value={location} onChangeText={setLocation} editable={!busy} />
+        <Combobox
+          label="Location"
+          value={location}
+          onChangeText={setLocation}
+          placeholder={
+            pickedClient ? 'Start typing, or pick from the list' : 'Name the client first'
+          }
+          options={(pickedClient?.sites ?? []).map((site) => ({
+            value: site.location,
+            label: site.location,
+          }))}
+          editable={!busy}
+          emptyHint={
+            pickedClient
+              ? `${pickedClient.name} has no locations yet — type this one.`
+              : 'A new client. Type where they take delivery.'
+          }
+        />
 
         <ErrorText>{error}</ErrorText>
         <PrimaryButton

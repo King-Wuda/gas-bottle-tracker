@@ -58,7 +58,8 @@ beforeAll(async () => {
     payload: {
       projectNumber: uniqueProjectNumber(),
       projectManagerId: pm.id,
-      site: { name: 'Yard Admin', location: 'JHB' },
+      clientName: 'Yard Admin',
+      location: 'JHB',
     },
   });
   projectId = created.json().project.id;
@@ -68,7 +69,7 @@ beforeAll(async () => {
     method: 'POST',
     url: `/projects/${projectId}/sites`,
     headers: bearer(techToken),
-    payload: { name: 'Yard Admin Two', location: 'PTA' },
+    payload: { location: 'Yard B' },
   });
   otherSiteId = second.json().site.id;
 });
@@ -408,7 +409,8 @@ describe('admin — project managers', () => {
       payload: {
         projectNumber: uniqueProjectNumber(),
         projectManagerId: pmId,
-        site: { name: 'Yard Typo', location: 'JHB' },
+        clientName: 'Yard Typo',
+        location: 'JHB',
       },
     });
     const pid = project.json().project.id;

@@ -49,7 +49,7 @@ async function buildQrSheet(
     include: {
       project: true,
       projectManager: true,
-      site: true,
+      site: { include: { client: { select: { name: true } } } },
       lines: { include: { gasType: { select: { name: true } } } },
       cylinders: { orderBy: { serialCode: 'asc' } },
     },
@@ -74,7 +74,7 @@ async function buildQrSheet(
     {
       projectNumber: batch.project.projectNumber,
       projectManagerName: batch.projectManager.name,
-      siteName: batch.site.name,
+      siteName: batch.site.client.name,
       siteLocation: batch.site.location,
       createdAt: batch.createdAt,
     },
@@ -108,14 +108,14 @@ async function buildDeliveryNote(
         include: {
           project: true,
           projectManager: true,
-          site: true,
+          site: { include: { client: { select: { name: true } } } },
           lines: { include: { gasType: { select: { name: true } } } },
         },
       },
       movementEvents: {
         include: {
           cylinder: { select: { serialCode: true, gasType: { select: { name: true } } } },
-          fromSite: { select: { name: true } },
+          fromSite: { select: { location: true } },
         },
         orderBy: { cylinder: { serialCode: 'asc' } },
       },
@@ -134,7 +134,7 @@ async function buildDeliveryNote(
       // or an admin correction may have handed it to someone else since intake.
       projectManagerName: record.batch.projectManager.name,
       projectManagerEmail: record.batch.projectManagerEmail,
-      siteName: record.batch.site.name,
+      siteName: record.batch.site.client.name,
       contents: record.batch.lines
         .map((l) => `${l.quantity} × ${l.gasType.name} (${l.supplierName})`)
         .join(', '),
@@ -148,7 +148,7 @@ async function buildDeliveryNote(
     record.movementEvents.map((m) => ({
       serialCode: m.cylinder.serialCode,
       gasTypeName: m.cylinder.gasType.name,
-      fromLocation: m.fromSite?.name ?? 'Stores',
+      fromLocation: m.fromSite?.location ?? 'Stores',
       scannedAt: m.deviceAt,
       overridden: m.overridden,
     })),

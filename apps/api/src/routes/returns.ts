@@ -142,7 +142,7 @@ export async function returnRoutes(app: FastifyInstance): Promise<void> {
         include: {
           project: true,
           projectManager: true,
-          site: true,
+          site: { include: { client: { select: { name: true } } } },
           lines: { include: { gasType: { select: { name: true } } } },
         },
       });
@@ -328,7 +328,7 @@ export async function returnRoutes(app: FastifyInstance): Promise<void> {
                 type: 'DELIVERY_NOTE',
                 subject: `Delivery note — ${claimed.length} cylinder(s) returned, project ${batch.project.projectNumber}`,
                 bodyText:
-                  `${claimed.length} cylinder(s) were collected from "${batch.site.name}" ` +
+                  `${claimed.length} cylinder(s) were collected from "${batch.site.client.name}" ` +
                   `and signed for by ${input.driverName}.\n` +
                   (outstanding === 0
                     ? 'This completes the batch — all cylinders are now returned.\n'

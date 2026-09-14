@@ -94,32 +94,31 @@ async function unusedPrefix(): Promise<string> {
 const unusedGasName = (): string => `Testgas ${randomUUID().slice(0, 8)}`;
 
 /** A client with one location, one batch, initialized — so it owns real evidence. */
-async function makeClient(opts: { sites?: string[]; quantity?: number } = {}) {
+async function makeClient(opts: { sites?: string[]; quantity?: number; name?: string } = {}) {
   const pm = await makeProjectManager(`PM ${randomUUID().slice(0, 8)}`);
   const projectNumber = uniqueProjectNumber();
+  // Client names are unique directory entries now, so fixtures must not collide: two
+  // tests both asking for "McCains" would share one client and one set of sites.
+  const clientName = opts.name ?? `Client ${randomUUID().slice(0, 8)}`;
   const siteNames = opts.sites ?? ['Delmas'];
 
   const created = await app.inject({
     method: 'POST',
     url: '/projects',
     headers: bearer(techToken),
-    payload: {
-      projectNumber,
-      projectManagerId: pm.id,
-      site: { name: siteNames[0]!, location: 'Mpumalanga' },
-    },
+    payload: { projectNumber, projectManagerId: pm.id, clientName, location: siteNames[0]! },
   });
   expect(created.statusCode).toBe(201);
   const project = created.json().project;
 
-  for (const name of siteNames.slice(1)) {
+  for (const location of siteNames.slice(1)) {
     const res = await app.inject({
       method: 'POST',
-      url: `/projects/${project.id}/sites`,
+      url: `/clients/${project.clientId}/sites`,
       headers: bearer(techToken),
-      payload: { name, location: 'Elsewhere' },
+      payload: { location },
     });
-    expect(res.statusCode).toBe(201);
+    expect([200, 201]).toContain(res.statusCode);
   }
 
   const full = await app.inject({
@@ -127,7 +126,8 @@ async function makeClient(opts: { sites?: string[]; quantity?: number } = {}) {
     url: `/projects/${project.id}`,
     headers: bearer(techToken),
   });
-  const sites = full.json().project.sites as { id: string; name: string }[];
+  const clientId = full.json().project.clientId as string;
+  const sites = full.json().project.sites as { id: string; location: string }[];
 
   const batchRes = await app.inject({
     method: 'POST',
@@ -153,16 +153,16 @@ async function makeClient(opts: { sites?: string[]; quantity?: number } = {}) {
 
   await initializeBatch(app, techToken, batchId, serials);
 
-  return { projectId: project.id, projectNumber, sites, batchId, serials, pm };
+  return { projectId: project.id, clientId, projectNumber, sites, batchId, serials, pm };
 }
 
 /** Every table the cascade is supposed to empty, for one project. */
-async function remainsOf(projectId: string) {
+async function remainsOf(projectId: string, clientId?: string) {
   const batches = await prisma.batch.findMany({ where: { projectId }, select: { id: true } });
   const ids = batches.map((b) => b.id);
   return {
     project: await prisma.project.count({ where: { id: projectId } }),
-    sites: await prisma.site.count({ where: { projectId } }),
+    sites: clientId ? await prisma.site.count({ where: { clientId } }) : 0,
     batches: batches.length,
     cylinders: await prisma.cylinder.count({ where: { batchId: { in: ids } } }),
     lines: await prisma.batchLine.count({ where: { batchId: { in: ids } } }),
@@ -173,11 +173,11 @@ async function remainsOf(projectId: string) {
 
 describe('DELETE /admin/clients/:id', () => {
   it('reports the impact before anything is destroyed', async () => {
-    const { projectId } = await makeClient({ quantity: 4 });
+    const { projectId, clientId } = await makeClient({ quantity: 4 });
 
     const res = await app.inject({
       method: 'GET',
-      url: `/admin/clients/${projectId}/impact`,
+      url: `/admin/clients/${clientId}/impact`,
       headers: bearer(adminToken),
     });
     expect(res.statusCode).toBe(200);
@@ -188,11 +188,18 @@ describe('DELETE /admin/clients/:id', () => {
     expect(impact.photos).toBe(1);
 
     // And nothing has actually gone: /impact is a question, not an instruction.
-    expect(await remainsOf(projectId)).toMatchObject({ project: 1, batches: 1, cylinders: 4 });
+    expect(await remainsOf(projectId, clientId)).toMatchObject({
+      project: 1,
+      batches: 1,
+      cylinders: 4,
+    });
   });
 
   it('removes the client, its locations, and every trace of its deliveries', async () => {
-    const { projectId, batchId } = await makeClient({ sites: ['Delmas', 'Durban'], quantity: 3 });
+    const { projectId, clientId, batchId } = await makeClient({
+      sites: ['Delmas', 'Durban'],
+      quantity: 3,
+    });
 
     const photoPaths = (
       await prisma.batchPhoto.findMany({ where: { batchId }, select: { path: true } })
@@ -201,13 +208,13 @@ describe('DELETE /admin/clients/:id', () => {
 
     const res = await app.inject({
       method: 'DELETE',
-      url: `/admin/clients/${projectId}`,
+      url: `/admin/clients/${clientId}`,
       headers: bearer(adminToken),
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().deleted).toBe(true);
 
-    expect(await remainsOf(projectId)).toEqual({
+    expect(await remainsOf(projectId, clientId)).toEqual({
       project: 0,
       sites: 0,
       batches: 0,
@@ -235,11 +242,11 @@ describe('DELETE /admin/clients/:id', () => {
 
     await app.inject({
       method: 'DELETE',
-      url: `/admin/clients/${drop.projectId}`,
+      url: `/admin/clients/${drop.clientId}`,
       headers: bearer(adminToken),
     });
 
-    expect(await remainsOf(keep.projectId)).toMatchObject({
+    expect(await remainsOf(keep.projectId, keep.clientId)).toMatchObject({
       project: 1,
       sites: 1,
       batches: 1,
@@ -250,13 +257,13 @@ describe('DELETE /admin/clients/:id', () => {
 
 describe('DELETE /admin/clients/:id/locations', () => {
   it('deletes one location and the batches delivered to it, keeping the others', async () => {
-    const { projectId, sites } = await makeClient({ sites: ['Delmas', 'Cape Town'] });
+    const { projectId, clientId, sites } = await makeClient({ sites: ['Delmas', 'Cape Town'] });
     const delmas = sites[0]!;
     const capeTown = sites[1]!;
 
     const res = await app.inject({
       method: 'DELETE',
-      url: `/admin/clients/${projectId}/locations/${delmas.id}`,
+      url: `/admin/clients/${clientId}/locations/${delmas.id}`,
       headers: bearer(adminToken),
     });
     expect(res.statusCode).toBe(200);
@@ -275,7 +282,7 @@ describe('DELETE /admin/clients/:id/locations', () => {
     const res = await app.inject({
       method: 'DELETE',
       // b's site, addressed under a's client — a mistyped id that happens to exist.
-      url: `/admin/clients/${a.projectId}/locations/${b.sites[0]!.id}`,
+      url: `/admin/clients/${a.clientId}/locations/${b.sites[0]!.id}`,
       headers: bearer(adminToken),
     });
     expect(res.statusCode).toBe(404);
@@ -291,7 +298,7 @@ describe('DELETE /admin/clients/:id/locations', () => {
    * the cylinders must survive, because their batch does: it belongs to Delmas.
    */
   it('sends surviving cylinders parked at a deleted location back to Stores', async () => {
-    const { projectId, sites, batchId, serials } = await makeClient({
+    const { clientId, sites, batchId, serials } = await makeClient({
       sites: ['Delmas', 'Cape Town'],
       quantity: 2,
     });
@@ -321,7 +328,7 @@ describe('DELETE /admin/clients/:id/locations', () => {
     // Delete the location they are VISITING, not the one their batch belongs to.
     const res = await app.inject({
       method: 'DELETE',
-      url: `/admin/clients/${projectId}/locations/${capeTown.id}`,
+      url: `/admin/clients/${clientId}/locations/${capeTown.id}`,
       headers: bearer(adminToken),
     });
     expect(res.statusCode).toBe(200);
@@ -342,17 +349,17 @@ describe('DELETE /admin/clients/:id/locations', () => {
   });
 
   it('deletes every location at once, keeping the client', async () => {
-    const { projectId } = await makeClient({ sites: ['A', 'B', 'C'] });
+    const { projectId, clientId } = await makeClient({ sites: ['A', 'B', 'C'] });
 
     const res = await app.inject({
       method: 'DELETE',
-      url: `/admin/clients/${projectId}/locations`,
+      url: `/admin/clients/${clientId}/locations`,
       headers: bearer(adminToken),
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().impact.sites).toBe(3);
 
-    expect(await prisma.site.count({ where: { projectId } })).toBe(0);
+    expect(await prisma.site.count({ where: { clientId } })).toBe(0);
     expect(await prisma.project.count({ where: { id: projectId } })).toBe(1);
   });
 });
@@ -406,7 +413,8 @@ describe('DELETE /admin/users/:id', () => {
       payload: {
         projectNumber: uniqueProjectNumber(),
         projectManagerId: pm.id,
-        site: { name: 'Worked Yard', location: 'GP' },
+        clientName: 'Worked Yard',
+        location: 'GP',
       },
     });
     const batch = await app.inject({
@@ -659,7 +667,8 @@ describe('gases, suppliers and their pairing', () => {
       payload: {
         projectNumber: uniqueProjectNumber(),
         projectManagerId: pm.id,
-        site: { name: 'Xe Yard', location: 'GP' },
+        clientName: 'Xe Yard',
+        location: 'GP',
       },
     });
     const batch = await app.inject({
@@ -705,5 +714,183 @@ describe('gases, suppliers and their pairing', () => {
       headers: bearer(storesToken),
     });
     expect(res.statusCode).toBe(403);
+  });
+});
+
+describe('the client directory', () => {
+  const post = (body: Record<string, unknown>) =>
+    app.inject({
+      method: 'POST',
+      url: '/admin/clients',
+      headers: bearer(adminToken),
+      payload: body,
+    });
+
+  /**
+   * The duplicate prompt, which is the whole reason creating a client is not a plain
+   * POST. A second McCains is the failure this directory exists to prevent, and a
+   * flat 409 would leave the operator stuck rather than offering the right answer.
+   */
+  it('refuses a duplicate name, naming the client and its places so the screen can ask', async () => {
+    const name = `McCains ${randomUUID().slice(0, 8)}`;
+    const first = await post({ name, location: 'Durban' });
+    expect(first.statusCode).toBe(201);
+    expect(first.json().client).toMatchObject({ name, projectCount: 0 });
+    expect(first.json().client.locations).toHaveLength(1);
+
+    const clash = await post({ name: name.toLowerCase(), location: 'Cape Town' });
+    expect(clash.statusCode).toBe(409);
+    expect(clash.json().error.code).toBe('CLIENT_EXISTS');
+    // Enough to phrase "add Cape Town to the existing McCains, who already have Durban?"
+    expect(clash.json().error.details).toMatchObject({ name, locations: ['Durban'] });
+
+    // Nothing was created by the refusal.
+    const list = await app.inject({
+      method: 'GET',
+      url: '/admin/clients',
+      headers: bearer(adminToken),
+    });
+    const matches = (list.json().clients as { name: string }[]).filter(
+      (c) => c.name.toLowerCase() === name.toLowerCase(),
+    );
+    expect(matches).toHaveLength(1);
+  });
+
+  it('groups the location under the existing client when the operator says yes', async () => {
+    const name = `Grouped ${randomUUID().slice(0, 8)}`;
+    await post({ name, location: 'Durban' });
+
+    const attached = await post({
+      name: name.toUpperCase(),
+      location: 'Midrand',
+      attachToExisting: true,
+    });
+    expect(attached.statusCode).toBe(200);
+    expect(
+      (attached.json().client.locations as { location: string }[]).map((l) => l.location).sort(),
+    ).toEqual(['Durban', 'Midrand']);
+  });
+
+  it('is idempotent on a place, so adding Durban twice is still one Durban', async () => {
+    const name = `Idem ${randomUUID().slice(0, 8)}`;
+    await post({ name, location: 'Durban' });
+    const again = await post({ name, location: 'durban', attachToExisting: true });
+    expect(again.statusCode).toBe(200);
+    expect(again.json().client.locations).toHaveLength(1);
+  });
+
+  it('registers a client with no location at all', async () => {
+    const res = await post({ name: `Bare ${randomUUID().slice(0, 8)}` });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().client.locations).toEqual([]);
+  });
+});
+
+describe('DELETE /admin/projects/:id', () => {
+  /**
+   * The seam the restructure created: a job can be destroyed without touching the
+   * customer. Before, deleting "a client" meant deleting a project, so there was no
+   * way to remove one job and keep the rest.
+   */
+  it('destroys the job and its deliveries, leaving the client and its sites', async () => {
+    const { projectId, clientId, batchId } = await makeClient({ quantity: 2 });
+
+    const impact = await app.inject({
+      method: 'GET',
+      url: `/admin/projects/${projectId}/impact`,
+      headers: bearer(adminToken),
+    });
+    expect(impact.json().impact).toMatchObject({ projects: 1, batches: 1, cylinders: 2, sites: 0 });
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/admin/projects/${projectId}`,
+      headers: bearer(adminToken),
+    });
+    expect(res.statusCode).toBe(200);
+
+    expect(await prisma.project.count({ where: { id: projectId } })).toBe(0);
+    expect(await prisma.batch.count({ where: { id: batchId } })).toBe(0);
+    // The customer and where they take delivery are reference data; they survive.
+    expect(await prisma.client.count({ where: { id: clientId } })).toBe(1);
+    expect(await prisma.site.count({ where: { clientId } })).toBe(1);
+  });
+});
+
+describe('DELETE /admin/project-managers/:id', () => {
+  const makePm = async (name: string) => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/project-managers',
+      headers: bearer(adminToken),
+      payload: { name, email: `${randomUUID().slice(0, 8)}@demo.local` },
+    });
+    expect(res.statusCode).toBe(201);
+    return res.json().projectManager as { id: string; email: string };
+  };
+
+  it('deletes a manager outright when nothing is addressed to them', async () => {
+    const pm = await makePm('Never Used PM');
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/admin/project-managers/${pm.id}`,
+      headers: bearer(adminToken),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().recordsKept).toBe(0);
+    expect(await prisma.projectManager.count({ where: { id: pm.id } })).toBe(0);
+  });
+
+  /**
+   * The same asymmetry as user accounts, for the same reason: every delivery note
+   * names the manager it was addressed to through a REQUIRED foreign key, so
+   * cascading would destroy that paperwork across every client they handled.
+   */
+  it('keeps the name on the paperwork but frees the address', async () => {
+    const { pm, batchId } = await makeClient({ quantity: 1 });
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/admin/project-managers/${pm.id}`,
+      headers: bearer(adminToken),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().recordsKept).toBeGreaterThan(0);
+
+    const kept = await prisma.batch.findUniqueOrThrow({
+      where: { id: batchId },
+      include: { projectManager: true },
+    });
+    expect(kept.projectManager.deletedAt).not.toBeNull();
+    expect(kept.projectManager.active).toBe(false);
+    // The address is released for reuse; the name is what History reads.
+    expect(kept.projectManager.email).not.toBe(pm.email);
+    expect(kept.projectManager.name).toContain('PM ');
+
+    // And they are gone from the console list and every picker.
+    const list = await app.inject({
+      method: 'GET',
+      url: '/admin/project-managers',
+      headers: bearer(adminToken),
+    });
+    expect((list.json().projectManagers as { id: string }[]).map((p) => p.id)).not.toContain(pm.id);
+
+    const picker = await app.inject({
+      method: 'GET',
+      url: '/project-managers',
+      headers: bearer(techToken),
+    });
+    expect((picker.json().projectManagers as { id: string }[]).map((p) => p.id)).not.toContain(
+      pm.id,
+    );
+
+    // The freed address can be given to somebody new.
+    const reuse = await app.inject({
+      method: 'POST',
+      url: '/admin/project-managers',
+      headers: bearer(adminToken),
+      payload: { name: 'Their Replacement', email: pm.email },
+    });
+    expect(reuse.statusCode).toBe(201);
   });
 });

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import {
+  createClientRequestSchema,
   createGasTypeRequestSchema,
   createProjectManagerRequestSchema,
   createSupplierRequestSchema,
@@ -9,16 +10,19 @@ import {
   serialYear,
   systemClock,
   updateBatchRequestSchema,
+  updateClientRequestSchema,
   updateGasTypeRequestSchema,
   updateProjectManagerRequestSchema,
   updateSupplierRequestSchema,
   updateUserRequestSchema,
   type AdminClientDto,
+  type AdminClientResponse,
   type AdminClientsResponse,
   type AdminGasTypeDto,
   type AdminGasTypeResponse,
   type AdminGasTypesResponse,
   type AdminProjectManagerDto,
+  type AdminProjectsResponse,
   type AdminProjectManagerResponse,
   type AdminProjectManagersResponse,
   type AdminSupplierDto,
@@ -40,7 +44,9 @@ import { hashPassword } from '../lib/password.js';
 import { allocateSerials } from '../services/serial.js';
 import { emailDeliveryFor, loadBatchDto } from '../services/batchView.js';
 import {
-  deleteAllSitesOfProject,
+  clientImpact,
+  deleteAllSitesOfClient,
+  deleteClient,
   deleteGasType,
   deleteProject,
   deleteSite,
@@ -236,6 +242,54 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return body;
   });
 
+  /**
+   * Delete a project manager.
+   *
+   * Same two outcomes as a user account, decided by the data rather than a setting. A
+   * manager nobody has used is deleted outright. One with projects or batches is
+   * tombstoned: the email is released for reuse and they disappear from every picker
+   * and list, but their NAME stays, because `Batch.projectManagerId` is required and
+   * every delivery note ever addressed to them answers "who was this delivered for?"
+   * through it. Cascading would destroy that paperwork across every client they
+   * handled — removing one person must not be a way to erase four customers' records.
+   */
+  app.delete('/admin/project-managers/:id', adminOnly, async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const target = await prisma.projectManager.findUnique({
+      where: { id },
+      include: { _count: { select: { projects: true, batches: true, transfers: true } } },
+    });
+    if (!target || target.deletedAt) {
+      return reply
+        .code(404)
+        .send({ error: { code: 'NOT_FOUND', message: 'Project manager not found' } });
+    }
+
+    const referenced = Object.values(target._count).reduce((n, c) => n + c, 0);
+
+    if (referenced === 0) {
+      await prisma.projectManager.delete({ where: { id } });
+    } else {
+      await prisma.projectManager.update({
+        where: { id },
+        data: {
+          deletedAt: new Date(),
+          active: false,
+          // Released so the address can be given to a new manager. The name is
+          // deliberately untouched — it is what the paperwork is addressed to.
+          email: `deleted+${id}@deleted.invalid`,
+        },
+      });
+    }
+
+    request.log.warn(
+      { projectManagerId: id, name: target.name, referenced, purged: referenced === 0 },
+      'admin deleted a project manager',
+    );
+    return { deleted: true, recordsKept: referenced };
+  });
+
   // ------------------------------------------------------- project managers
 
   const toPmDto = (p: {
@@ -265,6 +319,9 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/admin/project-managers', adminOnly, async () => {
     const rows = await prisma.projectManager.findMany({
+      // A deleted manager survives only to give old paperwork a name; listing them
+      // would invite someone to "reactivate" a record whose email is already gone.
+      where: { deletedAt: null },
       include: pmInclude,
       orderBy: [{ active: 'desc' }, { name: 'asc' }],
     });
@@ -412,15 +469,20 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
           // --- site ---
           if (input.siteId && input.siteId !== batch.siteId) {
-            const site = await tx.site.findUnique({ where: { id: input.siteId } });
-            if (!site || site.projectId !== batch.projectId) {
+            const site = await tx.site.findUnique({
+              where: { id: input.siteId },
+              include: { client: { select: { name: true } } },
+            });
+            if (!site || site.clientId !== batch.site.clientId) {
               throw new ImmutableHistoryError(
                 'INVALID_SITE',
-                'Site does not belong to this batch’s project',
+                'Site does not belong to this batch’s client',
               );
             }
             await tx.batch.update({ where: { id }, data: { siteId: site.id } });
-            changes.push({ field: 'Site', from: batch.site.name, to: site.name });
+            // The place, not the client: a correction here moves the batch between one
+            // customer's sites, so naming the customer twice would say nothing.
+            changes.push({ field: 'Site', from: batch.site.location, to: site.location });
           }
 
           // --- line removals ---
@@ -838,74 +900,185 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   // ----------------------------------------------------- clients and locations
 
-  const clientInclude = {
-    projectManager: { select: { id: true, name: true } },
+  // ----------------------------------------------- the client directory
+
+  /**
+   * Clients and the places they take delivery at.
+   *
+   * This is reference data, and it is what the batch form's Site and Location boxes
+   * read. It replaced a screen that listed PROJECTS and called them clients, which was
+   * the honest reflection of a schema where a site belonged to a project: "Delmas"
+   * under 4521 and "Delmas" under 4522 were unrelated rows, nothing could group them,
+   * and a misspelling was invisible forever.
+   *
+   * Deleting from here is genuinely destructive — a client's projects and their whole
+   * delivery history go with it — so every route has its `/impact` twin, as everywhere
+   * else in this console.
+   */
+  const directoryInclude = {
     sites: {
-      orderBy: { name: 'asc' as const },
+      orderBy: { location: 'asc' as const },
       include: { _count: { select: { batches: true } } },
     },
-    _count: { select: { batches: true } },
+    _count: { select: { projects: true } },
   } as const;
 
-  type ClientRow = {
+  type DirectoryRow = {
     id: string;
-    projectNumber: string;
-    projectManagerId: string;
-    status: 'ACTIVE' | 'CLOSED';
+    name: string;
+    active: boolean;
     createdAt: Date;
-    projectManager: { id: string; name: string };
-    sites: { id: string; name: string; location: string; _count: { batches: number } }[];
-    _count: { batches: number };
+    sites: { id: string; location: string; _count: { batches: number } }[];
+    _count: { projects: number };
   };
 
-  const toClientDto = (p: ClientRow): AdminClientDto => ({
-    id: p.id,
-    projectNumber: p.projectNumber,
-    projectManagerId: p.projectManagerId,
-    projectManagerName: p.projectManager.name,
-    status: p.status,
-    createdAt: p.createdAt.toISOString(),
-    locations: p.sites.map((s) => ({
+  const toClientDto = (c: DirectoryRow, batchCount: number): AdminClientDto => ({
+    id: c.id,
+    name: c.name,
+    active: c.active,
+    createdAt: c.createdAt.toISOString(),
+    locations: c.sites.map((s) => ({
       id: s.id,
-      name: s.name,
       location: s.location,
       batchCount: s._count.batches,
     })),
-    batchCount: p._count.batches,
+    projectCount: c._count.projects,
+    batchCount,
   });
 
+  /** Batches per client, in one grouped query rather than one per row. */
+  const batchCountsByClient = async (clientIds: string[]): Promise<Map<string, number>> => {
+    if (clientIds.length === 0) return new Map();
+    const rows = await prisma.$queryRaw<{ clientId: string; count: bigint }[]>`
+      SELECT p."clientId" AS "clientId", COUNT(b.*)::bigint AS count
+      FROM "Project" p
+      JOIN "Batch" b ON b."projectId" = p."id"
+      WHERE p."clientId" = ANY(${clientIds})
+      GROUP BY p."clientId"
+    `;
+    return new Map(rows.map((r) => [r.clientId, Number(r.count)]));
+  };
+
   app.get('/admin/clients', adminOnly, async () => {
-    const rows = await prisma.project.findMany({
-      include: clientInclude,
-      orderBy: [{ status: 'asc' }, { projectNumber: 'asc' }],
+    const rows = await prisma.client.findMany({
+      include: directoryInclude,
+      orderBy: [{ active: 'desc' }, { name: 'asc' }],
     });
-    const body: AdminClientsResponse = { clients: rows.map(toClientDto) };
+    const counts = await batchCountsByClient(rows.map((r) => r.id));
+    const body: AdminClientsResponse = {
+      clients: rows.map((c) => toClientDto(c, counts.get(c.id) ?? 0)),
+    };
+    return body;
+  });
+
+  /**
+   * Add a client, optionally with its first location.
+   *
+   * A name that already exists is NOT an error — it is the common case. The screen
+   * asks "add this location to the existing McCains?" and the caller comes back with
+   * `attachToExisting`, which is what turns two people typing McCains into one client
+   * with two sites instead of a duplicate. Refusing outright would leave them stuck;
+   * silently merging would hide that they had matched someone else's customer.
+   */
+  app.post('/admin/clients', adminOnly, async (request, reply) => {
+    const input = createClientRequestSchema.parse(request.body);
+
+    const existing = await prisma.client.findFirst({
+      where: { name: { equals: input.name, mode: 'insensitive' } },
+      include: directoryInclude,
+    });
+
+    if (existing && !input.attachToExisting) {
+      return reply.code(409).send({
+        error: {
+          code: 'CLIENT_EXISTS',
+          message: `${existing.name} is already in the directory.`,
+          // The screen needs these to phrase its question — which client, and what
+          // they already have — without a second round trip.
+          details: {
+            clientId: existing.id,
+            name: existing.name,
+            locations: existing.sites.map((s) => s.location),
+          },
+        },
+      });
+    }
+
+    const client = existing ?? (await prisma.client.create({ data: { name: input.name } }));
+    if (input.location) {
+      // Idempotent on the place: adding Durban twice is the same end state.
+      const site = await prisma.site.findFirst({
+        where: { clientId: client.id, location: { equals: input.location, mode: 'insensitive' } },
+      });
+      if (!site) {
+        await prisma.site.create({ data: { clientId: client.id, location: input.location } });
+      }
+    }
+
+    const fresh = await prisma.client.findUniqueOrThrow({
+      where: { id: client.id },
+      include: directoryInclude,
+    });
+    const counts = await batchCountsByClient([client.id]);
+    const body: AdminClientResponse = { client: toClientDto(fresh, counts.get(client.id) ?? 0) };
+    return reply.code(existing ? 200 : 201).send(body);
+  });
+
+  /** Rename, or retire from the pickers without touching a single delivery. */
+  app.patch('/admin/clients/:id', adminOnly, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const input = updateClientRequestSchema.parse(request.body);
+    if (!(await prisma.client.findUnique({ where: { id } }))) {
+      return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Client not found' } });
+    }
+    try {
+      await prisma.client.update({
+        where: { id },
+        data: {
+          ...(input.name !== undefined ? { name: input.name } : {}),
+          ...(input.active !== undefined ? { active: input.active } : {}),
+        },
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        return reply.code(409).send({
+          error: { code: 'CLIENT_EXISTS', message: 'Another client already has that name.' },
+        });
+      }
+      throw err;
+    }
+    const fresh = await prisma.client.findUniqueOrThrow({
+      where: { id },
+      include: directoryInclude,
+    });
+    const counts = await batchCountsByClient([id]);
+    const body: AdminClientResponse = { client: toClientDto(fresh, counts.get(id) ?? 0) };
     return body;
   });
 
   app.get('/admin/clients/:id/impact', adminOnly, async (request, reply) => {
     const { id } = request.params as { id: string };
-    if (!(await prisma.project.findUnique({ where: { id } }))) {
+    if (!(await prisma.client.findUnique({ where: { id } }))) {
       return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Client not found' } });
     }
-    const body: DeletionImpactResponse = { impact: await projectImpact(id) };
+    const body: DeletionImpactResponse = { impact: await clientImpact(id) };
     return body;
   });
 
-  /** The client, every location under it, and everything those locations hold. */
+  /** The client, every job for them, and every place they take delivery at. */
   app.delete('/admin/clients/:id', adminOnly, async (request, reply) => {
     const { id } = request.params as { id: string };
-    if (!(await prisma.project.findUnique({ where: { id } }))) {
+    if (!(await prisma.client.findUnique({ where: { id } }))) {
       return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Client not found' } });
     }
-    const body: DeletionResponse = { deleted: true, impact: await deleteProject(id, request.log) };
+    const body: DeletionResponse = { deleted: true, impact: await deleteClient(id, request.log) };
     return body;
   });
 
   app.get('/admin/clients/:id/locations/:siteId/impact', adminOnly, async (request, reply) => {
     const { id, siteId } = request.params as { id: string; siteId: string };
     const site = await prisma.site.findUnique({ where: { id: siteId } });
-    if (!site || site.projectId !== id) {
+    if (!site || site.clientId !== id) {
       return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Location not found' } });
     }
     const body: DeletionImpactResponse = { impact: await siteImpact(siteId) };
@@ -918,7 +1091,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const site = await prisma.site.findUnique({ where: { id: siteId } });
     // Checked against the client in the path, not just by id: a mistyped site id that
     // happens to exist under a DIFFERENT client must not silently delete that one.
-    if (!site || site.projectId !== id) {
+    if (!site || site.clientId !== id) {
       return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Location not found' } });
     }
     const body: DeletionResponse = { deleted: true, impact: await deleteSite(siteId, request.log) };
@@ -928,13 +1101,67 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   /** Every location of a client, keeping the client itself. */
   app.delete('/admin/clients/:id/locations', adminOnly, async (request, reply) => {
     const { id } = request.params as { id: string };
-    if (!(await prisma.project.findUnique({ where: { id } }))) {
+    if (!(await prisma.client.findUnique({ where: { id } }))) {
       return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Client not found' } });
     }
     const body: DeletionResponse = {
       deleted: true,
-      impact: await deleteAllSitesOfProject(id, request.log),
+      impact: await deleteAllSitesOfClient(id, request.log),
     };
+    return body;
+  });
+
+  // ------------------------------------------------------------- projects
+
+  /**
+   * Jobs, and deleting one along with its deliveries.
+   *
+   * Separate from the directory on purpose. A client and its locations are reference
+   * data an admin edits without consequence; a project carries batches, signed
+   * delivery notes and the movement log, and deleting one destroys them. Putting the
+   * two controls on one screen would sit the irreversible action next to the routine
+   * one and rely on the label to keep them apart.
+   */
+  app.get('/admin/projects', adminOnly, async () => {
+    const rows = await prisma.project.findMany({
+      include: {
+        client: { select: { id: true, name: true } },
+        projectManager: { select: { name: true } },
+        _count: { select: { batches: true } },
+      },
+      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+      take: 200,
+    });
+    const body: AdminProjectsResponse = {
+      projects: rows.map((p) => ({
+        id: p.id,
+        projectNumber: p.projectNumber,
+        status: p.status,
+        clientId: p.client.id,
+        clientName: p.client.name,
+        projectManagerName: p.projectManager.name,
+        batchCount: p._count.batches,
+        createdAt: p.createdAt.toISOString(),
+      })),
+    };
+    return body;
+  });
+
+  app.get('/admin/projects/:id/impact', adminOnly, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (!(await prisma.project.findUnique({ where: { id } }))) {
+      return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
+    }
+    const body: DeletionImpactResponse = { impact: await projectImpact(id) };
+    return body;
+  });
+
+  app.delete('/admin/projects/:id', adminOnly, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (!(await prisma.project.findUnique({ where: { id } }))) {
+      return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
+    }
+    const body: DeletionResponse = { deleted: true, impact: await deleteProject(id, request.log) };
     return body;
   });
 }

@@ -107,10 +107,10 @@ export function createMemoryStore(): Store {
       );
     },
 
-    async getCachedSites(projectId) {
+    async getCachedSites(clientId) {
       return [...sites.values()]
-        .filter((s) => s.projectId === projectId)
-        .sort((a, b) => a.name.localeCompare(b.name));
+        .filter((s) => s.clientId === clientId)
+        .sort((a, b) => a.location.localeCompare(b.location));
     },
   };
 }

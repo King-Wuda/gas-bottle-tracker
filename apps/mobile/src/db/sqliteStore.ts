@@ -14,7 +14,11 @@ import type { CachedBatch, CachedCylinder, CachedSite, OutboxRecord, Store } fro
  * it holds field work that has not reached the server yet, and losing it would lose
  * the transfer someone recorded in a dead spot.
  */
-const CACHE_SCHEMA_VERSION = 2;
+// 3: sites moved off projects and onto clients, so cached_site lost project_id and
+// name and gained client_id. `CREATE TABLE IF NOT EXISTS` is a silent no-op on a
+// device already holding the old shape, so the bump is what actually rebuilds it —
+// see the note in CLAUDE.md. The cache is a server mirror, so dropping is safe.
+const CACHE_SCHEMA_VERSION = 3;
 
 const DROP_STALE_CACHE = `
 DROP TABLE IF EXISTS cached_batch;
@@ -66,10 +70,9 @@ CREATE TABLE IF NOT EXISTS cached_cylinder (
 CREATE INDEX IF NOT EXISTS cached_cylinder_batch ON cached_cylinder (batch_id);
 
 CREATE TABLE IF NOT EXISTS cached_site (
-  id         TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL,
-  name       TEXT NOT NULL,
-  location   TEXT NOT NULL
+  id        TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL,
+  location  TEXT NOT NULL
 );
 `;
 
@@ -232,8 +235,8 @@ export async function createSqliteStore(): Promise<Store> {
         }
         for (const s of sites) {
           await db.runAsync(
-            `INSERT OR REPLACE INTO cached_site (id, project_id, name, location) VALUES (?, ?, ?, ?)`,
-            [s.id, s.projectId, s.name, s.location],
+            `INSERT OR REPLACE INTO cached_site (id, client_id, location) VALUES (?, ?, ?)`,
+            [s.id, s.clientId, s.location],
           );
         }
       });
@@ -282,17 +285,15 @@ export async function createSqliteStore(): Promise<Store> {
       }));
     },
 
-    async getCachedSites(projectId) {
+    async getCachedSites(clientId) {
       const rows = await db.getAllAsync<{
         id: string;
-        project_id: string;
-        name: string;
+        client_id: string;
         location: string;
-      }>('SELECT * FROM cached_site WHERE project_id = ? ORDER BY name ASC', [projectId]);
+      }>('SELECT * FROM cached_site WHERE client_id = ? ORDER BY location ASC', [clientId]);
       return rows.map((r) => ({
         id: r.id,
-        projectId: r.project_id,
-        name: r.name,
+        clientId: r.client_id,
         location: r.location,
       }));
     },

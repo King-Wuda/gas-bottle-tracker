@@ -30,6 +30,7 @@ import { deleteFiles } from './storage.js';
 
 /** What a delete would destroy. Every number is a row count, not an estimate. */
 export type DeletionImpact = {
+  projects: number;
   sites: number;
   batches: number;
   cylinders: number;
@@ -45,6 +46,7 @@ export type DeletionImpact = {
 };
 
 const EMPTY: DeletionImpact = {
+  projects: 0,
   sites: 0,
   batches: 0,
   cylinders: 0,
@@ -59,6 +61,7 @@ const EMPTY: DeletionImpact = {
 };
 
 const add = (a: DeletionImpact, b: Partial<DeletionImpact>): DeletionImpact => ({
+  projects: a.projects + (b.projects ?? 0),
   sites: a.sites + (b.sites ?? 0),
   batches: a.batches + (b.batches ?? 0),
   cylinders: a.cylinders + (b.cylinders ?? 0),
@@ -205,12 +208,24 @@ async function filePathsFor(db: Tx | typeof prisma, batchIds: string[]): Promise
   ].filter((p): p is string => typeof p === 'string' && p.length > 0);
 }
 
+/**
+ * One job for a client: its batches and nothing else.
+ *
+ * Sites are NOT counted here, and that is the point of the restructure — they belong
+ * to the client, are shared by every project for them, and outlive any one job.
+ */
 export async function projectImpact(projectId: string): Promise<DeletionImpact> {
-  const [sites, ids] = await Promise.all([
-    prisma.site.count({ where: { projectId } }),
-    batchIdsFor({ projectId }),
+  return add(await impactOfBatches(await batchIdsFor({ projectId })), { projects: 1 });
+}
+
+/** A client, every job for them, and every place they take delivery at. */
+export async function clientImpact(clientId: string): Promise<DeletionImpact> {
+  const [projects, sites, ids] = await Promise.all([
+    prisma.project.count({ where: { clientId } }),
+    prisma.site.count({ where: { clientId } }),
+    batchIdsFor({ project: { clientId } }),
   ]);
-  return add(await impactOfBatches(ids), { sites });
+  return add(await impactOfBatches(ids), { projects, sites });
 }
 
 export async function siteImpact(siteId: string): Promise<DeletionImpact> {
@@ -353,7 +368,7 @@ export async function deleteSite(siteId: string, log?: FastifyBaseLogger): Promi
   return impact;
 }
 
-/** Remove a client, every one of its locations, and everything they hold. */
+/** Remove one job and its deliveries. The client and its sites are left alone. */
 export async function deleteProject(
   projectId: string,
   log?: FastifyBaseLogger,
@@ -364,20 +379,41 @@ export async function deleteProject(
       (b) => b.id,
     );
     const orphaned = await purgeBatches(tx, ids);
+    await tx.project.delete({ where: { id: projectId } });
+    return orphaned;
+  }, TX_OPTIONS);
 
-    const siteIds = (await tx.site.findMany({ where: { projectId }, select: { id: true } })).map(
+  const removed = await deleteFiles(paths);
+  log?.warn({ projectId, impact, filesRemoved: removed }, 'admin deleted a project');
+  return impact;
+}
+
+/** Remove a client, every job for them, and every place they take delivery at. */
+export async function deleteClient(
+  clientId: string,
+  log?: FastifyBaseLogger,
+): Promise<DeletionImpact> {
+  const impact = await clientImpact(clientId);
+  const paths = await prisma.$transaction(async (tx) => {
+    const ids = (
+      await tx.batch.findMany({ where: { project: { clientId } }, select: { id: true } })
+    ).map((b) => b.id);
+    const orphaned = await purgeBatches(tx, ids);
+    await tx.project.deleteMany({ where: { clientId } });
+
+    const siteIds = (await tx.site.findMany({ where: { clientId }, select: { id: true } })).map(
       (s) => s.id,
     );
     if (siteIds.length > 0) {
       orphaned.push(...(await detachSurvivorsFromSites(tx, siteIds)));
       await tx.site.deleteMany({ where: { id: { in: siteIds } } });
     }
-    await tx.project.delete({ where: { id: projectId } });
+    await tx.client.delete({ where: { id: clientId } });
     return orphaned;
   }, TX_OPTIONS);
 
   const removed = await deleteFiles(paths);
-  log?.warn({ projectId, impact, filesRemoved: removed }, 'admin deleted a client');
+  log?.warn({ clientId, impact, filesRemoved: removed }, 'admin deleted a client');
   return impact;
 }
 
@@ -388,22 +424,22 @@ export async function deleteProject(
  * with this client" are different decisions, and the second one is the one that should
  * take the client's own record with it.
  */
-export async function deleteAllSitesOfProject(
-  projectId: string,
+export async function deleteAllSitesOfClient(
+  clientId: string,
   log?: FastifyBaseLogger,
 ): Promise<DeletionImpact> {
-  const siteIds = (await prisma.site.findMany({ where: { projectId }, select: { id: true } })).map(
+  const siteIds = (await prisma.site.findMany({ where: { clientId }, select: { id: true } })).map(
     (s) => s.id,
   );
   if (siteIds.length === 0) return EMPTY;
 
-  const impact = add(await impactOfBatches(await batchIdsFor({ projectId })), {
+  const impact = add(await impactOfBatches(await batchIdsFor({ siteId: { in: siteIds } })), {
     sites: siteIds.length,
   });
   const paths = await prisma.$transaction(async (tx) => {
-    const ids = (await tx.batch.findMany({ where: { projectId }, select: { id: true } })).map(
-      (b) => b.id,
-    );
+    const ids = (
+      await tx.batch.findMany({ where: { siteId: { in: siteIds } }, select: { id: true } })
+    ).map((b) => b.id);
     const orphaned = await purgeBatches(tx, ids);
     orphaned.push(...(await detachSurvivorsFromSites(tx, siteIds)));
     await tx.site.deleteMany({ where: { id: { in: siteIds } } });
@@ -412,7 +448,7 @@ export async function deleteAllSitesOfProject(
 
   const removed = await deleteFiles(paths);
   log?.warn(
-    { projectId, impact, filesRemoved: removed },
+    { clientId, impact, filesRemoved: removed },
     'admin deleted every location of a client',
   );
   return impact;

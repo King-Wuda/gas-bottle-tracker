@@ -47,7 +47,8 @@ beforeAll(async () => {
     payload: {
       projectNumber: uniqueProjectNumber(),
       projectManagerId: workerPm.id,
-      site: { name: 'Worker Yard', location: 'JHB' },
+      clientName: 'Worker Yard',
+      location: 'JHB',
     },
   });
   const projectId = project.json().project.id;
