@@ -132,14 +132,58 @@ The API queues mail into an `OutboundEmail` table and an in-process worker drain
 with retries, so a send failure never rolls back the batch that triggered it. Which
 transport the worker uses is the `MAILER` env var.
 
-| `MAILER`   | Transport                | Use                                            |
-| ---------- | ------------------------ | ---------------------------------------------- |
-| `capture`  | In memory, sends nothing | The integration suite. Not a deployment option |
-| `resend`   | Resend API               | **Production**                                 |
-| `sendgrid` | SendGrid over SMTP       | Alternative                                    |
+| `MAILER`   | Transport                | Use                                               |
+| ---------- | ------------------------ | ------------------------------------------------- |
+| `capture`  | In memory, sends nothing | The integration suite. Not a deployment option    |
+| `brevo`    | Brevo HTTPS API          | **Production without a domain** — reaches anybody |
+| `resend`   | Resend API               | Production once you have verified a domain        |
+| `sendgrid` | SendGrid over SMTP       | Alternative                                       |
+| `smtp`     | Any SMTP server          | A host that permits outbound SMTP (not Render)    |
 
-`capture` never touches the network — messages are held in memory and
-readable in its web UI. It is a development tool, not a production transport.
+`capture` never touches the network — messages are held in memory. It is a development
+tool, not a production transport.
+
+### Which one reaches every project manager
+
+This is the question that decides the setting, and it is not about features:
+
+- **`resend` and `sendgrid` authenticate by DOMAIN.** Until you verify one with SPF and
+  DKIM records, Resend delivers to exactly one address — the one that owns the Resend
+  account — and refuses every other project manager with a 403.
+- **`smtp` reaches anybody with no domain**, but needs a host that allows outbound SMTP.
+  Render's free plan blocks it on every port; that is measured, in
+  [docs/DEPLOY.md](docs/DEPLOY.md).
+- **`brevo` reaches anybody with no domain, over HTTPS.** It verifies a single sender
+  ADDRESS by emailing a confirmation link to it, so an ordinary Gmail address becomes a
+  legitimate `From:`. This is the setting to use unless you own a domain.
+
+Whichever you pick, a refusal is no longer invisible: the batch detail screen reports
+what actually became of the QR sheet — Delivered, Queued, Retrying or Failed — with the
+provider's reason, instead of showing the time the message was put in the queue and
+calling that "sent".
+
+### Setting up Brevo (no domain needed)
+
+1. Sign up at [brevo.com](https://www.brevo.com).
+2. **Senders, Domains & Dedicated IPs → Senders → Add a Sender.** Enter the address the
+   mail should come _from_; an ordinary Gmail address is fine. Brevo emails it a
+   confirmation link — click it. There is no DNS step and no domain to own.
+3. **SMTP & API → API Keys → Generate a new API key.**
+4. Set these in `apps/api/.env` (and in the host's environment):
+
+   ```
+   MAILER=brevo
+   BREVO_API_KEY=xkeysib-xxxxxxxx
+   MAIL_FROM="Gas Cylinder Tracker <the-address-you-confirmed@gmail.com>"
+   ```
+
+   `MAIL_FROM` must be the address confirmed in step 2, or Brevo refuses the send.
+
+5. Restart the API and create a batch addressed to any project manager. The free tier
+   allows 300 emails a day.
+
+Adding the DKIM record Brevo offers improves inbox placement later; it is not required
+to send.
 
 ### Setting up Resend
 

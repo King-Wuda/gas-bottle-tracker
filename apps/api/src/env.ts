@@ -46,13 +46,20 @@ const EnvSchema = z
 
     // mail (M4)
     //
-    // 'resend' is the only transport that sends mail, and the default: a mail setup
-    // that silently delivers nothing is the worst state this can be in, so it is not
-    // reachable by forgetting to configure something.
+    // 'resend' is the default: a mail setup that silently delivers nothing is the
+    // worst state this can be in, so it is not reachable by forgetting to configure
+    // something.
+    //
+    // 'brevo' is the one to pick when there is no domain to verify. Resend and
+    // SendGrid authenticate by DOMAIN and refuse every other recipient until SPF and
+    // DKIM are in place; Brevo authenticates a single SENDER ADDRESS by emailing it a
+    // confirmation link, and then delivers to anybody. It goes out over HTTPS, which
+    // is the other half of why it is here — see services/mailer for the ports Render
+    // blocks.
     //
     // 'capture' keeps messages in memory and sends nothing. It is the integration
     // suite's transport (see services/mailer), not a deployment option.
-    MAILER: z.enum(['resend', 'sendgrid', 'smtp', 'capture']).default('resend'),
+    MAILER: z.enum(['resend', 'brevo', 'sendgrid', 'smtp', 'capture']).default('resend'),
 
     /**
      * Any SMTP server, for `MAILER=smtp`. Gmail with an app password is the usual
@@ -78,6 +85,8 @@ const EnvSchema = z
     SENDGRID_API_KEY: z.string().optional(),
     /** Server-only secret. Never an EXPO_PUBLIC_* var — those ship inside the bundle. */
     RESEND_API_KEY: z.string().optional(),
+    /** Same: a server secret. Required when MAILER=brevo. */
+    BREVO_API_KEY: z.string().optional(),
 
     // storage (M2/M4)
     STORAGE_DIR: z.string().default('./var/storage'),
@@ -101,6 +110,16 @@ const EnvSchema = z
         message:
           'required when MAILER=resend — create one at resend.com and verify your ' +
           'sending domain first (see "Sending real email" in README.md)',
+      });
+    }
+    if (cfg.MAILER === 'brevo' && !cfg.BREVO_API_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['BREVO_API_KEY'],
+        message:
+          'required when MAILER=brevo — create one at app.brevo.com/settings/keys/api, ' +
+          'then verify the address in MAIL_FROM under Senders (Brevo emails it a ' +
+          'confirmation link; no domain or DNS needed). See docs/DEPLOY.md',
       });
     }
     if (cfg.MAILER === 'smtp') {

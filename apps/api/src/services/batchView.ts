@@ -7,7 +7,13 @@
  * lives here rather than in `routes/batches.ts` so the four callers cannot drift into
  * four slightly different answers.
  */
-import type { BatchDistributionEntry, BatchDto, BatchLineDto, BatchSummary } from '@gct/shared';
+import type {
+  BatchDistributionEntry,
+  BatchDto,
+  BatchLineDto,
+  BatchSummary,
+  EmailDelivery,
+} from '@gct/shared';
 import { prisma } from '../db.js';
 
 /** A NULL `currentSiteId` means the depot; there is no Site row for it. */
@@ -229,6 +235,38 @@ export function toBatchDto(
       batchLineId: c.batchLineId,
       currentSiteId: c.currentSiteId,
     })),
+  };
+}
+
+/**
+ * What became of the QR-sheet mail for one batch — the newest outbox row for it.
+ *
+ * Newest rather than first because "Resend email" writes another row: the question the
+ * screen is asking is "did the last attempt land?", and the original PENDING row from
+ * three days ago is not the answer to it.
+ *
+ * Matched through the payload's `batchId` rather than a foreign key. `OutboundEmail`
+ * deliberately holds a render context instead of a relation to every kind of thing it
+ * can be about (a DELIVERY_NOTE row points at a return, not a batch), and a column per
+ * type would have to grow every time a new mail is added. The table is small and the
+ * detail screen asks for exactly one batch, so a JSON path lookup is the cheaper trade.
+ *
+ * Detail-only, and not part of `BatchSummary`: the history list renders hundreds of
+ * rows, and this would be a query per row for a fact nobody reads from a list.
+ */
+export async function emailDeliveryFor(batchId: string): Promise<EmailDelivery | null> {
+  const row = await prisma.outboundEmail.findFirst({
+    where: { type: 'QR_SHEET', payload: { path: ['batchId'], equals: batchId } },
+    orderBy: { createdAt: 'desc' },
+    select: { status: true, lastError: true, attempts: true, sentAt: true, to: true },
+  });
+  if (!row) return null;
+  return {
+    status: row.status,
+    lastError: row.lastError,
+    attempts: row.attempts,
+    sentAt: iso(row.sentAt),
+    to: row.to,
   };
 }
 

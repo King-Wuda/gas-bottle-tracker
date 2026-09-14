@@ -25,6 +25,24 @@ export interface Mailer {
 const fromAddress = (): string => env().EMAIL_FROM ?? env().MAIL_FROM;
 
 /**
+ * Split `"Gas Cylinder Tracker <no-reply@gct.co.za>"` into its two halves.
+ *
+ * SMTP and Resend both take the combined string, so this existed nowhere until Brevo,
+ * whose API wants `{ name, email }` as separate JSON fields. A bare address with no
+ * display name is equally valid and comes back with `name` undefined, which Brevo
+ * accepts — it falls back to the address, exactly as a mail client would.
+ */
+export function parseAddress(value: string): { email: string; name?: string } {
+  const angled = /^\s*(.*?)\s*<([^>]+)>\s*$/.exec(value);
+  const email = angled?.[2];
+  if (!email) return { email: value.trim() };
+  // A quoted display name ("Gas Cylinder Tracker" <...>) is legal; the quotes are
+  // syntax, not part of the name, and Brevo would render them literally.
+  const name = (angled[1] ?? '').replace(/^"(.*)"$/, '$1').trim();
+  return name ? { email: email.trim(), name } : { email: email.trim() };
+}
+
+/**
  * Any SMTP server — Gmail, a work mail server, an ESP that speaks SMTP.
  *
  * This exists because the alternative to it is not "a better transport", it is "no
@@ -127,10 +145,171 @@ function buildResendMailer(): Mailer {
       // The SDK reports delivery refusals in `error` rather than by throwing, so an
       // unchecked call would mark the row SENT for mail that was never accepted.
       if (error) {
-        throw new Error(`Resend refused the message: ${error.name}: ${error.message}`);
+        throw new Error(
+          explainRefusal('resend', `Resend refused the message: ${error.name}: ${error.message}`, {
+            from: parseAddress(from).email,
+            to: msg.to,
+          }),
+        );
       }
     },
   };
+}
+
+/**
+ * Brevo — the transport that reaches project managers without owning a domain.
+ *
+ * This exists because the other two routes out of "we can only email one person" are
+ * both shut on the host this runs on. Resend (and SendGrid, and any ESP that
+ * authenticates by DOMAIN) refuses arbitrary recipients until SPF and DKIM records are
+ * verified, which needs a domain you own and DNS you control. `MAILER=smtp` sidesteps
+ * that and delivers to anybody — but not from Render's free plan, where outbound SMTP
+ * is blocked on every port and mail has to leave over 443. Measured, both ports, in
+ * docs/DEPLOY.md.
+ *
+ * Brevo is the one that fits through the gap: it authenticates a SINGLE SENDER by
+ * emailing a confirmation link to that address, so a plain Gmail account becomes a
+ * legitimate `From:` with no domain and no DNS, and it sends over HTTPS like Resend.
+ * 300 messages a day on the free tier, which is far above what a depot produces.
+ *
+ * Called through `fetch` rather than Brevo's SDK deliberately: the whole API surface
+ * used here is one POST, and a dependency whose transitive tree we would have to keep
+ * patched is a poor trade for the twenty lines below.
+ */
+function buildBrevoMailer(): Mailer {
+  const config = env();
+  if (!config.BREVO_API_KEY) {
+    throw new Error(
+      'MAILER=brevo but BREVO_API_KEY is unset. Create a key at ' +
+        'app.brevo.com/settings/keys/api, verify the address you want to send from ' +
+        'under Senders, then set BREVO_API_KEY and MAIL_FROM to that address. ' +
+        'See "Sending to more than one person" in docs/DEPLOY.md.',
+    );
+  }
+  const apiKey = config.BREVO_API_KEY;
+  const sender = parseAddress(fromAddress());
+  return {
+    async send(msg) {
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        // Without this a hung connection holds the outbox row in SENDING until the
+        // worker's 5-minute stale lease expires, which stalls every message behind it.
+        // 30s is far longer than a send of a few hundred KB should ever take.
+        signal: AbortSignal.timeout(30_000),
+        headers: {
+          'api-key': apiKey,
+          'content-type': 'application/json',
+          accept: 'application/json',
+        },
+        body: JSON.stringify({
+          sender,
+          to: [{ email: msg.to }],
+          subject: msg.subject,
+          textContent: msg.text,
+          ...(msg.html ? { htmlContent: msg.html } : {}),
+          // Brevo takes attachments as base64 in the JSON body, not as multipart.
+          ...(msg.attachments?.length
+            ? {
+                attachment: msg.attachments.map((a) => ({
+                  name: a.filename,
+                  content: a.content.toString('base64'),
+                })),
+              }
+            : {}),
+        }),
+      });
+      if (!response.ok) {
+        // Brevo reports refusals as `{ code, message }`. Read it as text first: an
+        // auth failure or a gateway error can answer with HTML, and a JSON.parse
+        // throwing here would replace a useful status line with "Unexpected token <".
+        const body = await response.text().catch(() => '');
+        let detail = body;
+        try {
+          const parsed = JSON.parse(body) as { code?: string; message?: string };
+          if (parsed.message)
+            detail = parsed.code ? `${parsed.code}: ${parsed.message}` : parsed.message;
+        } catch {
+          /* keep the raw body */
+        }
+        throw new Error(
+          explainRefusal(
+            'brevo',
+            `Brevo refused the message (HTTP ${response.status}): ${detail}`,
+            {
+              from: sender.email,
+              to: msg.to,
+            },
+          ),
+        );
+      }
+    },
+  };
+}
+
+/**
+ * Turn a provider's refusal into something that names the fix.
+ *
+ * Every one of these was, in its raw form, a line that reads like a bug in this app
+ * and is actually a five-minute change in someone's dashboard. The one that cost the
+ * most time is Resend's: a batch addressed to anyone but the account owner is refused
+ * with a 403 whose text mentions neither the account owner nor domain verification, so
+ * the queue fills with failures that look arbitrary. The message is what a human reads
+ * off `lastError` at 6am, so it is worth more than the provider's own wording.
+ *
+ * The original text is always kept — a translation that guesses wrong must not destroy
+ * the evidence underneath it.
+ */
+export function explainRefusal(
+  provider: 'resend' | 'brevo',
+  raw: string,
+  addresses: { from: string; to: string },
+): string {
+  const lower = raw.toLowerCase();
+  const hint = ((): string | null => {
+    if (provider === 'resend') {
+      // Resend's test mode: no verified domain, so exactly one recipient is reachable.
+      if (lower.includes('testing emails') || lower.includes('own email address')) {
+        return (
+          `Resend is in test mode: with no verified domain it delivers ONLY to the ` +
+          `address that owns the Resend account, so ${addresses.to} is refused. ` +
+          `Either verify a domain at resend.com/domains and set MAIL_FROM to an ` +
+          `address on it, or switch to MAILER=brevo, which needs no domain — see ` +
+          `docs/DEPLOY.md.`
+        );
+      }
+      if (lower.includes('domain is not verified') || lower.includes('not verified')) {
+        return (
+          `Resend will not send as ${addresses.from}: that domain is not verified. ` +
+          `Verify it at resend.com/domains, or use MAILER=brevo, which verifies a ` +
+          `single address instead of a whole domain.`
+        );
+      }
+    }
+    if (provider === 'brevo') {
+      if (
+        lower.includes('sender') &&
+        (lower.includes('not valid') || lower.includes('not exist'))
+      ) {
+        return (
+          `Brevo does not recognise ${addresses.from} as a verified sender. Add it at ` +
+          `app.brevo.com/senders, click the confirmation link Brevo emails to that ` +
+          `address, and make sure MAIL_FROM matches it exactly.`
+        );
+      }
+      if (lower.includes('unauthorized') || lower.includes('http 401')) {
+        return `Brevo rejected BREVO_API_KEY. Re-issue one at app.brevo.com/settings/keys/api.`;
+      }
+      // The free tier's 300/day ceiling, hit mid-run.
+      if (lower.includes('http 402') || lower.includes('credit') || lower.includes('quota')) {
+        return (
+          `Brevo is out of sending credit for today (the free tier allows 300 emails ` +
+          `per day). The queue retries, so this clears on its own when the quota resets.`
+        );
+      }
+    }
+    return null;
+  })();
+  return hint ? `${hint}\n\nProvider said: ${raw}` : raw;
 }
 
 let cached: Mailer | undefined;
@@ -139,6 +318,10 @@ export function getMailer(): Mailer {
   if (cached) return cached;
   if (env().MAILER === 'resend') {
     cached = buildResendMailer();
+    return cached;
+  }
+  if (env().MAILER === 'brevo') {
+    cached = buildBrevoMailer();
     return cached;
   }
   if (env().MAILER === 'capture') {

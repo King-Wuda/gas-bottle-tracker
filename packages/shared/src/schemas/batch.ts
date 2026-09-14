@@ -214,8 +214,65 @@ export const batchListResponseSchema = z.object({
 });
 export type BatchListResponse = z.infer<typeof batchListResponseSchema>;
 
-export const batchDetailResponseSchema = z.object({ batch: batchDtoSchema });
+/**
+ * What actually became of the batch's QR-sheet mail, as opposed to when it was queued.
+ *
+ * `emailSentAt` and `lastEmailSentAt` on the batch are stamped when the row is written
+ * to the outbox, which is BEFORE anything has been sent — so a screen reading only
+ * those says "Sent" about mail the provider went on to refuse. That gap is not
+ * hypothetical: it is how an entire deployment's mail could be rejected (Resend
+ * delivers to one address until a domain is verified) while every batch on screen
+ * claimed it had gone out, and the reason sat unread in `OutboundEmail.lastError`.
+ *
+ * So this reports the queue row itself. PENDING means the worker has not got to it or
+ * is retrying; FAILED means it gave up after MAX_ATTEMPTS and `lastError` says why.
+ */
+export const emailDeliverySchema = z.object({
+  status: z.enum(['PENDING', 'SENDING', 'SENT', 'FAILED']),
+  /** The provider's refusal, translated to name the fix where we recognise it. */
+  lastError: z.string().nullable(),
+  attempts: z.number().int().nonnegative(),
+  /** When the transport actually accepted it. Null until then. */
+  sentAt: z.string().nullable(),
+  /** The address the outbox row is actually addressed to. */
+  to: z.string(),
+});
+export type EmailDelivery = z.infer<typeof emailDeliverySchema>;
+
+export const batchDetailResponseSchema = z.object({
+  batch: batchDtoSchema,
+  /** Null when no QR sheet has ever been queued for this batch. */
+  emailDelivery: emailDeliverySchema.nullable(),
+});
 export type BatchDetailResponse = z.infer<typeof batchDetailResponseSchema>;
+
+/**
+ * One line an operator can act on, for each delivery state.
+ *
+ * Kept beside the schema rather than in the screen because the same sentence has to
+ * serve the batch detail card and anything later that reports on the queue; two
+ * copies would drift, and this is text people make decisions from.
+ */
+export const emailDeliveryLabel = (d: EmailDelivery): { label: string; detail: string } => {
+  switch (d.status) {
+    case 'SENT':
+      return { label: 'Delivered', detail: `Accepted for ${d.to}.` };
+    case 'FAILED':
+      return {
+        label: 'Failed',
+        detail: d.lastError ?? `Gave up after ${d.attempts} attempts.`,
+      };
+    default:
+      return {
+        label: d.attempts > 0 ? 'Retrying' : 'Queued',
+        detail:
+          d.lastError ??
+          (d.attempts > 0
+            ? `Attempt ${d.attempts} did not go through; the queue is still trying.`
+            : 'Waiting for the mail worker.'),
+      };
+  }
+};
 
 /** How long the resend control stays locked after a send. Server-enforced. */
 export const RESEND_LOCKOUT_SECONDS = 60;

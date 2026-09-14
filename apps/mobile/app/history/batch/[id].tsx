@@ -2,10 +2,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
+  emailDeliveryLabel,
   formatBatchDate,
   INITIAL_DELIVERY_POINT_LABELS,
   summariseDistribution,
   type BatchDto,
+  type EmailDelivery,
   type InitialDeliveryPoint,
 } from '@gct/shared';
 import { ApiError, apiGetBatch } from '../../../src/api/client';
@@ -53,12 +55,25 @@ const badgeFor = (b: BatchDto): { label: string; tone: BadgeTone } => {
   return { label: 'At stores', tone: 'neutral' };
 };
 
+/**
+ * The delivery state as a badge. Distinct from `badgeFor`, which describes where the
+ * CYLINDERS are — a batch can be safely on site with its paperwork never delivered,
+ * and one badge saying both would hide exactly that case.
+ */
+const deliveryBadge = (d: EmailDelivery): { label: string; tone: BadgeTone } => {
+  const { label } = emailDeliveryLabel(d);
+  if (d.status === 'SENT') return { label, tone: 'done' };
+  if (d.status === 'FAILED') return { label, tone: 'failed' };
+  return { label, tone: 'moved' };
+};
+
 export default function BatchDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
 
   const [batch, setBatch] = useState<BatchDto | null>(null);
+  const [delivery, setDelivery] = useState<EmailDelivery | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,6 +84,7 @@ export default function BatchDetail() {
     try {
       const res = await apiGetBatch(id);
       setBatch(res.batch);
+      setDelivery(res.emailDelivery);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not load this batch.');
     } finally {
@@ -170,15 +186,40 @@ export default function BatchDetail() {
       </Card>
 
       <Card>
-        <Text style={{ fontWeight: '700' }}>QR sheet email</Text>
+        <View
+          style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+        >
+          <Text style={{ fontWeight: '700' }}>QR sheet email</Text>
+          {delivery ? <StatusBadge {...deliveryBadge(delivery)} /> : null}
+        </View>
+
+        {/* "Queued", not "sent": both timestamps are stamped when the outbox row is
+            written, which is before the provider has seen it. Calling that "sent" is
+            what let a deployment refuse every message while this card said otherwise. */}
         <Row
-          label="First sent"
-          value={batch.emailSentAt ? formatBatchDate(batch.emailSentAt) : 'Not sent'}
+          label="First queued"
+          value={batch.emailSentAt ? formatBatchDate(batch.emailSentAt) : 'Never'}
         />
         <Row
-          label="Last sent"
-          value={batch.lastEmailSentAt ? formatBatchDate(batch.lastEmailSentAt) : 'Not sent'}
+          label="Last queued"
+          value={batch.lastEmailSentAt ? formatBatchDate(batch.lastEmailSentAt) : 'Never'}
         />
+        {delivery?.sentAt ? (
+          <Row label="Delivered" value={formatBatchDate(delivery.sentAt)} />
+        ) : null}
+
+        {delivery ? (
+          <Text
+            style={[
+              styles.hint,
+              delivery.status === 'FAILED' && { color: colors.danger },
+              { marginTop: 4 },
+            ]}
+          >
+            {emailDeliveryLabel(delivery).detail}
+          </Text>
+        ) : null}
+
         <View style={{ marginTop: 8 }}>
           <ResendEmailButton
             batchId={batch.id}
