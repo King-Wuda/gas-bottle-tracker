@@ -25,6 +25,10 @@ export async function resetDb(): Promise<void> {
         'SerialSequence',
         'Site',
         'Project',
+        // Sites hang off clients now, so the directory has to go with them — a
+        // leftover McCains would be silently reused by the next file's fixtures and
+        // make one suite's data visible to another.
+        'Client',
         'ProjectManager',
         'RefreshToken',
       ]

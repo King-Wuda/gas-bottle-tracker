@@ -94,32 +94,31 @@ async function unusedPrefix(): Promise<string> {
 const unusedGasName = (): string => `Testgas ${randomUUID().slice(0, 8)}`;
 
 /** A client with one location, one batch, initialized — so it owns real evidence. */
-async function makeClient(opts: { sites?: string[]; quantity?: number } = {}) {
+async function makeClient(opts: { sites?: string[]; quantity?: number; name?: string } = {}) {
   const pm = await makeProjectManager(`PM ${randomUUID().slice(0, 8)}`);
   const projectNumber = uniqueProjectNumber();
+  // Client names are unique directory entries now, so fixtures must not collide: two
+  // tests both asking for "McCains" would share one client and one set of sites.
+  const clientName = opts.name ?? `Client ${randomUUID().slice(0, 8)}`;
   const siteNames = opts.sites ?? ['Delmas'];
 
   const created = await app.inject({
     method: 'POST',
     url: '/projects',
     headers: bearer(techToken),
-    payload: {
-      projectNumber,
-      projectManagerId: pm.id,
-      site: { name: siteNames[0]!, location: 'Mpumalanga' },
-    },
+    payload: { projectNumber, projectManagerId: pm.id, clientName, location: siteNames[0]! },
   });
   expect(created.statusCode).toBe(201);
   const project = created.json().project;
 
-  for (const name of siteNames.slice(1)) {
+  for (const location of siteNames.slice(1)) {
     const res = await app.inject({
       method: 'POST',
-      url: `/projects/${project.id}/sites`,
+      url: `/clients/${project.clientId}/sites`,
       headers: bearer(techToken),
-      payload: { name, location: 'Elsewhere' },
+      payload: { location },
     });
-    expect(res.statusCode).toBe(201);
+    expect([200, 201]).toContain(res.statusCode);
   }
 
   const full = await app.inject({
@@ -127,7 +126,8 @@ async function makeClient(opts: { sites?: string[]; quantity?: number } = {}) {
     url: `/projects/${project.id}`,
     headers: bearer(techToken),
   });
-  const sites = full.json().project.sites as { id: string; name: string }[];
+  const clientId = full.json().project.clientId as string;
+  const sites = full.json().project.sites as { id: string; location: string }[];
 
   const batchRes = await app.inject({
     method: 'POST',
@@ -153,16 +153,16 @@ async function makeClient(opts: { sites?: string[]; quantity?: number } = {}) {
 
   await initializeBatch(app, techToken, batchId, serials);
 
-  return { projectId: project.id, projectNumber, sites, batchId, serials, pm };
+  return { projectId: project.id, clientId, projectNumber, sites, batchId, serials, pm };
 }
 
 /** Every table the cascade is supposed to empty, for one project. */
-async function remainsOf(projectId: string) {
+async function remainsOf(projectId: string, clientId?: string) {
   const batches = await prisma.batch.findMany({ where: { projectId }, select: { id: true } });
   const ids = batches.map((b) => b.id);
   return {
     project: await prisma.project.count({ where: { id: projectId } }),
-    sites: await prisma.site.count({ where: { projectId } }),
+    sites: clientId ? await prisma.site.count({ where: { clientId } }) : 0,
     batches: batches.length,
     cylinders: await prisma.cylinder.count({ where: { batchId: { in: ids } } }),
     lines: await prisma.batchLine.count({ where: { batchId: { in: ids } } }),
@@ -173,11 +173,11 @@ async function remainsOf(projectId: string) {
 
 describe('DELETE /admin/clients/:id', () => {
   it('reports the impact before anything is destroyed', async () => {
-    const { projectId } = await makeClient({ quantity: 4 });
+    const { projectId, clientId } = await makeClient({ quantity: 4 });
 
     const res = await app.inject({
       method: 'GET',
-      url: `/admin/clients/${projectId}/impact`,
+      url: `/admin/clients/${clientId}/impact`,
       headers: bearer(adminToken),
     });
     expect(res.statusCode).toBe(200);
@@ -188,11 +188,18 @@ describe('DELETE /admin/clients/:id', () => {
     expect(impact.photos).toBe(1);
 
     // And nothing has actually gone: /impact is a question, not an instruction.
-    expect(await remainsOf(projectId)).toMatchObject({ project: 1, batches: 1, cylinders: 4 });
+    expect(await remainsOf(projectId, clientId)).toMatchObject({
+      project: 1,
+      batches: 1,
+      cylinders: 4,
+    });
   });
 
   it('removes the client, its locations, and every trace of its deliveries', async () => {
-    const { projectId, batchId } = await makeClient({ sites: ['Delmas', 'Durban'], quantity: 3 });
+    const { projectId, clientId, batchId } = await makeClient({
+      sites: ['Delmas', 'Durban'],
+      quantity: 3,
+    });
 
     const photoPaths = (
       await prisma.batchPhoto.findMany({ where: { batchId }, select: { path: true } })
@@ -201,13 +208,13 @@ describe('DELETE /admin/clients/:id', () => {
 
     const res = await app.inject({
       method: 'DELETE',
-      url: `/admin/clients/${projectId}`,
+      url: `/admin/clients/${clientId}`,
       headers: bearer(adminToken),
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().deleted).toBe(true);
 
-    expect(await remainsOf(projectId)).toEqual({
+    expect(await remainsOf(projectId, clientId)).toEqual({
       project: 0,
       sites: 0,
       batches: 0,
@@ -235,11 +242,11 @@ describe('DELETE /admin/clients/:id', () => {
 
     await app.inject({
       method: 'DELETE',
-      url: `/admin/clients/${drop.projectId}`,
+      url: `/admin/clients/${drop.clientId}`,
       headers: bearer(adminToken),
     });
 
-    expect(await remainsOf(keep.projectId)).toMatchObject({
+    expect(await remainsOf(keep.projectId, keep.clientId)).toMatchObject({
       project: 1,
       sites: 1,
       batches: 1,
@@ -250,13 +257,13 @@ describe('DELETE /admin/clients/:id', () => {
 
 describe('DELETE /admin/clients/:id/locations', () => {
   it('deletes one location and the batches delivered to it, keeping the others', async () => {
-    const { projectId, sites } = await makeClient({ sites: ['Delmas', 'Cape Town'] });
+    const { projectId, clientId, sites } = await makeClient({ sites: ['Delmas', 'Cape Town'] });
     const delmas = sites[0]!;
     const capeTown = sites[1]!;
 
     const res = await app.inject({
       method: 'DELETE',
-      url: `/admin/clients/${projectId}/locations/${delmas.id}`,
+      url: `/admin/clients/${clientId}/locations/${delmas.id}`,
       headers: bearer(adminToken),
     });
     expect(res.statusCode).toBe(200);
@@ -275,7 +282,7 @@ describe('DELETE /admin/clients/:id/locations', () => {
     const res = await app.inject({
       method: 'DELETE',
       // b's site, addressed under a's client — a mistyped id that happens to exist.
-      url: `/admin/clients/${a.projectId}/locations/${b.sites[0]!.id}`,
+      url: `/admin/clients/${a.clientId}/locations/${b.sites[0]!.id}`,
       headers: bearer(adminToken),
     });
     expect(res.statusCode).toBe(404);
@@ -291,7 +298,7 @@ describe('DELETE /admin/clients/:id/locations', () => {
    * the cylinders must survive, because their batch does: it belongs to Delmas.
    */
   it('sends surviving cylinders parked at a deleted location back to Stores', async () => {
-    const { projectId, sites, batchId, serials } = await makeClient({
+    const { clientId, sites, batchId, serials } = await makeClient({
       sites: ['Delmas', 'Cape Town'],
       quantity: 2,
     });
@@ -321,7 +328,7 @@ describe('DELETE /admin/clients/:id/locations', () => {
     // Delete the location they are VISITING, not the one their batch belongs to.
     const res = await app.inject({
       method: 'DELETE',
-      url: `/admin/clients/${projectId}/locations/${capeTown.id}`,
+      url: `/admin/clients/${clientId}/locations/${capeTown.id}`,
       headers: bearer(adminToken),
     });
     expect(res.statusCode).toBe(200);
@@ -342,17 +349,17 @@ describe('DELETE /admin/clients/:id/locations', () => {
   });
 
   it('deletes every location at once, keeping the client', async () => {
-    const { projectId } = await makeClient({ sites: ['A', 'B', 'C'] });
+    const { projectId, clientId } = await makeClient({ sites: ['A', 'B', 'C'] });
 
     const res = await app.inject({
       method: 'DELETE',
-      url: `/admin/clients/${projectId}/locations`,
+      url: `/admin/clients/${clientId}/locations`,
       headers: bearer(adminToken),
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().impact.sites).toBe(3);
 
-    expect(await prisma.site.count({ where: { projectId } })).toBe(0);
+    expect(await prisma.site.count({ where: { clientId } })).toBe(0);
     expect(await prisma.project.count({ where: { id: projectId } })).toBe(1);
   });
 });
@@ -406,7 +413,8 @@ describe('DELETE /admin/users/:id', () => {
       payload: {
         projectNumber: uniqueProjectNumber(),
         projectManagerId: pm.id,
-        site: { name: 'Worked Yard', location: 'GP' },
+        clientName: 'Worked Yard',
+        location: 'GP',
       },
     });
     const batch = await app.inject({
@@ -659,7 +667,8 @@ describe('gases, suppliers and their pairing', () => {
       payload: {
         projectNumber: uniqueProjectNumber(),
         projectManagerId: pm.id,
-        site: { name: 'Xe Yard', location: 'GP' },
+        clientName: 'Xe Yard',
+        location: 'GP',
       },
     });
     const batch = await app.inject({

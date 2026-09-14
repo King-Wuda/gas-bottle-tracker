@@ -107,10 +107,18 @@ export async function batchRoutes(app: FastifyInstance): Promise<void> {
       if (!project) {
         return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
       }
-      const site = await prisma.site.findUnique({ where: { id: input.siteId } });
-      if (!site || site.projectId !== project.id) {
+      // A site belongs to the CLIENT now, so the check is that the place and the job
+      // are for the same customer — which is what "does this site belong to this
+      // project" always meant. It is also stronger than before: two McCains projects
+      // share one Durban row, so a batch can no longer be booked to a same-named site
+      // that was really a different project's private copy.
+      const site = await prisma.site.findUnique({
+        where: { id: input.siteId },
+        include: { client: { select: { name: true } } },
+      });
+      if (!site || site.clientId !== project.clientId) {
         return reply.code(400).send({
-          error: { code: 'INVALID_SITE', message: 'Site does not belong to this project' },
+          error: { code: 'INVALID_SITE', message: 'Site does not belong to this project’s client' },
         });
       }
 
@@ -279,7 +287,7 @@ export async function batchRoutes(app: FastifyInstance): Promise<void> {
                 to: manager.email,
                 batchId: batch.id,
                 projectNumber: project.projectNumber,
-                siteName: site.name,
+                siteName: site.client.name,
                 lines: resolved,
                 serials: allSerials,
                 resend: false,
@@ -467,7 +475,7 @@ export async function batchRoutes(app: FastifyInstance): Promise<void> {
             to: batch.projectManagerEmail,
             batchId: batch.id,
             projectNumber: batch.project.projectNumber,
-            siteName: batch.site.name,
+            siteName: batch.site.client.name,
             lines: batch.lines.map((l) => ({
               quantity: l.quantity,
               gasTypeName: l.gasType.name,

@@ -57,15 +57,21 @@ describe('POST /projects — create new site', () => {
       payload: {
         projectNumber,
         projectManagerId: pm.id,
-        site: { name: 'North Yard', location: 'Pretoria' },
+        clientName: 'North Yard',
+        location: 'Pretoria',
       },
     });
     expect(res.statusCode).toBe(201);
     const { project } = res.json();
     expect(project.projectNumber).toBe(projectNumber);
     expect(project.projectManager.name).toBe('Lerato Dlamini');
+    // The two boxes are the CLIENT and the PLACE: "North Yard" is the customer and
+    // Pretoria is where they take delivery, so the project comes back pointing at a
+    // directory entry rather than owning a private copy of one.
+    expect(project.clientName).toBe('North Yard');
     expect(project.sites).toHaveLength(1);
-    expect(project.sites[0]).toMatchObject({ name: 'North Yard', location: 'Pretoria' });
+    expect(project.sites[0]).toMatchObject({ clientName: 'North Yard', location: 'Pretoria' });
+    expect(res.json().siteId).toBe(project.sites[0].id);
     expect(project.activeBatchCount).toBe(0);
   });
 
@@ -75,7 +81,8 @@ describe('POST /projects — create new site', () => {
     const payload = {
       projectNumber,
       projectManagerId: pm.id,
-      site: { name: 'Yard', location: 'Here' },
+      clientName: 'Yard',
+      location: 'Here',
     };
     const first = await app.inject({
       method: 'POST',
@@ -103,7 +110,8 @@ describe('POST /projects — create new site', () => {
       payload: {
         projectNumber: uniqueNo(),
         projectManagerId: pm.id,
-        site: { name: 'Y', location: 'Z' },
+        clientName: 'Y',
+        location: 'Z',
       },
     });
     expect(res.statusCode).toBe(403);
@@ -114,7 +122,7 @@ describe('POST /projects — create new site', () => {
       method: 'POST',
       url: '/projects',
       headers: bearer(techToken),
-      payload: { projectNumber: '', projectManagerId: '', site: {} },
+      payload: { projectNumber: '', projectManagerId: '' },
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().error.code).toBe('VALIDATION');
@@ -131,7 +139,8 @@ describe('POST /projects — create new site', () => {
         payload: {
           projectNumber,
           projectManagerId: pm.id,
-          site: { name: 'Yard', location: 'Here' },
+          clientName: 'Yard',
+          location: 'Here',
         },
       });
       expect(res.statusCode, projectNumber).toBe(400);
@@ -147,7 +156,8 @@ describe('POST /projects — create new site', () => {
       payload: {
         projectNumber: uniqueNo(),
         projectManagerId: 'no-such-manager',
-        site: { name: 'Yard', location: 'Here' },
+        clientName: 'Yard',
+        location: 'Here',
       },
     });
     expect(res.statusCode).toBe(400);
@@ -158,8 +168,11 @@ describe('POST /projects — create new site', () => {
     // The CHECK constraint is the backstop for anything that reaches Postgres without
     // passing through the route — a migration, a script, psql.
     const pm = await makeProjectManager('Constraint PM');
+    const client = await prisma.client.create({ data: { name: `Constraint ${Date.now()}` } });
     await expect(
-      prisma.project.create({ data: { projectNumber: 'PRJ-0002', projectManagerId: pm.id } }),
+      prisma.project.create({
+        data: { projectNumber: 'PRJ-0002', projectManagerId: pm.id, clientId: client.id },
+      }),
     ).rejects.toThrow();
   });
 });
@@ -175,7 +188,8 @@ describe('GET /projects — search', () => {
       payload: {
         projectNumber,
         projectManagerId: pm.id,
-        site: { name: 'S', location: 'L' },
+        clientName: 'S',
+        location: 'L',
       },
     });
 
@@ -221,7 +235,8 @@ describe('GET /projects/:id', () => {
       payload: {
         projectNumber,
         projectManagerId: pm.id,
-        site: { name: 'First', location: 'Loc' },
+        clientName: 'First',
+        location: 'Loc',
       },
     });
     const id = created.json().project.id;
@@ -244,7 +259,7 @@ describe('GET /projects/:id', () => {
 });
 
 describe('POST /projects/:id/sites — edit existing site', () => {
-  it('adds a site; 409 on duplicate name; 404 on unknown project', async () => {
+  it('adds a place to the client; repeats are idempotent; 404 on unknown project', async () => {
     const projectNumber = uniqueNo();
     const pm = await makeProjectManager('Sites PM');
     const created = await app.inject({
@@ -254,7 +269,8 @@ describe('POST /projects/:id/sites — edit existing site', () => {
       payload: {
         projectNumber,
         projectManagerId: pm.id,
-        site: { name: 'Alpha', location: 'A' },
+        clientName: 'Alpha',
+        location: 'A',
       },
     });
     const id = created.json().project.id;
@@ -263,24 +279,29 @@ describe('POST /projects/:id/sites — edit existing site', () => {
       method: 'POST',
       url: `/projects/${id}/sites`,
       headers: bearer(techToken),
-      payload: { name: 'Beta', location: 'B' },
+      payload: { location: 'Beta' },
     });
     expect(added.statusCode).toBe(201);
-    expect(added.json().site).toMatchObject({ name: 'Beta', location: 'B', projectId: id });
+    expect(added.json().site).toMatchObject({ clientName: 'Alpha', location: 'Beta' });
 
+    // Adding a place the client already has is the same end state, not a conflict.
+    // It used to 409 because the site was the PROJECT's private row and a second one
+    // really was a clash; now it is the customer's, and an operator who adds Beta
+    // twice simply gets Beta.
     const dup = await app.inject({
       method: 'POST',
       url: `/projects/${id}/sites`,
       headers: bearer(techToken),
-      payload: { name: 'Alpha', location: 'again' },
+      payload: { location: 'Beta' },
     });
-    expect(dup.statusCode).toBe(409);
+    expect(dup.statusCode).toBe(200);
+    expect(dup.json().site.id).toBe(added.json().site.id);
 
     const missing = await app.inject({
       method: 'POST',
       url: '/projects/nope/sites',
       headers: bearer(techToken),
-      payload: { name: 'X', location: 'Y' },
+      payload: { location: 'X' },
     });
     expect(missing.statusCode).toBe(404);
   });

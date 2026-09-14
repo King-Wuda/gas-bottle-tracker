@@ -32,14 +32,14 @@ type TransferRow = {
   driverIdPath: string | null;
   driverIdOverridden: boolean;
   createdAt: Date;
-  destinationSite: { name: string } | null;
+  destinationSite: { location: string } | null;
   projectManager: { name: string } | null;
   movementEvents: { overridden: boolean; cylinder: { serialCode: string } }[];
   photo: PhotoRow | null;
 };
 
 export const transferInclude = {
-  destinationSite: { select: { name: true } },
+  destinationSite: { select: { location: true } },
   projectManager: { select: { name: true } },
   movementEvents: {
     select: { overridden: true, cylinder: { select: { serialCode: true } } },
@@ -53,7 +53,7 @@ const toTransferDto = (t: TransferRow): TransferDto => ({
   batchId: t.batchId,
   destinationType: t.destinationType,
   destinationSiteId: t.destinationSiteId,
-  destinationSiteName: t.destinationSite?.name ?? null,
+  destinationSiteName: t.destinationSite?.location ?? null,
   userId: t.userId,
   createdAt: t.createdAt.toISOString(),
   movedSerials: t.movementEvents.map((m) => m.cylinder.serialCode),
@@ -115,7 +115,11 @@ export async function transferRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      const batch = await prisma.batch.findUnique({ where: { id: input.batchId } });
+      const batch = await prisma.batch.findUnique({
+        where: { id: input.batchId },
+        // The client, for the destination check below: sites belong to the customer.
+        include: { project: { select: { clientId: true } } },
+      });
       if (!batch) {
         return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Batch not found' } });
       }
@@ -158,14 +162,19 @@ export async function transferRoutes(app: FastifyInstance): Promise<void> {
       const destSiteId = input.destination.type === 'SITE' ? input.destination.siteId : null;
       if (destSiteId) {
         const site = await prisma.site.findUnique({ where: { id: destSiteId } });
-        // Workflow B is "relocation between project sites or back to stores" — a
-        // destination in someone else's project would silently move a cylinder off
-        // its own contract and break rental accountability.
-        if (!site || site.projectId !== batch.projectId) {
+        // Workflow B is "relocation between the client's sites or back to stores" — a
+        // destination belonging to a different customer would silently move a cylinder
+        // off its own contract and break rental accountability.
+        //
+        // Checked against the CLIENT now that sites hang off them. That is the same
+        // rule stated in the model's own terms: McCains' Durban and Cape Town are one
+        // client's places, and a batch for McCains may move between them, which is
+        // exactly what the old per-project copies made needlessly awkward.
+        if (!site || site.clientId !== batch.project.clientId) {
           return reply.code(400).send({
             error: {
               code: 'INVALID_DESTINATION',
-              message: 'Destination site does not belong to this batch’s project',
+              message: 'Destination site does not belong to this batch’s client',
             },
           });
         }

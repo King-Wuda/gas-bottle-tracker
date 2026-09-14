@@ -57,7 +57,8 @@ const createProject = async (managerName: string) => {
     payload: {
       projectNumber,
       projectManagerId: pm.id,
-      site: { name: `Yard ${managerName}`, location: 'JHB' },
+      clientName: `Yard ${managerName}`,
+      location: 'JHB',
     },
   });
   if (res.statusCode !== 201) throw new Error(`createProject: ${res.statusCode} ${res.body}`);
@@ -206,26 +207,39 @@ describe('catalogue endpoints', () => {
     expect(res.json().suppliers).toEqual([]);
   });
 
-  it('GET /sites lists each distinct site name once, with its latest location', async () => {
-    // Same name on two projects, recorded with different locations: the newer wins.
-    await app.inject({
+  it('GET /clients groups each client’s places under one entry', async () => {
+    // The duplication the old project-owned Site could not prevent: adding the same
+    // place twice under one client used to make two rows nothing could reconcile.
+    // Matched case-insensitively, so "shared depot" is not a second Shared Depot.
+    const first = await app.inject({
       method: 'POST',
       url: `/projects/${projectA}/sites`,
       headers: bearer(techToken),
-      payload: { name: 'Shared Depot', location: 'Old Town' },
+      payload: { location: 'Shared Depot' },
     });
-    await app.inject({
-      method: 'POST',
-      url: `/projects/${projectB}/sites`,
-      headers: bearer(techToken),
-      payload: { name: 'Shared Depot', location: 'New Town' },
-    });
+    expect(first.statusCode).toBe(201);
 
-    const res = await app.inject({ method: 'GET', url: '/sites', headers: bearer(techToken) });
+    const again = await app.inject({
+      method: 'POST',
+      url: `/projects/${projectA}/sites`,
+      headers: bearer(techToken),
+      payload: { location: 'shared depot' },
+    });
+    expect(again.statusCode).toBe(200);
+    expect(again.json().site.id).toBe(first.json().site.id);
+
+    const res = await app.inject({ method: 'GET', url: '/clients', headers: bearer(techToken) });
     expect(res.statusCode).toBe(200);
-    const shared = res.json().sites.filter((s: { name: string }) => s.name === 'Shared Depot');
-    expect(shared).toHaveLength(1);
-    expect(shared[0].location).toBe('New Town');
+    type Entry = { id: string; name: string; sites: { id: string; location: string }[] };
+    const clients = res.json().clients as Entry[];
+
+    const owner = clients.find((c) => c.sites.some((site) => site.location === 'Shared Depot'));
+    expect(owner).toBeDefined();
+    expect(owner!.sites.filter((site) => site.location === 'Shared Depot')).toHaveLength(1);
+
+    // And a client is listed once, carrying its places — which is the whole shape the
+    // batch form's two boxes read: pick the client, then pick from their sites.
+    expect(clients.filter((c) => c.id === owner!.id)).toHaveLength(1);
   });
 });
 
@@ -512,7 +526,8 @@ describe('GET /batches — the shared Transfer / Returns / History list', () => 
     const onSite = row.distribution.find((d) => d.kind === 'SITE');
     expect(atStores?.count).toBe(2);
     expect(onSite?.count).toBe(1);
-    expect(onSite?.locationName).toBe('Yard Beta Manager');
+    // Within one batch the client is constant, so the useful label is the place.
+    expect(onSite?.locationName).toBe('JHB');
   });
 
   it('History excludes nothing and comes back newest-first', async () => {

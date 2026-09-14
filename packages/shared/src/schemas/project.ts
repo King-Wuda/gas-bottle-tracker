@@ -49,35 +49,52 @@ export const projectManagersResponseSchema = z.object({
 });
 export type ProjectManagersResponse = z.infer<typeof projectManagersResponseSchema>;
 
+/**
+ * One place a client takes delivery at.
+ *
+ * A site belongs to the CLIENT, not to a project — McCains has Durban, Cape Town and
+ * Midrand, and every project for McCains delivers to those same rows. `location` is
+ * the place; the name of the client is carried by the client.
+ */
 export const siteDtoSchema = z.object({
   id: z.string(),
-  projectId: z.string(),
-  name: z.string(),
+  clientId: z.string(),
+  clientName: z.string(),
   location: z.string(),
 });
 export type SiteDto = z.infer<typeof siteDtoSchema>;
 
 /**
- * One entry in the site combobox. Distinct site *names* already in the Site table,
- * each carrying the location most recently recorded under that name so picking a
- * known site can prefill it. Not project-scoped: the combobox is offered before a
- * project exists, and the operator is naming a place, not choosing a foreign key.
+ * The client directory, as the batch form's two boxes consume it.
+ *
+ * The form asks for a Site and a Location, and those are the client and the place:
+ * "McCains" then "Durban". So one entry per CLIENT, carrying the places they take
+ * delivery at — type into the first box to narrow the clients, and the second box
+ * offers only that client's sites.
+ *
+ * This replaced a `SELECT DISTINCT ON (name)` over the Site table, which was the best
+ * a project-owned Site could manage: it surfaced each spelling once and had no idea
+ * which of them were the same customer.
  */
-export const siteOptionSchema = z.object({
+export const clientOptionSchema = z.object({
+  id: z.string(),
   name: z.string(),
-  location: z.string(),
+  sites: z.array(z.object({ id: z.string(), location: z.string() })),
 });
-export type SiteOption = z.infer<typeof siteOptionSchema>;
+export type ClientOption = z.infer<typeof clientOptionSchema>;
 
-export const siteOptionsResponseSchema = z.object({ sites: z.array(siteOptionSchema) });
-export type SiteOptionsResponse = z.infer<typeof siteOptionsResponseSchema>;
+export const clientOptionsResponseSchema = z.object({ clients: z.array(clientOptionSchema) });
+export type ClientOptionsResponse = z.infer<typeof clientOptionsResponseSchema>;
 
 /** Full project view — sites + a live active-batch count. */
 export const projectDtoSchema = z.object({
   id: z.string(),
   projectNumber: z.string(),
   status: projectStatusSchema,
+  clientId: z.string(),
+  clientName: z.string(),
   projectManager: projectManagerDtoSchema,
+  /** The CLIENT's sites — every place this project can deliver to. */
   sites: z.array(siteDtoSchema),
   activeBatchCount: z.number().int().nonnegative(),
 });
@@ -88,6 +105,8 @@ export const projectSummarySchema = z.object({
   id: z.string(),
   projectNumber: z.string(),
   status: projectStatusSchema,
+  clientId: z.string(),
+  clientName: z.string(),
   projectManager: projectManagerDtoSchema,
   siteCount: z.number().int().nonnegative(),
   activeBatchCount: z.number().int().nonnegative(),
@@ -110,19 +129,31 @@ export type ProjectDetailResponse = z.infer<typeof projectDetailResponseSchema>;
 export const createProjectRequestSchema = z.object({
   projectNumber: projectNumberSchema,
   projectManagerId: z.string().min(1),
-  site: z.object({
-    name: z.string().min(1).max(200),
-    location: z.string().min(1).max(200),
-  }),
+  /**
+   * The client and the place, exactly as the form's two boxes collect them.
+   *
+   * Sent as TEXT rather than as ids, because the boxes are comboboxes: picking
+   * "McCains" from the directory and typing it because it is new must both work, and
+   * the operator standing in a yard should not be blocked by a client nobody has
+   * registered yet. The server matches an existing client case-insensitively and
+   * creates one only when there is no match, so the directory grows by being used
+   * without ever growing a second McCains.
+   */
+  clientName: z.string().trim().min(1).max(200),
+  location: z.string().trim().min(1).max(200),
 });
 export type CreateProjectRequest = z.infer<typeof createProjectRequestSchema>;
 
-export const createProjectResponseSchema = z.object({ project: projectDtoSchema });
+export const createProjectResponseSchema = z.object({
+  project: projectDtoSchema,
+  /** The client site this project was started for — the flow's next step needs it. */
+  siteId: z.string(),
+});
 export type CreateProjectResponse = z.infer<typeof createProjectResponseSchema>;
 
+/** Add a place to a client. The client is named by the route, so only the place here. */
 export const createSiteRequestSchema = z.object({
-  name: z.string().min(1).max(200),
-  location: z.string().min(1).max(200),
+  location: z.string().trim().min(1).max(200),
 });
 export type CreateSiteRequest = z.infer<typeof createSiteRequestSchema>;
 

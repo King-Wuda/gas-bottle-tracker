@@ -46,7 +46,8 @@ beforeAll(async () => {
     payload: {
       projectNumber: uniqueProjectNumber(),
       projectManagerId: (await makeProjectManager('Transfer PM')).id,
-      site: { name: 'Yard A', location: 'JHB' },
+      clientName: 'Yard A',
+      location: 'JHB',
     },
   });
   projectId = created.json().project.id;
@@ -56,7 +57,7 @@ beforeAll(async () => {
     method: 'POST',
     url: `/projects/${projectId}/sites`,
     headers: bearer(techToken),
-    payload: { name: 'Yard B', location: 'PTA' },
+    payload: { location: 'Yard B' },
   });
   siteB = second.json().site.id;
 
@@ -67,7 +68,8 @@ beforeAll(async () => {
     payload: {
       projectNumber: uniqueProjectNumber(),
       projectManagerId: (await makeProjectManager('Other PM')).id,
-      site: { name: 'Foreign Yard', location: 'CPT' },
+      clientName: 'Foreign Yard',
+      location: 'CPT',
     },
   });
   foreignSiteId = other.json().project.sites[0].id;

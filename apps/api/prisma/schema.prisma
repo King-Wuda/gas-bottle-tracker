@@ -131,6 +131,15 @@ model ProjectManager {
   /// addressed to; a row that could vanish would take that answer with it. Inactive
   /// managers stay joinable but drop out of every picker that assigns new work.
   active    Boolean  @default(true)
+  /// Set when an admin DELETED this manager, as opposed to deactivating them.
+  ///
+  /// Same shape as `User.deletedAt`, for the same reason: `Batch.projectManagerId` is
+  /// a required foreign key, so cascading would destroy the delivery notes addressed
+  /// to them — across every client they ever handled. A manager nothing points at is
+  /// deleted outright; one with projects or batches keeps their NAME so the paperwork
+  /// still answers "who was this delivered for?", and loses everything else — the
+  /// email is released for reuse and they vanish from every picker and list.
+  deletedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -150,37 +159,73 @@ model ProjectManager {
 model Project {
   id               String        @id @default(cuid())
   projectNumber    String        @unique
+  /// The client this job is for. Sites now hang off the CLIENT, so a project reaches
+  /// its deliverable places through here rather than owning its own copies of them.
+  clientId         String
   projectManagerId String
   status           ProjectStatus @default(ACTIVE)
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
+  client         Client         @relation(fields: [clientId], references: [id])
   projectManager ProjectManager @relation(fields: [projectManagerId], references: [id])
-  sites          Site[]
   batches        Batch[]
 
+  @@index([clientId])
   @@index([projectManagerId])
   @@index([status])
   @@index([projectNumber(ops: raw("gin_trgm_ops"))], map: "Project_projectNumber_trgm_idx", type: Gin) // see ProjectManager
 }
 
+/// A client the depot delivers to — "McCains" — and the one place their sites hang off.
+///
+/// This is the directory the batch form picks from. It exists because the alternative,
+/// which this schema used to be, was a Site row per PROJECT: "Delmas" under project
+/// 4521 and "Delmas" under project 4522 were two unrelated rows that happened to share
+/// a spelling. Nothing could answer "which sites does McCains have?", every new project
+/// re-typed them, and a misspelling was invisible forever.
+model Client {
+  id        String   @id @default(cuid())
+  /// "McCains". Unique, because the whole point is that there is one of them.
+  name      String   @unique
+  /// Retired clients drop out of the pickers without taking their delivery history.
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sites    Site[]
+  projects Project[]
+
+  @@index([active])
+  /// Substring search for the batch form's client box — see ProjectManager for why
+  /// this is declared here rather than only in raw SQL.
+  @@index([name(ops: raw("gin_trgm_ops"))], map: "Client_name_trgm_idx", type: Gin)
+}
+
+/// One physical place a client takes delivery at — "Durban", "Cape Town", "Midrand".
+///
+/// Belongs to the CLIENT, not to a project. A project is a job for a client and may
+/// deliver to any of their sites; two projects for McCains both point at the same
+/// Durban row, so renaming it renames it everywhere and the movement log keeps working.
 model Site {
   id        String   @id @default(cuid())
-  projectId String
-  name      String
+  clientId  String
+  /// The place itself. Named `location` rather than `name` because that is the word
+  /// the batch form uses for it, and because the client is what carries the name.
   location  String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  project          Project         @relation(fields: [projectId], references: [id])
+  client           Client          @relation(fields: [clientId], references: [id])
   batches          Batch[]
   cylindersPresent Cylinder[]      @relation("CylinderCurrentSite")
   movementsFrom    MovementEvent[] @relation("MovementFromSite")
   movementsTo      MovementEvent[] @relation("MovementToSite")
   transfersInbound Transfer[]      @relation("TransferDestinationSite")
 
-  @@unique([projectId, name])
-  @@index([projectId])
+  /// One Durban per client. The pair is what a person means by "a site".
+  @@unique([clientId, location])
+  @@index([clientId])
 }
 
 model GasType {

@@ -62,7 +62,8 @@ beforeAll(async () => {
     payload: {
       projectNumber,
       projectManagerId: (await makeProjectManager('History PM')).id,
-      site: { name: 'Yard A', location: 'JHB' },
+      clientName: 'Yard A',
+      location: 'JHB',
     },
   });
   projectId = created.json().project.id;
@@ -73,7 +74,7 @@ beforeAll(async () => {
       method: 'POST',
       url: `/projects/${projectId}/sites`,
       headers: bearer(techToken),
-      payload: { name: 'Yard B', location: 'PTA' },
+      payload: { location: 'Yard B' },
     })
   ).json().site.id;
 
@@ -203,7 +204,8 @@ describe('GET /cylinders/:serialCode/history', () => {
     expect(body.events.map((e) => e.toName)).toEqual([
       'Stores',
       'Stores',
-      'Yard A',
+      // The site's own label is the place now — the client carries the name.
+      'JHB',
       'Yard B',
       'Stores',
       'Stores',

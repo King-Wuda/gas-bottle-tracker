@@ -49,15 +49,15 @@ type EventRow = {
   serverAt: Date;
   cylinder: { serialCode: string };
   user: { name: string };
-  fromSite: { name: string } | null;
-  toSite: { name: string } | null;
+  fromSite: { location: string } | null;
+  toSite: { location: string } | null;
 };
 
 const eventInclude = {
   cylinder: { select: { serialCode: true } },
   user: { select: { name: true } },
-  fromSite: { select: { name: true } },
-  toSite: { select: { name: true } },
+  fromSite: { select: { location: true } },
+  toSite: { select: { location: true } },
 } as const;
 
 function toEventDto(e: EventRow): MovementEventDto {
@@ -67,9 +67,9 @@ function toEventDto(e: EventRow): MovementEventDto {
     cylinderId: e.cylinderId,
     serialCode: e.cylinder.serialCode,
     fromSiteId: e.fromSiteId,
-    fromName: e.fromSite?.name ?? STORES,
+    fromName: e.fromSite?.location ?? STORES,
     toSiteId: e.toSiteId,
-    toName: e.toSite?.name ?? STORES,
+    toName: e.toSite?.location ?? STORES,
     userId: e.userId,
     userName: e.user.name,
     transferId: e.transferId,
@@ -201,7 +201,7 @@ export async function historyRoutes(app: FastifyInstance): Promise<void> {
       const cylinder = await prisma.cylinder.findUnique({
         where: { serialCode: serialCode.trim().toUpperCase() },
         include: {
-          currentSite: { select: { name: true } },
+          currentSite: { select: { location: true } },
           batch: { select: batchRefSelect },
         },
       });
@@ -229,7 +229,7 @@ export async function historyRoutes(app: FastifyInstance): Promise<void> {
           currentLocation:
             cylinder.status === 'RETURNED'
               ? 'Returned to supplier'
-              : (cylinder.currentSite?.name ?? STORES),
+              : (cylinder.currentSite?.location ?? STORES),
         },
         batch: toBatchRef(cylinder.batch),
         events: events.map(toEventDto),

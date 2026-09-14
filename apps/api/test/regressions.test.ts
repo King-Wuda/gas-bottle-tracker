@@ -39,7 +39,8 @@ beforeAll(async () => {
     payload: {
       projectNumber: uniqueProjectNumber(),
       projectManagerId: (await makeProjectManager('Regression PM')).id,
-      site: { name: 'Reg Yard', location: 'JHB' },
+      clientName: 'Reg Yard',
+      location: 'JHB',
     },
   });
   projectId = project.json().project.id;
@@ -116,6 +117,10 @@ describe('C4 — trigram search indexes exist', () => {
       SELECT indexname FROM pg_indexes WHERE indexname LIKE '%trgm%' ORDER BY indexname
     `;
     expect(rows.map((r) => r.indexname)).toEqual([
+      // The client directory's own search index. Listed here for the same reason as
+      // the other two: `prisma migrate dev` DROPs an index it cannot see in the
+      // schema, and this test is what catches that happening silently.
+      'Client_name_trgm_idx',
       'ProjectManager_name_trgm_idx',
       'Project_projectNumber_trgm_idx',
     ]);

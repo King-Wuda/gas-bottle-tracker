@@ -54,7 +54,8 @@ export type BatchCoreRow = {
   resendCount: number;
   project: { projectNumber: string };
   projectManager: { name: string };
-  site: { name: string; location: string };
+  /** The client owns the name; the site owns the place. See the Site model. */
+  site: { location: string; client: { name: string } };
   lines: BatchLineRow[];
 };
 
@@ -66,7 +67,10 @@ export type BatchCoreRow = {
 export const batchRelations = {
   project: { select: { projectNumber: true } },
   projectManager: { select: { name: true } },
-  site: { select: { name: true, location: true } },
+  // `siteName` in the DTO is the CLIENT's name and `siteLocation` the site's own —
+  // the two halves an operator types as "Site" and "Location". Kept under those DTO
+  // names so the delivery note, the QR sheet and every history screen read unchanged.
+  site: { select: { location: true, client: { select: { name: true } } } },
   lines: {
     select: {
       id: true,
@@ -146,14 +150,19 @@ export async function distributionFor(
   const siteIds = [...new Set(rows.map((r) => r.currentSiteId).filter((s): s is string => !!s))];
   const [sites, gasTypes] = await Promise.all([
     siteIds.length > 0
-      ? prisma.site.findMany({ where: { id: { in: siteIds } }, select: { id: true, name: true } })
+      ? // Within one batch the client is constant, so the useful label for "where are
+        // these cylinders" is the place — Durban — not the client who owns it.
+        prisma.site.findMany({
+          where: { id: { in: siteIds } },
+          select: { id: true, location: true },
+        })
       : Promise.resolve([]),
     prisma.gasType.findMany({
       where: { id: { in: [...new Set(rows.map((r) => r.gasTypeId))] } },
       select: { id: true, name: true },
     }),
   ]);
-  const siteName = new Map(sites.map((s) => [s.id, s.name]));
+  const siteName = new Map(sites.map((s) => [s.id, s.location]));
   const gasName = new Map(gasTypes.map((g) => [g.id, g.name]));
 
   // Merge the RETURNED rows of one gas together: which site a cylinder was collected
@@ -205,7 +214,7 @@ export function toBatchBase(b: BatchCoreRow, distribution: BatchDistributionEntr
     projectManagerName: b.projectManager.name,
     projectManagerEmail: b.projectManagerEmail,
     siteId: b.siteId,
-    siteName: b.site.name,
+    siteName: b.site.client.name,
     siteLocation: b.site.location,
     quantity: b.lines.reduce((n, l) => n + l.quantity, 0),
     status: b.status,
