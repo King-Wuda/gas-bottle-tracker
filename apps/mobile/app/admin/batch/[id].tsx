@@ -241,7 +241,7 @@ export default function AdminBatchEdit() {
           placeholder="Choose a site"
           value={siteId}
           onChange={setSiteId}
-          options={sites.map((s) => ({ value: s.id, label: s.name, hint: s.location }))}
+          options={sites.map((s) => ({ value: s.id, label: s.location, hint: s.clientName }))}
         />
       </Card>
 

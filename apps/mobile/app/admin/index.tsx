@@ -47,10 +47,17 @@ export default function AdminHome() {
       <Card onPress={() => router.push('/admin/clients')}>
         <Text style={{ fontSize: 18, fontWeight: '700' }}>Clients and locations</Text>
         <Text style={{ opacity: 0.75 }}>
-          Who the depot delivers to, and the sites they take delivery at.
+          Who the depot delivers to, and the sites they take delivery at. The batch form picks from
+          this list.
         </Text>
+        <Text style={styles.hint}>Add a client location, or remove one.</Text>
+      </Card>
+
+      <Card onPress={() => router.push('/admin/projects')}>
+        <Text style={{ fontSize: 18, fontWeight: '700' }}>Projects</Text>
+        <Text style={{ opacity: 0.75 }}>Every job on record, and its batch count.</Text>
         <Text style={styles.hint}>
-          Delete a location, all of them, or the client outright. Permanent.
+          Delete a job and its deliveries. Permanent — the client is left alone.
         </Text>
       </Card>
 

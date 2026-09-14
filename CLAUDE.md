@@ -76,6 +76,32 @@ Two traps that cause silent divergence:
   interface with memory and is therefore always "migrated", so this class of bug is
   invisible on the surface the app is tested on and breaks only on the APK.
 
+## A client owns its sites; a project is a job for a client
+
+`Site` used to belong to `Project`, so the same customer's Durban existed once per job:
+"Delmas" under 4521 and "Delmas" under 4522 were unrelated rows that happened to share a
+spelling. Nothing could answer "which sites does McCains have?", every new project
+re-typed them, and a misspelling was invisible forever.
+
+Now `Client` owns `Site`, and `Project` points at the client. Three consequences worth
+knowing before touching this area:
+
+- **The batch form's two boxes are the client and the place.** "Site" is McCains and
+  "Location" is Durban — the second box is scoped to whatever client the first names.
+  Both read `GET /clients`, which IS the directory, not a `SELECT DISTINCT` over past
+  batches.
+- **The DTOs still say `siteName` and `siteLocation`**, sourced from `client.name` and
+  `site.location`. That was deliberate: the delivery note, QR sheet, email worker and
+  every history screen render unchanged. Do not "fix" the naming without accounting for
+  those.
+- **Ownership checks are by CLIENT.** A batch's site must belong to its project's
+  client, and a transfer destination must be one of that client's sites. Both are the
+  old rules stated in the new model's terms, and both are stronger than before.
+
+Adding a place is idempotent and case-insensitive, so "durban" joins Durban instead of
+founding a second one. `POST /projects/:id/sites` survives as a convenience that
+resolves to the client.
+
 ## Deleting is the one place evidence may be destroyed — treat it as such
 
 Every foreign key into the movement log is `onDelete: Restrict`, deliberately, so that
@@ -94,9 +120,15 @@ sanctioned exception, and three things about it are load-bearing:
   an `/impact` route so the screen can say what will go before it goes. A new delete that
   skips this is not finished.
 
-Users are the deliberate exception to the cascade: `Batch.createdByUserId` and five more
-are REQUIRED, so cascading would delete every batch that person booked in — for other
-clients. The account is destroyed and the name is kept. Don't "fix" that asymmetry.
+**Users and project managers are the deliberate exceptions to the cascade.**
+`Batch.createdByUserId` and `Batch.projectManagerId` are REQUIRED, so cascading either
+would delete batches belonging to other clients — every job that person booked in, or
+every delivery note addressed to them. Both are destroyed as records and kept as names.
+Don't "fix" that asymmetry.
+
+**Clients and projects delete along different seams**, and have separate screens for it.
+A client and its locations are reference data; deleting a CLIENT takes their projects
+and every delivery too. Deleting a PROJECT takes one job and leaves the customer alone.
 
 ## The look is a system, not a set of screens
 
@@ -142,8 +174,8 @@ when the export looks right but the app cannot reach the API.
    its place — so the browser gets HTML where it asked for JavaScript and the app is a blank
    white page with `Unexpected token '<'` in the console. Nothing about the export looks
    wrong; only the restart fixes it.
-3. `npm run typecheck && npm run lint && npm test` — 412 tests baseline
-   (67 shared, 286 API, 59 mobile). **Stop the dev API server first**: it shares the database
+3. `npm run typecheck && npm run lint && npm test` — 419 tests baseline
+   (67 shared, 293 API, 59 mobile). **Stop the dev API server first**: it shares the database
    with the test run, and its email worker polling across `resetDb()` fails tests at random.
 
    **`npm test` also empties the database you were demonstrating.** The suite shares it,

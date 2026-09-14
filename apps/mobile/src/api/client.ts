@@ -1,9 +1,11 @@
 import type {
+  AdminClientResponse,
   AdminClientsResponse,
   AdminGasTypeResponse,
   AdminGasTypesResponse,
   AdminProjectManagerResponse,
   AdminProjectManagersResponse,
+  AdminProjectsResponse,
   AdminSupplierResponse,
   AdminSuppliersResponse,
   AdminUserResponse,
@@ -42,15 +44,17 @@ import type {
   ReadDriverIdResponse,
   RefreshResponse,
   ResendBatchEmailResponse,
-  SiteOptionsResponse,
+  ClientOptionsResponse,
   SuppliersResponse,
   UpdateBatchRequest,
   UpdateProjectManagerRequest,
   UpdateUserRequest,
+  CreateClientRequest,
   CreateGasTypeRequest,
   CreateSupplierRequest,
   DeletionImpactResponse,
   DeletionResponse,
+  UpdateClientRequest,
   UpdateGasTypeRequest,
   UpdateSupplierRequest,
 } from '@gct/shared';
@@ -258,8 +262,14 @@ export function apiSuppliers(gasTypeId?: string): Promise<SuppliersResponse> {
 }
 
 /** Every distinct site name on record — the combobox's list. */
-export function apiSiteOptions(): Promise<SiteOptionsResponse> {
-  return apiRequest<SiteOptionsResponse>('/sites');
+/**
+ * The client directory, for the batch form's Site and Location boxes.
+ *
+ * One entry per client, carrying the places they take delivery at — so typing narrows
+ * the clients and the second box offers only that client's sites.
+ */
+export function apiClientOptions(): Promise<ClientOptionsResponse> {
+  return apiRequest<ClientOptionsResponse>('/clients');
 }
 
 export function apiSearchProjects(q: string): Promise<ProjectSearchResponse> {
@@ -508,6 +518,44 @@ export function apiAdminDeleteSupplier(id: string): Promise<DeletionResponse> {
 
 export function apiAdminClients(): Promise<AdminClientsResponse> {
   return apiRequest<AdminClientsResponse>('/admin/clients');
+}
+
+/**
+ * Add a client, and usually its first location.
+ *
+ * A name already in the directory comes back 409 with `details` naming the existing
+ * client and its places, so the screen can ask "add Durban to the existing McCains?"
+ * and re-post with `attachToExisting`. That round trip is what stops two people
+ * typing McCains from creating two McCains.
+ */
+export function apiAdminCreateClient(body: CreateClientRequest): Promise<AdminClientResponse> {
+  return apiRequest<AdminClientResponse>('/admin/clients', { method: 'POST', body });
+}
+
+export function apiAdminUpdateClient(
+  id: string,
+  body: UpdateClientRequest,
+): Promise<AdminClientResponse> {
+  return apiRequest<AdminClientResponse>(`/admin/clients/${enc(id)}`, { method: 'PATCH', body });
+}
+
+export function apiAdminProjects(): Promise<AdminProjectsResponse> {
+  return apiRequest<AdminProjectsResponse>('/admin/projects');
+}
+
+export function apiAdminProjectImpact(id: string): Promise<DeletionImpactResponse> {
+  return apiRequest<DeletionImpactResponse>(`/admin/projects/${enc(id)}/impact`);
+}
+
+export function apiAdminDeleteProject(id: string): Promise<DeletionResponse> {
+  return apiRequest<DeletionResponse>(`/admin/projects/${enc(id)}`, { method: 'DELETE' });
+}
+
+/** Delete a project manager. Reports what was kept — see the route. */
+export function apiAdminDeleteProjectManager(
+  id: string,
+): Promise<{ deleted: true; authoredRecordsKept: number }> {
+  return apiRequest(`/admin/project-managers/${enc(id)}`, { method: 'DELETE' });
 }
 
 export function apiAdminClientImpact(id: string): Promise<DeletionImpactResponse> {

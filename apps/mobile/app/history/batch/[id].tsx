@@ -12,6 +12,7 @@ import {
 } from '@gct/shared';
 import { ApiError, apiGetBatch } from '../../../src/api/client';
 import { useAuth } from '../../../src/auth/AuthContext';
+import { useNewFlow } from '../../../src/new/NewFlowContext';
 import { ResendEmailButton } from '../../../src/batches/ResendEmailButton';
 import {
   Card,
@@ -71,6 +72,7 @@ export default function BatchDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
+  const { setTarget } = useNewFlow();
 
   const [batch, setBatch] = useState<BatchDto | null>(null);
   const [delivery, setDelivery] = useState<EmailDelivery | null>(null);
@@ -161,6 +163,23 @@ export default function BatchDetail() {
           </Text>
         </Card>
       ) : null}
+
+      {/* The way back into the New flow from a batch you looked up. "Edit existing
+          site" is a browse now, so this is what turns "find the McCains delivery we
+          did last week" into "book another one to the same place" — carrying the
+          project and site across rather than asking anyone to retype them. */}
+      <SecondaryButton
+        title="Add another batch to this site"
+        onPress={() => {
+          setTarget({
+            projectId: batch.projectId,
+            siteId: batch.siteId,
+            projectNumber: batch.projectNumber,
+            siteName: batch.siteName,
+          });
+          router.push('/new/line-items');
+        }}
+      />
 
       {user?.role === 'ADMIN' ? (
         <SecondaryButton

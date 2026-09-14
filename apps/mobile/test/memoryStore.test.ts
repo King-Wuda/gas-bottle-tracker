@@ -131,15 +131,18 @@ describe('batch mirror', () => {
     ]);
   });
 
-  it('scopes cached sites to their project', async () => {
+  // Scoped by CLIENT now that sites hang off them rather than off the job. The
+  // mirror has to match, or a transfer screen offline would offer another customer's
+  // sites as destinations — which the server then refuses.
+  it('scopes cached sites to their client', async () => {
     await store.cacheBatch(
       batch,
       [],
       [
-        { id: 's1', projectId: 'p1', name: 'Yard A', location: 'JHB' },
-        { id: 's9', projectId: 'other', name: 'Foreign', location: 'CPT' },
+        { id: 's1', clientId: 'c1', location: 'Durban' },
+        { id: 's9', clientId: 'other', location: 'Cape Town' },
       ],
     );
-    expect((await store.getCachedSites('p1')).map((s) => s.id)).toEqual(['s1']);
+    expect((await store.getCachedSites('c1')).map((s) => s.id)).toEqual(['s1']);
   });
 });

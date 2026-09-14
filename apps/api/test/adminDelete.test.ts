@@ -716,3 +716,181 @@ describe('gases, suppliers and their pairing', () => {
     expect(res.statusCode).toBe(403);
   });
 });
+
+describe('the client directory', () => {
+  const post = (body: Record<string, unknown>) =>
+    app.inject({
+      method: 'POST',
+      url: '/admin/clients',
+      headers: bearer(adminToken),
+      payload: body,
+    });
+
+  /**
+   * The duplicate prompt, which is the whole reason creating a client is not a plain
+   * POST. A second McCains is the failure this directory exists to prevent, and a
+   * flat 409 would leave the operator stuck rather than offering the right answer.
+   */
+  it('refuses a duplicate name, naming the client and its places so the screen can ask', async () => {
+    const name = `McCains ${randomUUID().slice(0, 8)}`;
+    const first = await post({ name, location: 'Durban' });
+    expect(first.statusCode).toBe(201);
+    expect(first.json().client).toMatchObject({ name, projectCount: 0 });
+    expect(first.json().client.locations).toHaveLength(1);
+
+    const clash = await post({ name: name.toLowerCase(), location: 'Cape Town' });
+    expect(clash.statusCode).toBe(409);
+    expect(clash.json().error.code).toBe('CLIENT_EXISTS');
+    // Enough to phrase "add Cape Town to the existing McCains, who already have Durban?"
+    expect(clash.json().error.details).toMatchObject({ name, locations: ['Durban'] });
+
+    // Nothing was created by the refusal.
+    const list = await app.inject({
+      method: 'GET',
+      url: '/admin/clients',
+      headers: bearer(adminToken),
+    });
+    const matches = (list.json().clients as { name: string }[]).filter(
+      (c) => c.name.toLowerCase() === name.toLowerCase(),
+    );
+    expect(matches).toHaveLength(1);
+  });
+
+  it('groups the location under the existing client when the operator says yes', async () => {
+    const name = `Grouped ${randomUUID().slice(0, 8)}`;
+    await post({ name, location: 'Durban' });
+
+    const attached = await post({
+      name: name.toUpperCase(),
+      location: 'Midrand',
+      attachToExisting: true,
+    });
+    expect(attached.statusCode).toBe(200);
+    expect(
+      (attached.json().client.locations as { location: string }[]).map((l) => l.location).sort(),
+    ).toEqual(['Durban', 'Midrand']);
+  });
+
+  it('is idempotent on a place, so adding Durban twice is still one Durban', async () => {
+    const name = `Idem ${randomUUID().slice(0, 8)}`;
+    await post({ name, location: 'Durban' });
+    const again = await post({ name, location: 'durban', attachToExisting: true });
+    expect(again.statusCode).toBe(200);
+    expect(again.json().client.locations).toHaveLength(1);
+  });
+
+  it('registers a client with no location at all', async () => {
+    const res = await post({ name: `Bare ${randomUUID().slice(0, 8)}` });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().client.locations).toEqual([]);
+  });
+});
+
+describe('DELETE /admin/projects/:id', () => {
+  /**
+   * The seam the restructure created: a job can be destroyed without touching the
+   * customer. Before, deleting "a client" meant deleting a project, so there was no
+   * way to remove one job and keep the rest.
+   */
+  it('destroys the job and its deliveries, leaving the client and its sites', async () => {
+    const { projectId, clientId, batchId } = await makeClient({ quantity: 2 });
+
+    const impact = await app.inject({
+      method: 'GET',
+      url: `/admin/projects/${projectId}/impact`,
+      headers: bearer(adminToken),
+    });
+    expect(impact.json().impact).toMatchObject({ projects: 1, batches: 1, cylinders: 2, sites: 0 });
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/admin/projects/${projectId}`,
+      headers: bearer(adminToken),
+    });
+    expect(res.statusCode).toBe(200);
+
+    expect(await prisma.project.count({ where: { id: projectId } })).toBe(0);
+    expect(await prisma.batch.count({ where: { id: batchId } })).toBe(0);
+    // The customer and where they take delivery are reference data; they survive.
+    expect(await prisma.client.count({ where: { id: clientId } })).toBe(1);
+    expect(await prisma.site.count({ where: { clientId } })).toBe(1);
+  });
+});
+
+describe('DELETE /admin/project-managers/:id', () => {
+  const makePm = async (name: string) => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/project-managers',
+      headers: bearer(adminToken),
+      payload: { name, email: `${randomUUID().slice(0, 8)}@demo.local` },
+    });
+    expect(res.statusCode).toBe(201);
+    return res.json().projectManager as { id: string; email: string };
+  };
+
+  it('deletes a manager outright when nothing is addressed to them', async () => {
+    const pm = await makePm('Never Used PM');
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/admin/project-managers/${pm.id}`,
+      headers: bearer(adminToken),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().recordsKept).toBe(0);
+    expect(await prisma.projectManager.count({ where: { id: pm.id } })).toBe(0);
+  });
+
+  /**
+   * The same asymmetry as user accounts, for the same reason: every delivery note
+   * names the manager it was addressed to through a REQUIRED foreign key, so
+   * cascading would destroy that paperwork across every client they handled.
+   */
+  it('keeps the name on the paperwork but frees the address', async () => {
+    const { pm, batchId } = await makeClient({ quantity: 1 });
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/admin/project-managers/${pm.id}`,
+      headers: bearer(adminToken),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().recordsKept).toBeGreaterThan(0);
+
+    const kept = await prisma.batch.findUniqueOrThrow({
+      where: { id: batchId },
+      include: { projectManager: true },
+    });
+    expect(kept.projectManager.deletedAt).not.toBeNull();
+    expect(kept.projectManager.active).toBe(false);
+    // The address is released for reuse; the name is what History reads.
+    expect(kept.projectManager.email).not.toBe(pm.email);
+    expect(kept.projectManager.name).toContain('PM ');
+
+    // And they are gone from the console list and every picker.
+    const list = await app.inject({
+      method: 'GET',
+      url: '/admin/project-managers',
+      headers: bearer(adminToken),
+    });
+    expect((list.json().projectManagers as { id: string }[]).map((p) => p.id)).not.toContain(pm.id);
+
+    const picker = await app.inject({
+      method: 'GET',
+      url: '/project-managers',
+      headers: bearer(techToken),
+    });
+    expect((picker.json().projectManagers as { id: string }[]).map((p) => p.id)).not.toContain(
+      pm.id,
+    );
+
+    // The freed address can be given to somebody new.
+    const reuse = await app.inject({
+      method: 'POST',
+      url: '/admin/project-managers',
+      headers: bearer(adminToken),
+      payload: { name: 'Their Replacement', email: pm.email },
+    });
+    expect(reuse.statusCode).toBe(201);
+  });
+});

@@ -242,6 +242,54 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return body;
   });
 
+  /**
+   * Delete a project manager.
+   *
+   * Same two outcomes as a user account, decided by the data rather than a setting. A
+   * manager nobody has used is deleted outright. One with projects or batches is
+   * tombstoned: the email is released for reuse and they disappear from every picker
+   * and list, but their NAME stays, because `Batch.projectManagerId` is required and
+   * every delivery note ever addressed to them answers "who was this delivered for?"
+   * through it. Cascading would destroy that paperwork across every client they
+   * handled — removing one person must not be a way to erase four customers' records.
+   */
+  app.delete('/admin/project-managers/:id', adminOnly, async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const target = await prisma.projectManager.findUnique({
+      where: { id },
+      include: { _count: { select: { projects: true, batches: true, transfers: true } } },
+    });
+    if (!target || target.deletedAt) {
+      return reply
+        .code(404)
+        .send({ error: { code: 'NOT_FOUND', message: 'Project manager not found' } });
+    }
+
+    const referenced = Object.values(target._count).reduce((n, c) => n + c, 0);
+
+    if (referenced === 0) {
+      await prisma.projectManager.delete({ where: { id } });
+    } else {
+      await prisma.projectManager.update({
+        where: { id },
+        data: {
+          deletedAt: new Date(),
+          active: false,
+          // Released so the address can be given to a new manager. The name is
+          // deliberately untouched — it is what the paperwork is addressed to.
+          email: `deleted+${id}@deleted.invalid`,
+        },
+      });
+    }
+
+    request.log.warn(
+      { projectManagerId: id, name: target.name, referenced, purged: referenced === 0 },
+      'admin deleted a project manager',
+    );
+    return { deleted: true, recordsKept: referenced };
+  });
+
   // ------------------------------------------------------- project managers
 
   const toPmDto = (p: {
@@ -271,6 +319,9 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/admin/project-managers', adminOnly, async () => {
     const rows = await prisma.projectManager.findMany({
+      // A deleted manager survives only to give old paperwork a name; listing them
+      // would invite someone to "reactivate" a record whose email is already gone.
+      where: { deletedAt: null },
       include: pmInclude,
       orderBy: [{ active: 'desc' }, { name: 'asc' }],
     });
