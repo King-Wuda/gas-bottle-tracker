@@ -27,10 +27,11 @@ import { StyleSheet, type TextStyle, type ViewStyle } from 'react-native';
  * coloured says nothing about which of them matters.
  */
 
-/** Taken from the wordmark itself — see ui/geaLogo.ts. The UI's blue and the logo's
+/** Taken from the wordmark itself — see ui/GeaLogo.tsx. The UI's blue and the logo's
  *  blue being different shades is the kind of thing nobody can name and everybody
- *  notices. */
-const brand = '#1414C8';
+ *  notices, which is exactly what had happened: this was #1414C8, sampled from a
+ *  hand-drawn placeholder, while the real mark is #0303B8. */
+const brand = '#0303B8';
 
 export const colors = {
   /** GEA blue. Primary actions, links, the selected state. */
