@@ -13,6 +13,8 @@ export const userDtoSchema = z.object({
   email: z.string().email(),
   name: z.string(),
   role: roleSchema,
+  /** The subcontractor's employer; null for everyone else. */
+  company: z.string().nullable(),
   active: z.boolean(),
 });
 export type UserDto = z.infer<typeof userDtoSchema>;

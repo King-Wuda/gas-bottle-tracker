@@ -8,7 +8,7 @@ import { batchLineInputSchema } from './batch';
  *
  * Two different populations live behind one screen, and the difference matters:
  *
- *  - **Users** (TECHNICIAN / STORES_MANAGER / ADMIN) log in. They appear in the audit
+ *  - **Users** (TECHNICIAN / SUBCONTRACTOR / STORES_MANAGER / ADMIN) log in. They appear in the audit
  *    trail as the person who scanned a cylinder.
  *  - **Project managers** never log in. They are the addressees of QR sheets and
  *    delivery notes, which is why a batch snapshots one rather than pointing at a
@@ -42,6 +42,7 @@ export const adminUserDtoSchema = z.object({
   email: z.string(),
   name: z.string(),
   role: roleSchema,
+  company: z.string().nullable(),
   active: z.boolean(),
   createdAt: z.string(),
   /** What deactivating them would leave behind — shown so the decision is informed. */
@@ -57,7 +58,12 @@ export const createUserRequestSchema = z.object({
   email: z.string().email().max(320),
   name: z.string().min(1).max(200),
   role: roleSchema,
+  /** Required for a SUBCONTRACTOR, ignored for everyone else. */
+  company: z.string().trim().max(200).optional(),
   password: passwordSchema,
+}).refine((u) => u.role !== 'SUBCONTRACTOR' || !!u.company, {
+  message: 'A subcontractor needs a company',
+  path: ['company'],
 });
 export type CreateUserRequest = z.infer<typeof createUserRequestSchema>;
 
@@ -65,6 +71,7 @@ export const updateUserRequestSchema = z
   .object({
     name: z.string().min(1).max(200).optional(),
     role: roleSchema.optional(),
+    company: z.string().trim().min(1).max(200).optional(),
     active: z.boolean().optional(),
     /** Present only when the admin is resetting it. */
     password: passwordSchema.optional(),

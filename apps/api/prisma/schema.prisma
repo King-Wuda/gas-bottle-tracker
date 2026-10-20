@@ -19,6 +19,8 @@ datasource db {
 
 enum Role {
   TECHNICIAN
+  /// Same access as TECHNICIAN, but employed by another company; `User.company` says which.
+  SUBCONTRACTOR
   STORES_MANAGER
   ADMIN
 }
@@ -78,6 +80,8 @@ model User {
   passwordHash String
   name         String
   role         Role
+  /// The employer of a SUBCONTRACTOR; null for everyone else.
+  company      String?
   active       Boolean  @default(true)
   /// Set when an admin DELETED this account, as opposed to deactivating it.
   ///
