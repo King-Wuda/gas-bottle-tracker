@@ -104,7 +104,9 @@ export default function Dashboard() {
         <View style={styles.greeting}>
           <Text style={styles.greetingName}>{user.name}</Text>
           <View style={styles.rolePill}>
-            <Text style={styles.rolePillText}>{readableRole(user.role)}</Text>
+            <Text style={styles.rolePillText}>{readableRole(user.role)}
+              {user.company ? ` · ${user.company}` : ''}
+            </Text>
           </View>
         </View>
       ) : null}

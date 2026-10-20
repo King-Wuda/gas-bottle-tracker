@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { PASSWORD_MIN, type AdminUserDto, type Role } from '@gct/shared';
+import { DEFAULT_PASSWORD, PASSWORD_MIN, type AdminUserDto, type Role } from '@gct/shared';
 import {
   ApiError,
   apiAdminCreateUser,
@@ -26,12 +26,14 @@ import { colors } from '../../src/ui/theme';
 
 const ROLES: { value: Role; label: string }[] = [
   { value: 'TECHNICIAN', label: 'Technician' },
+  { value: 'SUBCONTRACTOR', label: 'Subcontractor' },
   { value: 'STORES_MANAGER', label: 'Stores' },
   { value: 'ADMIN', label: 'Admin' },
 ];
 
 const ROLE_LABEL: Record<Role, string> = {
   TECHNICIAN: 'Technician',
+  SUBCONTRACTOR: 'Subcontractor',
   STORES_MANAGER: 'Stores manager',
   ADMIN: 'Admin',
 };
@@ -49,8 +51,9 @@ export default function AdminUsers() {
   const [formOpen, setFormOpen] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [password, setPassword] = useState(DEFAULT_PASSWORD);
   const [role, setRole] = useState<Role | null>('TECHNICIAN');
+  const [company, setCompany] = useState('');
   const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
@@ -74,7 +77,8 @@ export default function AdminUsers() {
     name.trim().length > 0 &&
     /.+@.+\..+/.test(email.trim()) &&
     password.length >= PASSWORD_MIN &&
-    !!role;
+    !!role &&
+    (role !== 'SUBCONTRACTOR' || company.trim().length > 0);
 
   const create = async () => {
     if (!canCreate || !role) return;
@@ -86,11 +90,13 @@ export default function AdminUsers() {
         email: email.trim(),
         password,
         role,
+        ...(role === 'SUBCONTRACTOR' ? { company: company.trim() } : {}),
       });
       setName('');
       setEmail('');
-      setPassword('');
+      setPassword(DEFAULT_PASSWORD);
       setRole('TECHNICIAN');
+      setCompany('');
       setFormOpen(false);
       await load();
     } catch (e) {
@@ -188,6 +194,14 @@ export default function AdminUsers() {
             autoCapitalize="none"
           />
           <SegmentedToggle label="Role" options={ROLES} value={role} onChange={setRole} />
+          {role === 'SUBCONTRACTOR' ? (
+            <Field
+              label="Company"
+              value={company}
+              onChangeText={setCompany}
+              autoCapitalize="words"
+            />
+          ) : null}
           <View style={{ gap: 8, marginTop: 6 }}>
             <PrimaryButton
               title="Add person"
@@ -226,6 +240,7 @@ export default function AdminUsers() {
               />
             </View>
             <Text style={{ opacity: 0.75 }}>{u.email}</Text>
+            {u.company ? <Text style={{ opacity: 0.75 }}>{u.company}</Text> : null}
             <Text style={styles.hint}>
               {u.batchesCreated} batch(es) created · {u.movementsRecorded} movement(s) recorded
             </Text>

@@ -87,7 +87,7 @@ export async function initializationRoutes(app: FastifyInstance): Promise<void> 
 
   app.post(
     '/initializations',
-    { preHandler: app.requireRole('TECHNICIAN', 'STORES_MANAGER', 'ADMIN') },
+    { preHandler: app.requireRole('TECHNICIAN', 'SUBCONTRACTOR', 'STORES_MANAGER', 'ADMIN') },
     async (request, reply) => {
       const input = createInitializationRequestSchema.parse(request.body);
 

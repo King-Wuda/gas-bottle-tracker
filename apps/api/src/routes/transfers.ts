@@ -94,7 +94,7 @@ export async function transferRoutes(app: FastifyInstance): Promise<void> {
   // scanned, and append one TRANSFER movement event per cylinder.
   app.post(
     '/transfers',
-    { preHandler: app.requireRole('TECHNICIAN', 'STORES_MANAGER', 'ADMIN') },
+    { preHandler: app.requireRole('TECHNICIAN', 'SUBCONTRACTOR', 'STORES_MANAGER', 'ADMIN') },
     async (request, reply) => {
       const input = createTransferRequestSchema.parse(request.body);
 

@@ -111,6 +111,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     email: string;
     name: string;
     role: AdminUserDto['role'];
+    company: string | null;
     active: boolean;
     createdAt: Date;
     _count: { batchesCreated: number; movementEvents: number };
@@ -119,6 +120,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     email: u.email,
     name: u.name,
     role: u.role,
+    company: u.company,
     active: u.active,
     createdAt: u.createdAt.toISOString(),
     batchesCreated: u._count.batchesCreated,
@@ -154,6 +156,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
           email,
           name: input.name.trim(),
           role: input.role,
+          company: input.role === 'SUBCONTRACTOR' ? (input.company ?? null) : null,
           passwordHash: await hashPassword(input.password),
         },
         include: userCounts,
@@ -214,9 +217,22 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       }
     }
 
+    // A subcontractor always has a company and nobody else does, whichever way the
+    // role changes: promoting one must not carry the employer along, and moving
+    // someone into the role must say who employs them.
+    const nextRole = input.role ?? target.role;
+    const nextCompany =
+      nextRole === 'SUBCONTRACTOR' ? (input.company ?? target.company) : null;
+    if (nextRole === 'SUBCONTRACTOR' && !nextCompany) {
+      return reply.code(400).send({
+        error: { code: 'COMPANY_REQUIRED', message: 'A subcontractor needs a company.' },
+      });
+    }
+
     const user = await prisma.user.update({
       where: { id },
       data: {
+        company: nextCompany,
         ...(input.name !== undefined ? { name: input.name.trim() } : {}),
         ...(input.role !== undefined ? { role: input.role } : {}),
         ...(input.active !== undefined ? { active: input.active } : {}),

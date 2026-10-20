@@ -216,7 +216,7 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
   // Workflow A — "Create New Site": project + PM + first site.
   app.post(
     '/projects',
-    { preHandler: app.requireRole('TECHNICIAN', 'ADMIN') },
+    { preHandler: app.requireRole('TECHNICIAN', 'SUBCONTRACTOR', 'ADMIN') },
     async (request, reply) => {
       const input = createProjectRequestSchema.parse(request.body);
 
@@ -285,7 +285,7 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
    */
   app.post(
     '/projects/:id/sites',
-    { preHandler: app.requireRole('TECHNICIAN', 'ADMIN') },
+    { preHandler: app.requireRole('TECHNICIAN', 'SUBCONTRACTOR', 'ADMIN') },
     async (request, reply) => {
       const { id } = request.params as { id: string };
       const input = createSiteRequestSchema.parse(request.body);
@@ -324,7 +324,7 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
    */
   app.post(
     '/clients/:id/sites',
-    { preHandler: app.requireRole('TECHNICIAN', 'ADMIN') },
+    { preHandler: app.requireRole('TECHNICIAN', 'SUBCONTRACTOR', 'ADMIN') },
     async (request, reply) => {
       const { id } = request.params as { id: string };
       const input = createSiteRequestSchema.parse(request.body);

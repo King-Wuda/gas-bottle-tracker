@@ -19,8 +19,16 @@ const toUserDto = (u: {
   email: string;
   name: string;
   role: UserDto['role'];
+  company: string | null;
   active: boolean;
-}): UserDto => ({ id: u.id, email: u.email, name: u.name, role: u.role, active: u.active });
+}): UserDto => ({
+  id: u.id,
+  email: u.email,
+  name: u.name,
+  role: u.role,
+  company: u.company,
+  active: u.active,
+});
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   const signAccess = (claims: AccessTokenClaims): string => app.jwt.sign(claims);

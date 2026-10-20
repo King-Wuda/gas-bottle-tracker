@@ -27,7 +27,7 @@ It also generates a fresh Ed25519 QR signing keypair, keeping the private half i
 `apps/api/.env` and copying only the public half to `apps/mobile/.env`. It never overwrites
 an existing `.env`, and migrate and seed are both idempotent, so re-running is safe.
 
-Seeded logins (password `password`): `jacques.viljoen@gmail.com` and
+Seeded logins (password `gea`): `jacques.viljoen@gmail.com` and
 `mashabaindustriesllc@gmail.com`, both ADMIN. Everyone else is added in the app.
 
 Doing it by hand instead — `docker compose up -d`, then `npm run -w @gct/api db:migrate:deploy`
