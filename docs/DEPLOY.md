@@ -3,7 +3,7 @@
 ## It is deployed
 
 **https://gas-bottle-tracker.onrender.com** — sign in with `mashabaindustriesllc@gmail.com`
-or `jacques.viljoen@gmail.com`, password `password`.
+or `jacques.viljoen@gmail.com`, password `gea`.
 
 Auto-deploy is on: every push to `main` builds and ships. The service is
 `gas-bottle-tracker` (free plan, singapore) and the database is `Gas-Bottle-Tracker`
@@ -75,7 +75,7 @@ that. This document is what it does not fit in a comment.
    First deploy takes a few minutes, mostly the Expo export.
 
 5. **Open the URL Render gives you.** It redirects to `/app`. Sign in with
-   `admin@demo.local` / `password`.
+   `admin@demo.local` / `gea`.
 
 6. **Change the demo passwords, or turn the seed off.** The seeded accounts are
    public knowledge — they are in this repository. Once you have real users, set

@@ -28,7 +28,10 @@ import { batchLineInputSchema } from './batch';
 
 // ----------------------------- users -----------------------------
 
-export const PASSWORD_MIN = 10;
+/** What every new profile starts with; the form pre-fills it and the seed uses it. */
+export const DEFAULT_PASSWORD = 'gea';
+
+export const PASSWORD_MIN = 3;
 
 /** Long rather than ornate: length is what actually resists guessing, and a rule the
  *  operator can satisfy is a rule they will not write on a sticky note. */

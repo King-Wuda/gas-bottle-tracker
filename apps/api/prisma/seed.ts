@@ -73,7 +73,7 @@ const PROJECT_MANAGERS = OWNERS;
  */
 const USERS = OWNERS.map((o) => ({ email: o.email, name: o.name, role: 'ADMIN' as const }));
 
-const DEV_PASSWORD = process.env.SEED_PASSWORD ?? 'password';
+const DEV_PASSWORD = process.env.SEED_PASSWORD ?? 'gea';
 
 async function main(): Promise<void> {
   const gasTypeIds = new Map<string, string>();

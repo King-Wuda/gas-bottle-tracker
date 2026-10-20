@@ -13,7 +13,7 @@ import 'dotenv/config';
 import { qrPayloadFor } from '../src/services/qr.js';
 
 const API = process.env.DEMO_API_URL ?? 'http://localhost:3000';
-const PASSWORD = process.env.SEED_PASSWORD ?? 'password';
+const PASSWORD = process.env.SEED_PASSWORD ?? 'gea';
 
 /** A 1×1 PNG standing in for what the driver draws on the signature pad. */
 const SIGNATURE_PNG =

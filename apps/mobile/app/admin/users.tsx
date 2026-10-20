@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { PASSWORD_MIN, type AdminUserDto, type Role } from '@gct/shared';
+import { DEFAULT_PASSWORD, PASSWORD_MIN, type AdminUserDto, type Role } from '@gct/shared';
 import {
   ApiError,
   apiAdminCreateUser,
@@ -51,7 +51,7 @@ export default function AdminUsers() {
   const [formOpen, setFormOpen] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [password, setPassword] = useState(DEFAULT_PASSWORD);
   const [role, setRole] = useState<Role | null>('TECHNICIAN');
   const [company, setCompany] = useState('');
   const [creating, setCreating] = useState(false);
@@ -94,7 +94,7 @@ export default function AdminUsers() {
       });
       setName('');
       setEmail('');
-      setPassword('');
+      setPassword(DEFAULT_PASSWORD);
       setRole('TECHNICIAN');
       setCompany('');
       setFormOpen(false);

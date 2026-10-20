@@ -55,7 +55,7 @@ export async function resetDb(): Promise<void> {
 
 /** The password `ensureTestUsers` hashes. `SEED_PASSWORD` is honoured so a developer
  *  who sets it locally does not get a suite full of unexplained 401s. */
-export const DEMO_PASSWORD = process.env.SEED_PASSWORD ?? 'password';
+export const DEMO_PASSWORD = process.env.SEED_PASSWORD ?? 'gea';
 export const DEMO = {
   technician: 'technician@demo.local',
   stores: 'stores@demo.local',
