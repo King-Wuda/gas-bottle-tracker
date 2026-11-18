@@ -53,7 +53,7 @@ export interface ResolveOptions {
 /**
  * @param batchId  the batch the user selected — a scan for any other batch is rejected
  *                 rather than silently moved (Workflow B acts on ONE active batch).
- * @param overrideSerials  serials an ADMIN asserted without scanning. The caller is
+ * @param overrideSerials  serials a PROJECT_MANAGER asserted without scanning. The caller is
  *                 responsible for having checked the role FIRST; this function
  *                 assumes that check has passed. They skip signature verification —
  *                 that is the whole point of an override — but every other rule

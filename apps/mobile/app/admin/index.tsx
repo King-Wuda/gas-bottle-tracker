@@ -8,10 +8,10 @@ import { Card, ScreenScroll, styles } from '../../src/ui/components';
  *
  * People first, then the reference data the batch form is built out of.
  *
- * The two people screens stay separate rather than merging into one list: **people who
- * log in** and **people the paperwork is addressed to** are different things that
- * happen to both be called "users" in conversation, and merging them would invite
- * deactivating a project manager in order to revoke a login they never had.
+ * Project managers come first because they ARE the admins: every one of them signs in
+ * and runs this console, and they are who the paperwork is addressed to. There is no
+ * separate list of admin accounts. People is everyone else who signs in — technicians,
+ * subcontractors and stores managers.
  *
  * Everything below People can be deleted for real, and the screens say so before they
  * do it. Deactivating is still the everyday move — a supplier the depot stopped buying
@@ -28,20 +28,20 @@ export default function AdminHome() {
         Signed in as {user?.name}. Changes here take effect immediately.
       </Text>
 
-      <Card onPress={() => router.push('/admin/users')}>
-        <Text style={{ fontSize: 18, fontWeight: '700' }}>People</Text>
-        <Text style={{ opacity: 0.75 }}>
-          Admins, stores managers and technicians — the accounts that can sign in.
-        </Text>
-        <Text style={styles.hint}>Add someone, change a role, or deactivate an account.</Text>
-      </Card>
-
       <Card onPress={() => router.push('/admin/project-managers')}>
         <Text style={{ fontSize: 18, fontWeight: '700' }}>Project managers</Text>
         <Text style={{ opacity: 0.75 }}>
-          The people QR sheets and delivery notes are emailed to. They do not sign in.
+          The admins. They sign in, run this console, and receive QR sheets and delivery notes.
         </Text>
-        <Text style={styles.hint}>Add a manager, correct an address, or deactivate one.</Text>
+        <Text style={styles.hint}>Add a manager, set a password, or deactivate one.</Text>
+      </Card>
+
+      <Card onPress={() => router.push('/admin/users')}>
+        <Text style={{ fontSize: 18, fontWeight: '700' }}>People</Text>
+        <Text style={{ opacity: 0.75 }}>
+          Technicians, subcontractors and stores managers — everyone else who signs in.
+        </Text>
+        <Text style={styles.hint}>Add someone, change a role, or deactivate an account.</Text>
       </Card>
 
       <Card onPress={() => router.push('/admin/clients')}>

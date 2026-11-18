@@ -3,9 +3,8 @@
  * owners' logins, nothing else.
  *
  * Run this after `npm test`. The suite shares this database and leaves residue behind
- * — its own `@demo.local` accounts, throwaway project managers and suppliers — and it
- * TRUNCATES ProjectManager, so a test run removes the real ones until the seed puts
- * them back. `reset:data` followed by `db:seed` is what returns the database to
+ * — its own `@demo.local` accounts (throwaway project managers among them) and
+ * suppliers. `reset:data` followed by `db:seed` is what returns the database to
  * something you would want to demonstrate.
  *
  * This is NOT `prisma migrate reset` — the schema and the migration history are left
@@ -58,8 +57,18 @@ async function main(): Promise<void> {
     prisma.serialSequence.deleteMany(),
     prisma.site.deleteMany(),
     prisma.project.deleteMany(),
-    // Recreated by the seed. Safe now that no project or batch points at one.
-    prisma.projectManager.deleteMany(),
+    // Safe now that no project or batch points at one. A live, real project manager
+    // keeps theirs: it is half of their account (`ProjectManager.userId`), and deleting
+    // it would leave a login that runs the console but appears on no list of managers.
+    prisma.projectManager.deleteMany({
+      where: {
+        OR: [
+          { deletedAt: { not: null } },
+          { user: { deletedAt: { not: null } } },
+          { user: { email: { endsWith: '@demo.local' } } },
+        ],
+      },
+    }),
   ]);
 
   // Test-residue suppliers, and the gas pairings that hold them in place. The seed's

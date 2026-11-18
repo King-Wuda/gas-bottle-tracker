@@ -478,7 +478,8 @@ describe('DELETE /admin/users/:id', () => {
     expect(names).not.toContain('Did Some Work');
   });
 
-  it('refuses to let an admin delete themselves', async () => {
+  it('refuses to delete a project manager — that goes through their own route', async () => {
+    // The caller is always a project manager, so this is also the self-delete guard.
     const me = await prisma.user.findFirstOrThrow({ where: { email: DEMO.admin } });
     const res = await app.inject({
       method: 'DELETE',
@@ -486,62 +487,8 @@ describe('DELETE /admin/users/:id', () => {
       headers: bearer(adminToken),
     });
     expect(res.statusCode).toBe(400);
-    expect(res.json().error.code).toBe('CANNOT_DELETE_SELF');
-  });
-
-  /**
-   * Deactivating the other admins rather than deleting them: the guard counts ACTIVE
-   * admins, and leaving the seeded ones intact keeps this test from setting fire to
-   * every test after it.
-   */
-  it('refuses to delete the last remaining active admin', async () => {
-    const email = `admin2-${randomUUID().slice(0, 8)}@demo.local`;
-    const created = await app.inject({
-      method: 'POST',
-      url: '/admin/users',
-      headers: bearer(adminToken),
-      payload: { email, name: 'Second Admin', role: 'ADMIN', password: TEST_PASSWORD },
-    });
-    const secondId = created.json().user.id as string;
-    const secondToken = await loginWith(email);
-
-    const others = await prisma.user.findMany({
-      where: { role: 'ADMIN', active: true, deletedAt: null, id: { not: secondId } },
-      select: { id: true },
-    });
-    await prisma.user.updateMany({
-      where: { id: { in: others.map((u) => u.id) } },
-      data: { active: false },
-    });
-
-    try {
-      // The only active admin left is the caller, so this is refused — by the
-      // self-deletion guard first, which is the one that fires for this shape.
-      const res = await app.inject({
-        method: 'DELETE',
-        url: `/admin/users/${secondId}`,
-        headers: bearer(secondToken),
-      });
-      expect(res.statusCode).toBe(400);
-      expect(res.json().error.code).toBe('CANNOT_DELETE_SELF');
-
-      // Reactivate one other admin and have THEM try to delete the second: now the
-      // count is two, so it succeeds — proving the guard tracks the count, not a role.
-      const other = await prisma.user.findFirstOrThrow({ where: { id: others[0]!.id } });
-      await prisma.user.update({ where: { id: other.id }, data: { active: true } });
-      const otherToken = await loginAs(app, other.email);
-      const ok = await app.inject({
-        method: 'DELETE',
-        url: `/admin/users/${secondId}`,
-        headers: bearer(otherToken),
-      });
-      expect(ok.statusCode).toBe(200);
-    } finally {
-      await prisma.user.updateMany({
-        where: { id: { in: others.map((u) => u.id) } },
-        data: { active: true },
-      });
-    }
+    expect(res.json().error.code).toBe('IS_PROJECT_MANAGER');
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: me.id } })).deletedAt).toBeNull();
   });
 });
 
@@ -823,10 +770,10 @@ describe('DELETE /admin/project-managers/:id', () => {
       method: 'POST',
       url: '/admin/project-managers',
       headers: bearer(adminToken),
-      payload: { name, email: `${randomUUID().slice(0, 8)}@demo.local` },
+      payload: { name, email: `${randomUUID().slice(0, 8)}@demo.local`, password: TEST_PASSWORD },
     });
     expect(res.statusCode).toBe(201);
-    return res.json().projectManager as { id: string; email: string };
+    return res.json().projectManager as { id: string; userId: string; email: string };
   };
 
   it('deletes a manager outright when nothing is addressed to them', async () => {
@@ -839,6 +786,9 @@ describe('DELETE /admin/project-managers/:id', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().recordsKept).toBe(0);
     expect(await prisma.projectManager.count({ where: { id: pm.id } })).toBe(0);
+    // The login goes with it: a project manager is one person, not two rows to chase.
+    expect(await prisma.user.count({ where: { id: pm.userId } })).toBe(0);
+    await expect(loginWith(pm.email)).rejects.toThrow(/401/);
   });
 
   /**
@@ -867,6 +817,15 @@ describe('DELETE /admin/project-managers/:id', () => {
     expect(kept.projectManager.email).not.toBe(pm.email);
     expect(kept.projectManager.name).toContain('PM ');
 
+    // Their login is tombstoned with them — kept, because the record still points at
+    // it, but scrambled and released.
+    const login = await prisma.user.findUniqueOrThrow({
+      where: { id: kept.projectManager.userId },
+    });
+    expect(login.deletedAt).not.toBeNull();
+    expect(login.active).toBe(false);
+    expect(login.email).not.toBe(pm.email);
+
     // And they are gone from the console list and every picker.
     const list = await app.inject({
       method: 'GET',
@@ -889,7 +848,7 @@ describe('DELETE /admin/project-managers/:id', () => {
       method: 'POST',
       url: '/admin/project-managers',
       headers: bearer(adminToken),
-      payload: { name: 'Their Replacement', email: pm.email },
+      payload: { name: 'Their Replacement', email: pm.email, password: TEST_PASSWORD },
     });
     expect(reuse.statusCode).toBe(201);
   });

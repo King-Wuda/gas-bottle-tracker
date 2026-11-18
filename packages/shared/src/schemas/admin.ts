@@ -1,18 +1,21 @@
 import { z } from 'zod';
-import { roleSchema } from './common';
+import { staffRoleSchema } from './common';
+import { passwordSchema } from './auth';
 import { batchLineInputSchema } from './batch';
 
 /**
  * The admin console's contract — who can use the system, who the paperwork is
  * addressed to, and correcting a batch that was booked in wrong.
  *
- * Two different populations live behind one screen, and the difference matters:
+ * Two screens of people, and the line between them matters:
  *
- *  - **Users** (TECHNICIAN / SUBCONTRACTOR / STORES_MANAGER / ADMIN) log in. They appear in the audit
- *    trail as the person who scanned a cylinder.
- *  - **Project managers** never log in. They are the addressees of QR sheets and
- *    delivery notes, which is why a batch snapshots one rather than pointing at a
- *    login.
+ *  - **Project managers** run this console. Each is a PROJECT_MANAGER login AND the
+ *    addressee of QR sheets and delivery notes — one person, one screen, created with
+ *    a password like anyone else who signs in. There is no other kind of admin.
+ *  - **Staff** (TECHNICIAN / SUBCONTRACTOR / STORES_MANAGER) log in to do the work and
+ *    appear in the audit trail as the person who scanned a cylinder. The People screen
+ *    manages them and cannot create, promote to, or edit a project manager: doing so
+ *    there would leave a manager login with no manager record, or the reverse.
  *
  * Both carry `active`, because a user who booked in a batch last March is still the
  * answer to "who booked this in?" long after they have left, and a foreign key that
@@ -28,23 +31,12 @@ import { batchLineInputSchema } from './batch';
 
 // ----------------------------- users -----------------------------
 
-/** What every new profile starts with; the form pre-fills it and the seed uses it. */
-export const DEFAULT_PASSWORD = 'gea';
-
-export const PASSWORD_MIN = 3;
-
-/** Long rather than ornate: length is what actually resists guessing, and a rule the
- *  operator can satisfy is a rule they will not write on a sticky note. */
-export const passwordSchema = z
-  .string()
-  .min(PASSWORD_MIN, `Password must be at least ${PASSWORD_MIN} characters`)
-  .max(200);
-
 export const adminUserDtoSchema = z.object({
   id: z.string(),
   email: z.string(),
   name: z.string(),
-  role: roleSchema,
+  /** Never PROJECT_MANAGER: those live on their own screen. */
+  role: staffRoleSchema,
   company: z.string().nullable(),
   active: z.boolean(),
   createdAt: z.string(),
@@ -60,7 +52,7 @@ export type AdminUsersResponse = z.infer<typeof adminUsersResponseSchema>;
 export const createUserRequestSchema = z.object({
   email: z.string().email().max(320),
   name: z.string().min(1).max(200),
-  role: roleSchema,
+  role: staffRoleSchema,
   /** Required for a SUBCONTRACTOR, ignored for everyone else. */
   company: z.string().trim().max(200).optional(),
   password: passwordSchema,
@@ -73,7 +65,7 @@ export type CreateUserRequest = z.infer<typeof createUserRequestSchema>;
 export const updateUserRequestSchema = z
   .object({
     name: z.string().min(1).max(200).optional(),
-    role: roleSchema.optional(),
+    role: staffRoleSchema.optional(),
     company: z.string().trim().min(1).max(200).optional(),
     active: z.boolean().optional(),
     /** Present only when the admin is resetting it. */
@@ -89,7 +81,10 @@ export type AdminUserResponse = z.infer<typeof adminUserResponseSchema>;
 
 export const adminProjectManagerDtoSchema = z.object({
   id: z.string(),
+  /** The login behind this manager — compared with the signed-in user to mark "you". */
+  userId: z.string(),
   name: z.string(),
+  /** Both where their paperwork goes and what they sign in with. */
   email: z.string(),
   active: z.boolean(),
   createdAt: z.string(),
@@ -108,6 +103,7 @@ export type AdminProjectManagersResponse = z.infer<typeof adminProjectManagersRe
 export const createProjectManagerRequestSchema = z.object({
   name: z.string().min(1).max(200),
   email: z.string().email().max(320),
+  password: passwordSchema,
 });
 export type CreateProjectManagerRequest = z.infer<typeof createProjectManagerRequestSchema>;
 
@@ -116,6 +112,8 @@ export const updateProjectManagerRequestSchema = z
     name: z.string().min(1).max(200).optional(),
     email: z.string().email().max(320).optional(),
     active: z.boolean().optional(),
+    /** Present only when another manager is setting or resetting it. */
+    password: passwordSchema.optional(),
   })
   .refine((p) => Object.keys(p).length > 0, { message: 'Nothing to update' });
 export type UpdateProjectManagerRequest = z.infer<typeof updateProjectManagerRequestSchema>;

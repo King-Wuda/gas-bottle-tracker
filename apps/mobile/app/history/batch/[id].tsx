@@ -181,7 +181,7 @@ export default function BatchDetail() {
         }}
       />
 
-      {user?.role === 'ADMIN' ? (
+      {user?.role === 'PROJECT_MANAGER' ? (
         <SecondaryButton
           title="Correct these details (admin)"
           onPress={() => router.push({ pathname: '/admin/batch/[id]', params: { id: batch.id } })}

@@ -149,12 +149,12 @@ export async function preparePhoto(args: {
   // The only way through is an admin's override, and a non-admin who sends one is
   // refused outright rather than having it quietly ignored — silently dropping it
   // would let a tampered client believe it recorded work that was never evidenced.
-  if (args.role !== 'ADMIN') {
+  if (args.role !== 'PROJECT_MANAGER') {
     return {
       ok: false,
       status: 403,
       code: 'PHOTO_OVERRIDE_FORBIDDEN',
-      message: `Only an admin can record a batch ${args.verb} without a photo.`,
+      message: `Only a project manager can record a batch ${args.verb} without a photo.`,
     };
   }
   return { ok: true, overridden: true, columns: null };

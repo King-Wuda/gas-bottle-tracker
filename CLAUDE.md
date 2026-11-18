@@ -102,6 +102,45 @@ Adding a place is idempotent and case-insensitive, so "durban" joins Durban inst
 founding a second one. `POST /projects/:id/sites` survives as a convenience that
 resolves to the client.
 
+## Project managers ARE the admins — there is no separate admin account
+
+There used to be an ADMIN role on `User` (runs the console) and an unrelated
+`ProjectManager` table (an email address paperwork went to), so the same person existed
+twice and a project manager could not sign in. Now the role is `PROJECT_MANAGER`, and a
+project manager is one person held in two rows:
+
+- **`ProjectManager.userId` is required and unique.** Every manager record has a login
+  behind it, and the database enforces it. Batches, projects and transfers still point
+  at `ProjectManager` — the table was kept, not folded into `User`, because its rows
+  outlive the account differently (a deleted manager keeps a row so delivery notes still
+  name them).
+- **Only `/admin/project-managers` creates, edits, deactivates or deletes one**, writing
+  name, email and active to both rows in a transaction. `/admin/users` lists and manages
+  staff only (`staffRoleSchema`): it refuses `PROJECT_MANAGER` as a role and answers
+  `IS_PROJECT_MANAGER` for one, because either route through it would leave a login and
+  a manager record out of step.
+- **The lockout guards live on the manager routes**: you cannot deactivate or delete
+  yourself, and the last active project manager cannot be removed.
+
+## Passwords: everyone starts on `gea`, and changes their own
+
+`DEFAULT_PASSWORD` (`gea`, in `packages/shared/src/schemas/auth.ts`) is what the seed,
+both console add-forms, and the console's "Reset password to gea" actions use, and
+migration `20261118130000_reset_all_passwords_to_gea` set every live account to it once.
+From there each person changes their own from the dashboard's "Change password"
+(`POST /me/password`), which:
+
+- **asks for the current password** even though the caller is signed in, and answers a
+  wrong one with **400 `WRONG_PASSWORD`, not 401** — a 401 makes the app's client
+  refresh its token and retry the same wrong password;
+- **ends every session the account holds and returns a fresh pair** for the device that
+  made the change. `apiChangePassword` installs that pair itself; without it the next
+  request would hit a revoked refresh token and sign the person out.
+
+Resetting goes back to `gea` rather than to a password the admin chooses, on purpose:
+it is the one everybody already knows to try. Don't make that migration re-run — it is
+a one-off, and a password someone set afterwards must survive later deploys.
+
 ## Deleting is the one place evidence may be destroyed — treat it as such
 
 Every foreign key into the movement log is `onDelete: Restrict`, deliberately, so that
@@ -174,13 +213,13 @@ when the export looks right but the app cannot reach the API.
    its place — so the browser gets HTML where it asked for JavaScript and the app is a blank
    white page with `Unexpected token '<'` in the console. Nothing about the export looks
    wrong; only the restart fixes it.
-3. `npm run typecheck && npm run lint && npm test` — 419 tests baseline
-   (67 shared, 293 API, 59 mobile). **Stop the dev API server first**: it shares the database
+3. `npm run typecheck && npm run lint && npm test` — 429 tests baseline
+   (67 shared, 303 API, 59 mobile). **Stop the dev API server first**: it shares the database
    with the test run, and its email worker polling across `resetDb()` fails tests at random.
 
    **`npm test` also empties the database you were demonstrating.** The suite shares it,
-   truncates `ProjectManager` (so the two real ones vanish until re-seeded), and leaves
-   its own `@demo.local` accounts and throwaway suppliers behind. Put it back with:
+   truncates `ProjectManager` (`resetDb` recreates rows for the project-manager logins it
+   keeps), and leaves its own `@demo.local` accounts and throwaway suppliers behind. Put it back with:
 
    ```bash
    npm run -w @gct/api reset:data -- --yes && npm run -w @gct/api db:seed

@@ -23,7 +23,7 @@ interface ScanFlowValue {
   sites: CachedSite[];
   scans: HeldScan[];
   /**
-   * Serials an ADMIN selected without scanning them.
+   * Serials a PROJECT_MANAGER selected without scanning them.
    *
    * Held separately from `scans`, never merged into it, because they are not the same
    * evidence: a scan is a signed label the camera actually read, an override is an
@@ -42,7 +42,7 @@ interface ScanFlowValue {
    */
   photo: CapturedPhoto | null;
   /**
-   * An ADMIN chose to continue without a photo. Held separately from `photo` for the
+   * A PROJECT_MANAGER chose to continue without a photo. Held separately from `photo` for the
    * same reason `overrides` is held apart from `scans`: they are different kinds of
    * claim, and the request carries them apart so the record can too.
    */

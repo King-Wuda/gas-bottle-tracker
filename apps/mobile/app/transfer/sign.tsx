@@ -142,7 +142,7 @@ export default function TransferSign() {
 
       <DriverSignOffForm
         driver={driver}
-        isAdmin={user?.role === 'ADMIN'}
+        isAdmin={user?.role === 'PROJECT_MANAGER'}
         online={online}
         submitting={submitting}
       />

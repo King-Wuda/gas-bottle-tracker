@@ -28,7 +28,9 @@ It also generates a fresh Ed25519 QR signing keypair, keeping the private half i
 an existing `.env`, and migrate and seed are both idempotent, so re-running is safe.
 
 Seeded logins (password `gea`): `jacques.viljoen@gmail.com` and
-`mashabaindustriesllc@gmail.com`, both ADMIN. Everyone else is added in the app.
+`mashabaindustriesllc@gmail.com`, both project managers — the role that runs the admin
+console. Everyone else is added in the app, also with `gea`; each person then changes
+their own password from the dashboard (Change password).
 
 Doing it by hand instead — `docker compose up -d`, then `npm run -w @gct/api db:migrate:deploy`
 and `db:seed` — works only once both `.env` files already exist.

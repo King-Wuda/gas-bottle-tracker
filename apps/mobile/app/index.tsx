@@ -108,14 +108,19 @@ export default function Dashboard() {
               {user.company ? ` · ${user.company}` : ''}
             </Text>
           </View>
+          {/* Every account starts on the shared default password, so changing it is
+              something everyone needs to find — next to their own name, not in a menu. */}
+          <Pressable role="button" onPress={() => router.push('/password')} hitSlop={8}>
+            <Text style={styles.accountLink}>Change password</Text>
+          </Pressable>
         </View>
       ) : null}
 
       {/* The admin console, above everything else and visually distinct — it is the
-          screen an admin comes here for, and burying it under four operational tiles
+          screen a project manager comes here for, and burying it under four operational tiles
           would make the common case the longest journey. Hidden for other roles: the
           server refuses them anyway, so showing it would only offer a dead end. */}
-      {user?.role === 'ADMIN' ? (
+      {user?.role === 'PROJECT_MANAGER' ? (
         <Pressable
           role="button"
           onPress={() => router.push('/admin')}
@@ -126,7 +131,7 @@ export default function Dashboard() {
           </View>
           <View style={styles.adminCopy}>
             <Text style={styles.adminLabel}>Admin console</Text>
-            <Text style={styles.adminHint}>People, project managers, batch corrections</Text>
+            <Text style={styles.adminHint}>Project managers, people, batch corrections</Text>
           </View>
           <ChevronIcon color="rgba(255,255,255,0.75)" size={20} />
         </Pressable>
@@ -196,6 +201,7 @@ const styles = StyleSheet.create({
 
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
   signOut: { color: colors.brand, fontSize: 15, fontWeight: '600' },
+  accountLink: { color: colors.brand, fontSize: 14, fontWeight: '600' },
 
   greeting: { flexDirection: 'row', alignItems: 'center', gap: space.md, flexWrap: 'wrap' },
   greetingName: type.display,

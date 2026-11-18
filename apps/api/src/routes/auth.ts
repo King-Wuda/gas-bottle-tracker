@@ -1,16 +1,18 @@
 import type { FastifyInstance } from 'fastify';
 import {
+  changePasswordRequestSchema,
   loginRequestSchema,
   refreshRequestSchema,
   logoutRequestSchema,
   type LoginResponse,
   type RefreshResponse,
+  type ChangePasswordResponse,
   type MeResponse,
   type UserDto,
 } from '@gct/shared';
 import { prisma } from '../db.js';
 import { env } from '../env.js';
-import { dummyHash, verifyPassword } from '../lib/password.js';
+import { dummyHash, hashPassword, verifyPassword } from '../lib/password.js';
 import { issueRefreshToken, rotateRefreshToken, revokeRefreshToken } from '../lib/refreshTokens.js';
 import type { AccessTokenClaims } from '../plugins/auth.js';
 
@@ -98,6 +100,51 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'User not found' } });
     }
     const body: MeResponse = { user: toUserDto(user) };
+    return reply.send(body);
+  });
+
+  /**
+   * Change your own password — everyone, whatever their role.
+   *
+   * Asks for the current password even though the caller is signed in: a phone left
+   * unlocked must not be enough to take the account over for good. A wrong one is a
+   * 400, not a 401 — the session is fine, and a 401 would send the app off to refresh
+   * its token and retry the same wrong password.
+   *
+   * Every session the account holds is ended, because "someone may know my password"
+   * is the usual reason to change it. The device that made the change gets a fresh
+   * session back instead of being signed out with the rest.
+   */
+  app.post('/me/password', { preHandler: app.authenticate }, async (request, reply) => {
+    const input = changePasswordRequestSchema.parse(request.body);
+
+    const user = await prisma.user.findUnique({ where: { id: request.user.sub } });
+    if (!user || !user.active || user.deletedAt) {
+      return reply
+        .code(401)
+        .send({ error: { code: 'ACCOUNT_INACTIVE', message: 'Account is not active' } });
+    }
+    if (!(await verifyPassword(user.passwordHash, input.currentPassword))) {
+      return reply.code(400).send({
+        error: { code: 'WRONG_PASSWORD', message: 'Your current password is not correct.' },
+      });
+    }
+
+    const passwordHash = await hashPassword(input.newPassword);
+    const refreshToken = await prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id: user.id }, data: { passwordHash } });
+      await tx.refreshToken.updateMany({
+        where: { userId: user.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      return issueRefreshToken(user.id, tx);
+    });
+
+    const body: ChangePasswordResponse = {
+      accessToken: signAccess({ sub: user.id, role: user.role, name: user.name }),
+      refreshToken,
+      expiresIn: accessTtl,
+    };
     return reply.send(body);
   });
 }

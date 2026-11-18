@@ -82,7 +82,7 @@ export type BatchPhotoImageResponse = z.infer<typeof batchPhotoImageResponseSche
  * The photo half of every scan submission.
  *
  * `photoOverride` is the same idea as `overrideSerials`, applied to the camera: an
- * ADMIN can submit without a photo when the camera is the thing that has failed, and
+ * A PROJECT_MANAGER can submit without a photo when the camera is the thing that has failed, and
  * the record says an admin waved it through rather than showing a submission that
  * looks like it was photographed. Every other role is refused (403), never silently
  * accepted — an override that looked like a photo would quietly devalue every real
@@ -90,7 +90,7 @@ export type BatchPhotoImageResponse = z.infer<typeof batchPhotoImageResponseSche
  */
 export const photoSubmissionFields = {
   photo: capturedPhotoSchema.nullable().default(null),
-  /** ADMIN only — 403 for every other role. */
+  /** PROJECT_MANAGER only — 403 for every other role. */
   photoOverride: z.boolean().default(false),
 } as const;
 

@@ -48,7 +48,7 @@ export const transferDestinationSchema = z.discriminatedUnion('type', [
 export type TransferDestination = z.infer<typeof transferDestinationSchema>;
 
 /**
- * Serials an ADMIN moved WITHOUT a physical scan.
+ * Serials a PROJECT_MANAGER moved WITHOUT a physical scan.
  *
  * Kept as its own field rather than a nullable `qrPayload` on `scanInputSchema`, so
  * "a scan is always a camera-verified signed payload" stays true with no exceptions
@@ -69,7 +69,7 @@ export const createTransferRequestSchema = z
     destination: transferDestinationSchema,
     /** Camera-verified scans. May be empty only when `overrideSerials` is not. */
     scans: z.array(scanInputSchema).max(500).default([]),
-    /** ADMIN only — 403 for every other role. */
+    /** PROJECT_MANAGER only — 403 for every other role. */
     overrideSerials: overrideSerialsSchema.default([]),
     /**
      * Reassign the batch to a different project manager as part of this move.

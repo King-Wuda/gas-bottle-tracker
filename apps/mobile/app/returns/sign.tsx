@@ -124,7 +124,7 @@ export default function Sign() {
 
       <DriverSignOffForm
         driver={driver}
-        isAdmin={user?.role === 'ADMIN'}
+        isAdmin={user?.role === 'PROJECT_MANAGER'}
         online={online}
         submitting={submitting}
       />

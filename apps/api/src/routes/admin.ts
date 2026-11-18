@@ -8,6 +8,7 @@ import {
   createUserRequestSchema,
   gasSupplierPairingRequestSchema,
   serialYear,
+  staffRoleSchema,
   systemClock,
   updateBatchRequestSchema,
   updateClientRequestSchema,
@@ -37,6 +38,8 @@ import {
   type DeletionImpactResponse,
   type DeletionResponse,
   type MovementType,
+  type Role,
+  type StaffRole,
 } from '@gct/shared';
 import { prisma, Prisma } from '../db.js';
 import { env } from '../env.js';
@@ -61,7 +64,8 @@ import {
  * The admin console: who can use the system, who the paperwork goes to, and fixing a
  * batch that was booked in wrong.
  *
- * Every route here is ADMIN-only, and every one of them is careful about the same
+ * Every route here is PROJECT_MANAGER-only — the project managers are the admins —
+ * and every one of them is careful about the same
  * thing: this system's product is *evidence*. A batch that was mis-keyed can be
  * corrected, but only in ways that do not contradict what the movement log already
  * proves, and never without recording that the correction happened.
@@ -101,16 +105,80 @@ class ImmutableHistoryError extends Error {
   }
 }
 
+type Tx = Prisma.TransactionClient | typeof prisma;
+
+/** End every session a login holds. The access token already issued still runs out
+ *  its short TTL; this stops it being renewed. */
+const revokeSessions = (tx: Tx, userId: string) =>
+  tx.refreshToken.updateMany({
+    where: { userId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+
+/** How many history records name this login — zero means it can be removed outright. */
+async function authoredBy(userId: string): Promise<number> {
+  const u = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: {
+      _count: {
+        select: {
+          batchesCreated: true,
+          movementEvents: true,
+          transfers: true,
+          returnsManaged: true,
+          amendments: true,
+          initializations: true,
+          batchPhotos: true,
+        },
+      },
+    },
+  });
+  return Object.values(u._count).reduce((n, c) => n + c, 0);
+}
+
+/**
+ * Destroy a login but keep its name: email released for reuse, password scrambled so
+ * the old hash checks against nothing. The name is deliberately untouched — it is what
+ * History attributes their work to.
+ */
+async function tombstoneUser(tx: Tx, id: string): Promise<void> {
+  await tx.user.update({
+    where: { id },
+    data: {
+      deletedAt: new Date(),
+      active: false,
+      email: `deleted+${id}@deleted.invalid`,
+      passwordHash: await hashPassword(randomUUID() + randomUUID()),
+    },
+  });
+}
+
 export async function adminRoutes(app: FastifyInstance): Promise<void> {
-  const adminOnly = { preHandler: app.requireRole('ADMIN') };
+  // The console is the project manager's. There is no separate admin role.
+  const adminOnly = { preHandler: app.requireRole('PROJECT_MANAGER') };
 
   // ------------------------------------------------------------------ users
+
+  /**
+   * Staff only. A project manager is a login too, but one with a manager record behind
+   * it, and the People routes cannot keep the two in step — so they refuse to touch
+   * one and point at the Project managers routes instead.
+   */
+  const notAManager = (role: Role) =>
+    role === 'PROJECT_MANAGER'
+      ? {
+          error: {
+            code: 'IS_PROJECT_MANAGER',
+            message: 'Project managers are managed on the Project managers screen.',
+          },
+        }
+      : null;
 
   const toUserDto = (u: {
     id: string;
     email: string;
     name: string;
-    role: AdminUserDto['role'];
+    role: Role;
     company: string | null;
     active: boolean;
     createdAt: Date;
@@ -119,7 +187,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     id: u.id,
     email: u.email,
     name: u.name,
-    role: u.role,
+    role: u.role as StaffRole,
     company: u.company,
     active: u.active,
     createdAt: u.createdAt.toISOString(),
@@ -135,8 +203,9 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const rows = await prisma.user.findMany({
       // A deleted account is not an account any more: it survives only to give the
       // history a name, and listing it would invite someone to "reactivate" a login
-      // whose password was scrambled on the way out.
-      where: { deletedAt: null },
+      // whose password was scrambled on the way out. Project managers have their own
+      // list — showing them here too is the duplicate this screen used to have.
+      where: { deletedAt: null, role: { in: staffRoleSchema.options } },
       include: userCounts,
       // Active first, then by role, then by name: the list is read to find someone,
       // and a deactivated account is the one you are least likely to be looking for.
@@ -147,6 +216,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/admin/users', adminOnly, async (request, reply) => {
+    // The schema only admits staff roles, so a project manager cannot be minted here
+    // without the manager record that has to come with one.
     const input = createUserRequestSchema.parse(request.body);
     const email = input.email.trim().toLowerCase();
 
@@ -178,51 +249,19 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const input = updateUserRequestSchema.parse(request.body);
 
     const target = await prisma.user.findUnique({ where: { id } });
-    if (!target) {
+    if (!target || target.deletedAt) {
       return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'User not found' } });
     }
-
-    // An admin who deactivates or demotes themselves is one tap from locking the
-    // whole organisation out of this console. Refuse it rather than let them discover
-    // it on the next login.
-    const selfDemotion =
-      target.id === request.user.sub &&
-      (input.active === false || (input.role !== undefined && input.role !== 'ADMIN'));
-    if (selfDemotion) {
-      return reply.code(400).send({
-        error: {
-          code: 'CANNOT_DEMOTE_SELF',
-          message: 'You cannot deactivate or change the role of your own account.',
-        },
-      });
-    }
-
-    // Likewise the last one standing: losing every admin means no route back in
-    // short of a database console.
-    const losingAdmin =
-      target.role === 'ADMIN' &&
-      target.active &&
-      (input.active === false || (input.role !== undefined && input.role !== 'ADMIN'));
-    if (losingAdmin) {
-      const otherAdmins = await prisma.user.count({
-        where: { role: 'ADMIN', active: true, id: { not: target.id } },
-      });
-      if (otherAdmins === 0) {
-        return reply.code(400).send({
-          error: {
-            code: 'LAST_ADMIN',
-            message: 'This is the only active admin. Promote someone else first.',
-          },
-        });
-      }
-    }
+    // Also what stops a manager deactivating or demoting themselves here: the caller
+    // is always a project manager, so "self" is always refused by this.
+    const refusal = notAManager(target.role);
+    if (refusal) return reply.code(400).send(refusal);
 
     // A subcontractor always has a company and nobody else does, whichever way the
-    // role changes: promoting one must not carry the employer along, and moving
-    // someone into the role must say who employs them.
+    // role changes: moving someone out of the role must not carry the employer along,
+    // and moving someone into it must say who employs them.
     const nextRole = input.role ?? target.role;
-    const nextCompany =
-      nextRole === 'SUBCONTRACTOR' ? (input.company ?? target.company) : null;
+    const nextCompany = nextRole === 'SUBCONTRACTOR' ? (input.company ?? target.company) : null;
     if (nextRole === 'SUBCONTRACTOR' && !nextCompany) {
       return reply.code(400).send({
         error: { code: 'COMPANY_REQUIRED', message: 'A subcontractor needs a company.' },
@@ -243,73 +282,28 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       include: userCounts,
     });
 
-    // A deactivated or demoted account must lose its existing sessions too: the
+    // A deactivated or re-roled account must lose its existing sessions too: the
     // access token in its pocket is still signed and still valid, and only revoking
     // the refresh tokens stops it being renewed indefinitely. (The access token
     // itself expires on its own short TTL.)
     if (input.active === false || input.role !== undefined || input.password !== undefined) {
-      await prisma.refreshToken.updateMany({
-        where: { userId: id, revokedAt: null },
-        data: { revokedAt: new Date() },
-      });
+      await revokeSessions(prisma, id);
     }
 
     const body: AdminUserResponse = { user: toUserDto(user) };
     return body;
   });
 
-  /**
-   * Delete a project manager.
-   *
-   * Same two outcomes as a user account, decided by the data rather than a setting. A
-   * manager nobody has used is deleted outright. One with projects or batches is
-   * tombstoned: the email is released for reuse and they disappear from every picker
-   * and list, but their NAME stays, because `Batch.projectManagerId` is required and
-   * every delivery note ever addressed to them answers "who was this delivered for?"
-   * through it. Cascading would destroy that paperwork across every client they
-   * handled — removing one person must not be a way to erase four customers' records.
-   */
-  app.delete('/admin/project-managers/:id', adminOnly, async (request, reply) => {
-    const { id } = request.params as { id: string };
-
-    const target = await prisma.projectManager.findUnique({
-      where: { id },
-      include: { _count: { select: { projects: true, batches: true, transfers: true } } },
-    });
-    if (!target || target.deletedAt) {
-      return reply
-        .code(404)
-        .send({ error: { code: 'NOT_FOUND', message: 'Project manager not found' } });
-    }
-
-    const referenced = Object.values(target._count).reduce((n, c) => n + c, 0);
-
-    if (referenced === 0) {
-      await prisma.projectManager.delete({ where: { id } });
-    } else {
-      await prisma.projectManager.update({
-        where: { id },
-        data: {
-          deletedAt: new Date(),
-          active: false,
-          // Released so the address can be given to a new manager. The name is
-          // deliberately untouched — it is what the paperwork is addressed to.
-          email: `deleted+${id}@deleted.invalid`,
-        },
-      });
-    }
-
-    request.log.warn(
-      { projectManagerId: id, name: target.name, referenced, purged: referenced === 0 },
-      'admin deleted a project manager',
-    );
-    return { deleted: true, recordsKept: referenced };
-  });
-
   // ------------------------------------------------------- project managers
 
+  /**
+   * A project manager is two rows — the login (`User`, role PROJECT_MANAGER) and the
+   * paperwork identity (`ProjectManager`) — kept in step by these routes and only by
+   * these routes. Name, email and active are written to both, in one transaction.
+   */
   const toPmDto = (p: {
     id: string;
+    userId: string;
     name: string;
     email: string;
     active: boolean;
@@ -318,6 +312,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     batches?: { id: string }[];
   }): AdminProjectManagerDto => ({
     id: p.id,
+    userId: p.userId,
     name: p.name,
     email: p.email,
     active: p.active,
@@ -333,6 +328,45 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     batches: { where: { status: { not: 'RETURNED' as const } }, select: { id: true } },
   } as const;
 
+  const emailTaken = {
+    error: { code: 'EMAIL_TAKEN', message: 'That email already has an account' },
+  } as const;
+
+  /**
+   * The two ways to lock everyone out of this console: a manager removing their own
+   * access, or the last active manager losing theirs. Either leaves no route back in
+   * short of a database console, so both are refused before anything changes.
+   */
+  const lockoutRefusal = async (
+    callerId: string,
+    targetUserId: string,
+    verb: 'deactivate' | 'delete',
+  ) => {
+    if (targetUserId === callerId) {
+      return verb === 'delete'
+        ? {
+            code: 'CANNOT_DELETE_SELF',
+            message: 'You cannot delete your own account. Ask another project manager to do it.',
+          }
+        : { code: 'CANNOT_DEMOTE_SELF', message: 'You cannot deactivate your own account.' };
+    }
+    const others = await prisma.user.count({
+      where: {
+        role: 'PROJECT_MANAGER',
+        active: true,
+        deletedAt: null,
+        id: { not: targetUserId },
+      },
+    });
+    if (others === 0) {
+      return {
+        code: 'LAST_PROJECT_MANAGER',
+        message: 'This is the only active project manager. Add another one first.',
+      };
+    }
+    return null;
+  };
+
   app.get('/admin/project-managers', adminOnly, async () => {
     const rows = await prisma.projectManager.findMany({
       // A deleted manager survives only to give old paperwork a name; listing them
@@ -347,18 +381,26 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/admin/project-managers', adminOnly, async (request, reply) => {
     const input = createProjectManagerRequestSchema.parse(request.body);
+    const name = input.name.trim();
+    const email = input.email.trim().toLowerCase();
+    const passwordHash = await hashPassword(input.password);
     try {
-      const pm = await prisma.projectManager.create({
-        data: { name: input.name.trim(), email: input.email.trim().toLowerCase() },
-        include: pmInclude,
+      const pm = await prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({
+          data: { email, name, role: 'PROJECT_MANAGER', passwordHash },
+        });
+        return tx.projectManager.create({
+          data: { userId: user.id, name, email },
+          include: pmInclude,
+        });
       });
       const body: AdminProjectManagerResponse = { projectManager: toPmDto(pm) };
       return reply.code(201).send(body);
     } catch (err) {
+      // Either half can collide: a technician already signing in with this address,
+      // or a manager already addressed at it. Both are "that email is taken".
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        return reply.code(409).send({
-          error: { code: 'EMAIL_TAKEN', message: 'A project manager already uses that email' },
-        });
+        return reply.code(409).send(emailTaken);
       }
       throw err;
     }
@@ -369,21 +411,40 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const input = updateProjectManagerRequestSchema.parse(request.body);
 
     const target = await prisma.projectManager.findUnique({ where: { id } });
-    if (!target) {
+    if (!target || target.deletedAt) {
       return reply
         .code(404)
         .send({ error: { code: 'NOT_FOUND', message: 'Project manager not found' } });
     }
 
+    if (input.active === false && target.active) {
+      const refusal = await lockoutRefusal(request.user.sub, target.userId, 'deactivate');
+      if (refusal) return reply.code(400).send({ error: refusal });
+    }
+
+    const shared = {
+      ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+      ...(input.email !== undefined ? { email: input.email.trim().toLowerCase() } : {}),
+      ...(input.active !== undefined ? { active: input.active } : {}),
+    };
+
     try {
-      const pm = await prisma.projectManager.update({
-        where: { id },
-        data: {
-          ...(input.name !== undefined ? { name: input.name.trim() } : {}),
-          ...(input.email !== undefined ? { email: input.email.trim().toLowerCase() } : {}),
-          ...(input.active !== undefined ? { active: input.active } : {}),
-        },
-        include: pmInclude,
+      const pm = await prisma.$transaction(async (tx) => {
+        await tx.user.update({
+          where: { id: target.userId },
+          data: {
+            ...shared,
+            ...(input.password !== undefined
+              ? { passwordHash: await hashPassword(input.password) }
+              : {}),
+          },
+        });
+        // Losing access, or having the password changed by someone else, ends every
+        // session — the same rule the People routes apply.
+        if (input.active === false || input.password !== undefined) {
+          await revokeSessions(tx, target.userId);
+        }
+        return tx.projectManager.update({ where: { id }, data: shared, include: pmInclude });
       });
       // NB: changing the email here deliberately does NOT rewrite
       // `Batch.projectManagerEmail` on batches already addressed to them. That column
@@ -395,12 +456,71 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       return body;
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        return reply.code(409).send({
-          error: { code: 'EMAIL_TAKEN', message: 'A project manager already uses that email' },
-        });
+        return reply.code(409).send(emailTaken);
       }
       throw err;
     }
+  });
+
+  /**
+   * Delete a project manager — their login and their manager record together.
+   *
+   * Each half has the same two outcomes as any delete of a person, decided by the
+   * data. A manager record nothing points at is deleted outright; one named on
+   * projects or batches is tombstoned, keeping its NAME because `Batch.projectManagerId`
+   * is required and every delivery note addressed to them answers "who was this
+   * delivered for?" through it. The login goes the same way, and is always kept as a
+   * tombstone when its manager record is, since the record still points at it.
+   */
+  app.delete('/admin/project-managers/:id', adminOnly, async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const target = await prisma.projectManager.findUnique({
+      where: { id },
+      include: { _count: { select: { projects: true, batches: true, transfers: true } } },
+    });
+    if (!target || target.deletedAt) {
+      return reply
+        .code(404)
+        .send({ error: { code: 'NOT_FOUND', message: 'Project manager not found' } });
+    }
+
+    const refusal = await lockoutRefusal(request.user.sub, target.userId, 'delete');
+    if (refusal) return reply.code(400).send({ error: refusal });
+
+    const referenced = Object.values(target._count).reduce((n, c) => n + c, 0);
+    const authored = await authoredBy(target.userId);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.refreshToken.deleteMany({ where: { userId: target.userId } });
+
+      if (referenced === 0) {
+        // The manager row goes first: it is what holds the foreign key to the login.
+        await tx.projectManager.delete({ where: { id } });
+        if (authored === 0) {
+          await tx.user.delete({ where: { id: target.userId } });
+          return;
+        }
+      } else {
+        await tx.projectManager.update({
+          where: { id },
+          data: {
+            deletedAt: new Date(),
+            active: false,
+            // Released so the address can be given to a new manager. The name is
+            // deliberately untouched — it is what the paperwork is addressed to.
+            email: `deleted+${id}@deleted.invalid`,
+          },
+        });
+      }
+      await tombstoneUser(tx, target.userId);
+    });
+
+    request.log.warn(
+      { projectManagerId: id, name: target.name, referenced, authored },
+      'admin deleted a project manager',
+    );
+    return { deleted: true, recordsKept: referenced + authored };
   });
 
   // ------------------------------------------------------ batch correction
@@ -567,7 +687,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // ------------------------------------------------------------ deleting a user
 
   /**
-   * Delete an account — including another admin's.
+   * Delete a staff account.
    *
    * Two outcomes, and which one happens is decided by the data rather than by a
    * setting. An account that has never authored anything is deleted outright: nothing
@@ -580,79 +700,31 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
    * booked in, which for a depot technician means other clients' deliveries, their
    * signed delivery notes and their movement log. Removing one employee must not be a
    * way to destroy four customers' records.
+   *
+   * Project managers are refused here and deleted through their own route, which
+   * also deals with their manager record and the last-manager guard.
    */
   app.delete('/admin/users/:id', adminOnly, async (request, reply) => {
     const { id } = request.params as { id: string };
 
-    const target = await prisma.user.findUnique({
-      where: { id },
-      include: {
-        _count: {
-          select: {
-            batchesCreated: true,
-            movementEvents: true,
-            transfers: true,
-            returnsManaged: true,
-            amendments: true,
-            initializations: true,
-            batchPhotos: true,
-          },
-        },
-      },
-    });
+    const target = await prisma.user.findUnique({ where: { id } });
     if (!target || target.deletedAt) {
       return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'User not found' } });
     }
+    const refusal = notAManager(target.role);
+    if (refusal) return reply.code(400).send(refusal);
 
-    // The same two guards the PATCH route applies, for the same reason: an admin who
-    // deletes themselves, or the last admin, locks the organisation out of this
-    // console entirely — and unlike a deactivation there is no undoing it.
-    if (target.id === request.user.sub) {
-      return reply.code(400).send({
-        error: {
-          code: 'CANNOT_DELETE_SELF',
-          message: 'You cannot delete your own account. Ask another admin to do it.',
-        },
-      });
-    }
-    if (target.role === 'ADMIN') {
-      const otherAdmins = await prisma.user.count({
-        where: { role: 'ADMIN', active: true, deletedAt: null, id: { not: target.id } },
-      });
-      if (otherAdmins === 0) {
-        return reply.code(400).send({
-          error: {
-            code: 'LAST_ADMIN',
-            message: 'This is the only active admin. Promote someone else first.',
-          },
-        });
-      }
-    }
-
-    const authored = Object.values(target._count).reduce((n, c) => n + c, 0);
+    const authored = await authoredBy(id);
 
     await prisma.$transaction(async (tx) => {
       // Sessions die first either way: the access token already in their pocket is
       // still signed, and only revoking the refresh tokens stops it being renewed.
       await tx.refreshToken.deleteMany({ where: { userId: id } });
-
       if (authored === 0) {
         await tx.user.delete({ where: { id } });
         return;
       }
-
-      await tx.user.update({
-        where: { id },
-        data: {
-          deletedAt: new Date(),
-          active: false,
-          // Released so the address can be given to a new account, and scrambled so
-          // the old hash cannot be checked against anything. The name is deliberately
-          // untouched — it is what History attributes their work to.
-          email: `deleted+${id}@deleted.invalid`,
-          passwordHash: await hashPassword(randomUUID() + randomUUID()),
-        },
-      });
+      await tombstoneUser(tx, id);
     });
 
     request.log.warn(

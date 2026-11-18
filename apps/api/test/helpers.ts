@@ -51,6 +51,17 @@ export async function resetDb(): Promise<void> {
   for (const [key, email] of Object.entries(SEED_ROLES)) {
     await prisma.user.updateMany({ where: { email }, data: { role: key as Role } });
   }
+
+  // A project manager is a login AND a manager row, and the TRUNCATE above took the
+  // rows. Put back one for every project-manager login kept — the suite's own and the
+  // real owners — so no suite starts with a manager the console cannot list.
+  const managers = await prisma.user.findMany({
+    where: { role: 'PROJECT_MANAGER', deletedAt: null },
+    select: { id: true, name: true, email: true },
+  });
+  await prisma.projectManager.createMany({
+    data: managers.map((u) => ({ userId: u.id, name: u.name, email: u.email })),
+  });
 }
 
 /** The password `ensureTestUsers` hashes. `SEED_PASSWORD` is honoured so a developer
@@ -59,6 +70,7 @@ export const DEMO_PASSWORD = process.env.SEED_PASSWORD ?? 'gea';
 export const DEMO = {
   technician: 'technician@demo.local',
   stores: 'stores@demo.local',
+  /** A PROJECT_MANAGER — the role that runs the admin console. */
   admin: 'admin@demo.local',
 } as const;
 
@@ -66,12 +78,12 @@ export const DEMO = {
 const SEED_ROLES = {
   TECHNICIAN: 'technician@demo.local',
   STORES_MANAGER: 'stores@demo.local',
-  ADMIN: 'admin@demo.local',
+  PROJECT_MANAGER: 'admin@demo.local',
 } as const;
 
 /**
  * The accounts `resetDb` is allowed to keep: this suite's own three, AND the two real
- * admins the seed creates (Jacques, Tumelo). resetDb deletes every account outside
+ * project managers the seed creates (Jacques, Tumelo). resetDb deletes every account outside
  * this list, so leaving the real ones out would mean running the tests silently
  * removed the logins the operator actually signs in with.
  */
@@ -91,7 +103,7 @@ export const SEED_EMAILS = [
 export const DEMO_NAMES = {
   technician: 'Test Technician',
   stores: 'Test Stores Manager',
-  admin: 'Test Admin',
+  admin: 'Test Project Manager',
 } as const;
 
 const TEST_USER_NAMES: Record<string, string> = {
@@ -169,16 +181,27 @@ export function uniqueProjectNumber(): string {
 }
 
 /**
- * A ProjectManager row to point a project at. `POST /projects` takes an id now, so
- * tests create the manager directly rather than having the endpoint upsert one from a
- * typed email — which is the behaviour the change spec removed.
+ * A project manager to point a project at. `POST /projects` takes an id now, so tests
+ * create the manager directly rather than having the endpoint upsert one from a typed
+ * email — which is the behaviour the change spec removed.
+ *
+ * A manager is always a login as well (`ProjectManager.userId` is required), so this
+ * makes both. The login has no usable password — nothing signs in as it — and an
+ * `@demo.local` address, so `reset:data` clears it with the rest of the test residue.
  */
-export async function makeProjectManager(name: string): Promise<{ id: string; email: string }> {
-  const email = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '.')}+${Date.now()}.${Math.floor(
+export async function makeProjectManager(
+  name: string,
+): Promise<{ id: string; email: string; userId: string }> {
+  const email = `pm.${name.toLowerCase().replace(/[^a-z0-9]+/g, '.')}+${Date.now()}.${Math.floor(
     Math.random() * 1e6,
-  )}@pm.local`;
-  const pm = await prisma.projectManager.create({ data: { name, email } });
-  return { id: pm.id, email: pm.email };
+  )}@demo.local`;
+  const user = await prisma.user.create({
+    // Not an argon2 hash, so nothing can sign in as this fixture — and it skips the
+    // ~50ms a real hash costs, which adds up across every suite that makes a manager.
+    data: { email, name, role: 'PROJECT_MANAGER', passwordHash: '!fixture' },
+  });
+  const pm = await prisma.projectManager.create({ data: { name, email, userId: user.id } });
+  return { id: pm.id, email: pm.email, userId: user.id };
 }
 
 /** A seeded supplier that actually stocks the given gas — `POST /batches` checks. */

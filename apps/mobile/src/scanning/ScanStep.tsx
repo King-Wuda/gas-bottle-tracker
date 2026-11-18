@@ -21,7 +21,7 @@ import { colors, radius, space, type } from '../ui/theme';
  *
  * ## The admin override
  *
- * An ADMIN gets one extra affordance: a button that selects the batch's cylinders
+ * A PROJECT_MANAGER gets one extra affordance: a button that selects the batch's cylinders
  * without scanning them. It exists because the camera is not always the constraint
  * that matters — a peeled label, a cylinder already on a truck, a phone that will not
  * focus in the dark. The alternative to giving admins a way past is not "everything
@@ -61,7 +61,7 @@ export function ScanStep({
   const { batch, cylinders, scans, overrides, addScan, deselect, clearScans, overrideAll } =
     useScanFlow();
   const { user } = useAuth();
-  const isAdmin = user?.role === 'ADMIN';
+  const isAdmin = user?.role === 'PROJECT_MANAGER';
   /** The flyby plays over this screen and navigation waits for it, so that leaving
    *  the scan step is the thing being celebrated rather than an animation the next
    *  screen cuts off half a second in. */

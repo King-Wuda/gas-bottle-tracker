@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { DEFAULT_PASSWORD, PASSWORD_MIN, type AdminUserDto, type Role } from '@gct/shared';
+import { DEFAULT_PASSWORD, PASSWORD_MIN, type AdminUserDto, type StaffRole } from '@gct/shared';
 import {
   ApiError,
   apiAdminCreateUser,
@@ -8,7 +8,6 @@ import {
   apiAdminUpdateUser,
   apiAdminUsers,
 } from '../../src/api/client';
-import { useAuth } from '../../src/auth/AuthContext';
 import { confirmAction, confirmByTyping } from '../../src/ui/confirm';
 import {
   Card,
@@ -24,23 +23,29 @@ import {
 import { SegmentedToggle, StatusBadge } from '../../src/ui/controls';
 import { colors } from '../../src/ui/theme';
 
-const ROLES: { value: Role; label: string }[] = [
+/**
+ * Project manager is deliberately not offered. A project manager is the admin AND
+ * the person paperwork is addressed to, so they are added on the Project managers
+ * screen, which creates both halves together; the server refuses the role here too.
+ */
+const ROLES: { value: StaffRole; label: string }[] = [
   { value: 'TECHNICIAN', label: 'Technician' },
   { value: 'SUBCONTRACTOR', label: 'Subcontractor' },
   { value: 'STORES_MANAGER', label: 'Stores' },
-  { value: 'ADMIN', label: 'Admin' },
 ];
 
-const ROLE_LABEL: Record<Role, string> = {
+const ROLE_LABEL: Record<StaffRole, string> = {
   TECHNICIAN: 'Technician',
   SUBCONTRACTOR: 'Subcontractor',
   STORES_MANAGER: 'Stores manager',
-  ADMIN: 'Admin',
 };
 
+/**
+ * Staff — the accounts that do the work. Project managers sign in too, but they are
+ * managed on their own screen and never listed here, so nobody on this list is ever
+ * the person using the console: there is no "(you)" and no self-guard to show.
+ */
 export default function AdminUsers() {
-  const { user: me } = useAuth();
-
   const [users, setUsers] = useState<AdminUserDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -52,7 +57,7 @@ export default function AdminUsers() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState(DEFAULT_PASSWORD);
-  const [role, setRole] = useState<Role | null>('TECHNICIAN');
+  const [role, setRole] = useState<StaffRole | null>('TECHNICIAN');
   const [company, setCompany] = useState('');
   const [creating, setCreating] = useState(false);
 
@@ -131,7 +136,6 @@ export default function AdminUsers() {
       await apiAdminDeleteUser(target.id);
       await load();
     } catch (e) {
-      // Self-deletion and the last admin are refused by the server, as for PATCH.
       setActionError(e instanceof ApiError ? e.message : 'Could not delete this person.');
     } finally {
       setBusyId(null);
@@ -140,7 +144,7 @@ export default function AdminUsers() {
 
   const update = async (
     target: AdminUserDto,
-    patch: { role?: Role; active?: boolean },
+    patch: { role?: StaffRole; active?: boolean; password?: string },
     confirmMessage?: string,
   ) => {
     if (confirmMessage && !(await confirmAction(confirmMessage))) return;
@@ -150,8 +154,7 @@ export default function AdminUsers() {
       await apiAdminUpdateUser(target.id, patch);
       await load();
     } catch (e) {
-      // The server refuses self-demotion and removing the last admin. Those are
-      // answers, not failures, so they are shown as-is rather than flattened.
+      // A refusal from the server is an answer, not a failure, so it is shown as-is.
       setActionError(e instanceof ApiError ? e.message : 'Could not update this person.');
     } finally {
       setBusyId(null);
@@ -170,8 +173,9 @@ export default function AdminUsers() {
   return (
     <ScreenScroll>
       <Text style={{ opacity: 0.7 }}>
-        Accounts that can sign in. Nobody is deleted — deactivating removes their access while
-        keeping their name on the batches and scans they recorded.
+        Technicians, subcontractors and stores managers. Project managers are on their own screen.
+        Deactivating removes someone&apos;s access while keeping their name on the batches and scans
+        they recorded.
       </Text>
 
       {formOpen ? (
@@ -219,7 +223,6 @@ export default function AdminUsers() {
       <ErrorText>{actionError}</ErrorText>
 
       {users.map((u) => {
-        const isMe = u.id === me?.id;
         return (
           <Card key={u.id}>
             <View
@@ -230,13 +233,10 @@ export default function AdminUsers() {
                 gap: 10,
               }}
             >
-              <Text style={{ fontSize: 16, fontWeight: '700', flexShrink: 1 }}>
-                {u.name}
-                {isMe ? ' (you)' : ''}
-              </Text>
+              <Text style={{ fontSize: 16, fontWeight: '700', flexShrink: 1 }}>{u.name}</Text>
               <StatusBadge
                 label={u.active ? ROLE_LABEL[u.role] : 'Deactivated'}
-                tone={u.active ? (u.role === 'ADMIN' ? 'moved' : 'neutral') : 'done'}
+                tone={u.active ? 'neutral' : 'done'}
               />
             </View>
             <Text style={{ opacity: 0.75 }}>{u.email}</Text>
@@ -253,7 +253,7 @@ export default function AdminUsers() {
                   label="Role"
                   options={ROLES}
                   value={u.role}
-                  disabled={busyId === u.id || isMe}
+                  disabled={busyId === u.id}
                   onChange={(next) =>
                     void update(
                       u,
@@ -265,49 +265,60 @@ export default function AdminUsers() {
                     )
                   }
                 />
-                {isMe ? (
-                  <Text style={styles.hint}>
-                    You cannot change your own role or deactivate yourself.
-                  </Text>
-                ) : null}
               </View>
             ) : null}
 
-            {!isMe ? (
-              <Pressable
-                disabled={busyId === u.id}
-                onPress={() =>
-                  void update(
-                    u,
-                    { active: !u.active },
-                    u.active
-                      ? `Deactivate ${u.name}? They will be signed out everywhere and cannot ` +
-                          `sign in again. Their history stays on record.`
-                      : `Reactivate ${u.name}? They will be able to sign in again.`,
-                  )
-                }
-                style={{ paddingVertical: 10 }}
+            <Pressable
+              disabled={busyId === u.id}
+              onPress={() =>
+                void update(
+                  u,
+                  { active: !u.active },
+                  u.active
+                    ? `Deactivate ${u.name}? They will be signed out everywhere and cannot ` +
+                        `sign in again. Their history stays on record.`
+                    : `Reactivate ${u.name}? They will be able to sign in again.`,
+                )
+              }
+              style={{ paddingVertical: 10 }}
+            >
+              <Text
+                style={{
+                  color: u.active ? colors.danger : colors.brand,
+                  fontWeight: '600',
+                }}
               >
-                <Text
-                  style={{
-                    color: u.active ? colors.danger : colors.brand,
-                    fontWeight: '600',
-                  }}
-                >
-                  {busyId === u.id ? 'Working…' : u.active ? 'Deactivate' : 'Reactivate'}
-                </Text>
-              </Pressable>
-            ) : null}
+                {busyId === u.id ? 'Working…' : u.active ? 'Deactivate' : 'Reactivate'}
+              </Text>
+            </Pressable>
 
-            {!isMe ? (
-              <Pressable
-                disabled={busyId === u.id}
-                onPress={() => void remove(u)}
-                style={{ paddingVertical: 10 }}
-              >
-                <Text style={{ color: colors.danger, fontWeight: '600' }}>Delete permanently</Text>
-              </Pressable>
-            ) : null}
+            {/* For someone who changed their password and forgot it. Back to the shared
+                default rather than one the admin picks: it is the password everyone
+                already knows to try, and they change it again from the dashboard. */}
+            <Pressable
+              disabled={busyId === u.id}
+              onPress={() =>
+                void update(
+                  u,
+                  { password: DEFAULT_PASSWORD },
+                  `Reset ${u.name}'s password to "${DEFAULT_PASSWORD}"? They will be signed out ` +
+                    `everywhere, and should change it after signing in.`,
+                )
+              }
+              style={{ paddingVertical: 10 }}
+            >
+              <Text style={{ color: colors.brand, fontWeight: '600' }}>
+                Reset password to {DEFAULT_PASSWORD}
+              </Text>
+            </Pressable>
+
+            <Pressable
+              disabled={busyId === u.id}
+              onPress={() => void remove(u)}
+              style={{ paddingVertical: 10 }}
+            >
+              <Text style={{ color: colors.danger, fontWeight: '600' }}>Delete permanently</Text>
+            </Pressable>
           </Card>
         );
       })}

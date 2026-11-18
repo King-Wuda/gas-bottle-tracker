@@ -22,7 +22,11 @@ enum Role {
   /// Same access as TECHNICIAN, but employed by another company; `User.company` says which.
   SUBCONTRACTOR
   STORES_MANAGER
-  ADMIN
+  /// Runs the admin console AND is who QR sheets and delivery notes are addressed to.
+  /// These were two things — an ADMIN login and a separate ProjectManager contact — and
+  /// are now one: every PROJECT_MANAGER user has exactly one `ProjectManager` row, and
+  /// every `ProjectManager` row belongs to a user (see `ProjectManager.userId`).
+  PROJECT_MANAGER
 }
 
 enum ProjectStatus {
@@ -106,6 +110,8 @@ model User {
   amendments      BatchAmendment[]
   initializations BatchInitialization[]
   batchPhotos     BatchPhoto[]
+  /// Set exactly when `role` is PROJECT_MANAGER: their paperwork identity.
+  projectManager  ProjectManager?
 
   @@index([role])
 }
@@ -126,9 +132,22 @@ model RefreshToken {
   @@index([expiresAt])
 }
 
-/// Email recipient for QR sheets and delivery notes — NOT an app login.
+/// A project manager as the paperwork sees them: the addressee of QR sheets and
+/// delivery notes, and who a project or batch is "for".
+///
+/// Always backed by a PROJECT_MANAGER login (`userId`, required). Project managers ARE
+/// the admins — there is no separate list of admin accounts — so a manager who cannot
+/// sign in would be a manager who cannot run the console. `name`, `email` and `active`
+/// mirror the user row; the admin routes write both together.
+///
+/// The table stays separate from User, rather than batches pointing at User directly,
+/// because its rows outlive the account in a different way: a deleted manager keeps a
+/// row here so delivery notes still answer "who was this for?".
 model ProjectManager {
   id        String   @id @default(cuid())
+  /// The login behind this manager. Restrict, like every other key into history: a
+  /// user with a manager row is tombstoned on delete, never removed.
+  userId    String   @unique
   name      String
   email     String   @unique
   /// Deactivated rather than deleted. A batch's paperwork names the manager it was
@@ -147,6 +166,7 @@ model ProjectManager {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  user      User       @relation(fields: [userId], references: [id], onDelete: Restrict)
   projects  Project[]
   batches   Batch[]
   transfers Transfer[] @relation("TransferProjectManager")

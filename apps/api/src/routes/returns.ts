@@ -95,7 +95,7 @@ export async function returnRoutes(app: FastifyInstance): Promise<void> {
    */
   app.post(
     '/driver-id/read',
-    { preHandler: app.requireRole('STORES_MANAGER', 'ADMIN') },
+    { preHandler: app.requireRole('STORES_MANAGER', 'PROJECT_MANAGER') },
     async (request, reply) => {
       const input = readDriverIdRequestSchema.parse(request.body);
       const result = await readIdNumber(input.imageBase64);
@@ -114,7 +114,7 @@ export async function returnRoutes(app: FastifyInstance): Promise<void> {
   // scanned as returned, roll the batch status forward, and queue the PM's note.
   app.post(
     '/returns',
-    { preHandler: app.requireRole('STORES_MANAGER', 'ADMIN') },
+    { preHandler: app.requireRole('STORES_MANAGER', 'PROJECT_MANAGER') },
     async (request, reply) => {
       const input = createReturnRequestSchema.parse(request.body);
 
@@ -128,11 +128,11 @@ export async function returnRoutes(app: FastifyInstance): Promise<void> {
 
       // Same gate as transfers: the one exception to mandatory scanning is admin-only,
       // and is refused rather than silently dropped for anyone else.
-      if (input.overrideSerials.length > 0 && request.user.role !== 'ADMIN') {
+      if (input.overrideSerials.length > 0 && request.user.role !== 'PROJECT_MANAGER') {
         return reply.code(403).send({
           error: {
             code: 'OVERRIDE_FORBIDDEN',
-            message: 'Only an admin can return a cylinder without scanning it.',
+            message: 'Only a project manager can return a cylinder without scanning it.',
           },
         });
       }

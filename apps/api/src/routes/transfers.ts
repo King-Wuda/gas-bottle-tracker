@@ -94,7 +94,14 @@ export async function transferRoutes(app: FastifyInstance): Promise<void> {
   // scanned, and append one TRANSFER movement event per cylinder.
   app.post(
     '/transfers',
-    { preHandler: app.requireRole('TECHNICIAN', 'SUBCONTRACTOR', 'STORES_MANAGER', 'ADMIN') },
+    {
+      preHandler: app.requireRole(
+        'TECHNICIAN',
+        'SUBCONTRACTOR',
+        'STORES_MANAGER',
+        'PROJECT_MANAGER',
+      ),
+    },
     async (request, reply) => {
       const input = createTransferRequestSchema.parse(request.body);
 
@@ -106,11 +113,11 @@ export async function transferRoutes(app: FastifyInstance): Promise<void> {
       // overrideSerials is refused outright rather than having them quietly ignored —
       // silently dropping them would let a tampered client believe it moved stock it
       // did not.
-      if (input.overrideSerials.length > 0 && request.user.role !== 'ADMIN') {
+      if (input.overrideSerials.length > 0 && request.user.role !== 'PROJECT_MANAGER') {
         return reply.code(403).send({
           error: {
             code: 'OVERRIDE_FORBIDDEN',
-            message: 'Only an admin can move a cylinder without scanning it.',
+            message: 'Only a project manager can move a cylinder without scanning it.',
           },
         });
       }
