@@ -310,9 +310,24 @@ export function summariseLines(lines: { quantity: number; gasTypeName: string }[
  * what the reader is deciding about.
  */
 export function summariseDistribution(entries: BatchDistributionEntry[]): string {
+  return distributionLines(entries).join(' · ');
+}
+
+/**
+ * The same facts, one location per entry — stores first, then each site, then
+ * returned — for the Transfer and Returns lists, where cylinders in stores and
+ * cylinders on site are different piles in different places and each gets its own
+ * line rather than sharing one.
+ */
+export function distributionLines(entries: BatchDistributionEntry[]): string[] {
   const order: Record<BatchLocationKind, number> = { STORES: 0, SITE: 1, RETURNED: 2 };
   return [...entries]
     .sort((a, b) => order[a.kind] - order[b.kind] || a.locationName.localeCompare(b.locationName))
-    .map((e) => `${e.count} ${e.kind === 'RETURNED' ? 'returned' : `at ${e.locationName}`}`)
-    .join(' · ');
+    .map((e) =>
+      e.kind === 'RETURNED'
+        ? `${e.count} returned to supplier`
+        : e.kind === 'STORES'
+          ? `${e.count} in stores`
+          : `${e.count} on site at ${e.locationName}`,
+    );
 }

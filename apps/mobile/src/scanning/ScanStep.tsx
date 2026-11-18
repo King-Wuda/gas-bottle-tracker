@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Redirect, Stack, useRouter, type Href } from 'expo-router';
 import { useScanFlow } from './ScanFlowContext';
+import { groupByLocation } from './locationGroups';
 import { useAuth } from '../auth/AuthContext';
 import { verifyScannedCode, qrVerificationConfigured } from '../qr/verify';
 import { Scanner, type ScanOutcome } from '../components/Scanner';
@@ -58,7 +59,7 @@ export function ScanStep({
   incompleteLabel?: (remaining: number) => string;
 }) {
   const router = useRouter();
-  const { batch, cylinders, scans, overrides, addScan, deselect, clearScans, overrideAll } =
+  const { batch, cylinders, sites, scans, overrides, addScan, deselect, clearScans, overrideAll } =
     useScanFlow();
   const { user } = useAuth();
   const isAdmin = user?.role === 'PROJECT_MANAGER';
@@ -71,6 +72,9 @@ export function ScanStep({
   const scanned = useMemo(() => new Set(scans.map((s) => s.serialCode)), [scans]);
   const overridden = useMemo(() => new Set(overrides), [overrides]);
   const selectedCount = scanned.size + overridden.size;
+  // Stores and each site on a line of their own — they are different piles in
+  // different places. See locationGroups.ts.
+  const groups = useMemo(() => groupByLocation(cylinders, sites), [cylinders, sites]);
   const remaining = cylinders.length - selectedCount;
   const complete = !requireAll || remaining <= 0;
 
@@ -150,33 +154,53 @@ export function ScanStep({
         />
       </View>
 
-      <View style={step.chips}>
-        {cylinders.map((c) => {
-          const isScanned = scanned.has(c.serialCode);
-          const isOverridden = overridden.has(c.serialCode);
-          const selected = isScanned || isOverridden;
-          return (
-            <Pressable
-              key={c.serialCode}
-              role="button"
-              aria-label={`${c.serialCode}${selected ? ', selected — tap to remove' : ', not scanned'}`}
-              onPress={() => selected && deselect(c.serialCode)}
-              style={[
-                step.chip,
-                // Green = physically scanned. Amber = an admin's assertion. The
-                // distinction is the whole point of the override, so the screen must
-                // not blur it into one "selected" colour.
-                isScanned ? step.chipScanned : isOverridden ? step.chipOverridden : step.chipIdle,
-              ]}
-            >
-              <Text style={[step.chipText, selected && step.chipTextOn]}>
-                {c.serialCode}
-                {c.gasTypeName ? ` · ${c.gasTypeName}` : ''}
+      {groups.map((g) => {
+        const picked = g.cylinders.filter(
+          (c) => scanned.has(c.serialCode) || overridden.has(c.serialCode),
+        ).length;
+        return (
+          <View key={g.key} style={step.group}>
+            <Text style={step.groupLabel}>
+              {g.label}
+              <Text style={step.groupCount}>
+                {'  '}
+                {picked} of {g.cylinders.length}
               </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+            </Text>
+            <View style={step.chips}>
+              {g.cylinders.map((c) => {
+                const isScanned = scanned.has(c.serialCode);
+                const isOverridden = overridden.has(c.serialCode);
+                const selected = isScanned || isOverridden;
+                return (
+                  <Pressable
+                    key={c.serialCode}
+                    role="button"
+                    aria-label={`${c.serialCode}${selected ? ', selected — tap to remove' : ', not scanned'}`}
+                    onPress={() => selected && deselect(c.serialCode)}
+                    style={[
+                      step.chip,
+                      // Green = physically scanned. Amber = an admin's assertion. The
+                      // distinction is the whole point of the override, so the screen
+                      // must not blur it into one "selected" colour.
+                      isScanned
+                        ? step.chipScanned
+                        : isOverridden
+                          ? step.chipOverridden
+                          : step.chipIdle,
+                    ]}
+                  >
+                    <Text style={[step.chipText, selected && step.chipTextOn]}>
+                      {c.serialCode}
+                      {c.gasTypeName ? ` · ${c.gasTypeName}` : ''}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        );
+      })}
       <Text style={step.hint}>
         Tap a selected serial to remove it. Only selected cylinders are submitted.
         {overridden.size > 0
@@ -286,6 +310,9 @@ const step = StyleSheet.create({
   },
   progressFill: { height: '100%', borderRadius: radius.pill },
 
+  group: { gap: space.xs },
+  groupLabel: { ...type.overline },
+  groupCount: { color: colors.inkMuted, letterSpacing: 0 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm - 2 },
   chip: {
     paddingHorizontal: space.sm + 2,
