@@ -52,7 +52,7 @@ export const DRIVER_ID_PHOTO_REQUIRED_MESSAGE =
 export const driverIdFields = {
   driverIdNumber: driverIdNumberSchema,
   driverIdPhoto: capturedPhotoSchema.nullable().default(null),
-  /** ADMIN only — 403 for every other role, exactly like `photoOverride`. */
+  /** PROJECT_MANAGER only — 403 for every other role, exactly like `photoOverride`. */
   driverIdOverride: z.boolean().default(false),
 } as const;
 

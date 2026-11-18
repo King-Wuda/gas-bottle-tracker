@@ -6,7 +6,12 @@ describe('shared schemas', () => {
   it('roleSchema matches the Prisma Role enum set (parity guard)', () => {
     // Mirror of `enum Role` in apps/api/prisma/schema.prisma. If the schema.prisma
     // enum changes, update both and this test keeps them honest.
-    const prismaRoleValues = ['TECHNICIAN', 'STORES_MANAGER', 'ADMIN'].sort();
+    const prismaRoleValues = [
+      'TECHNICIAN',
+      'SUBCONTRACTOR',
+      'STORES_MANAGER',
+      'PROJECT_MANAGER',
+    ].sort();
     expect([...roleSchema.options].sort()).toEqual(prismaRoleValues);
   });
 
@@ -20,7 +25,8 @@ describe('shared schemas', () => {
       id: '1',
       email: 'a@b.co',
       name: 'A',
-      role: 'ADMIN',
+      role: 'PROJECT_MANAGER',
+      company: null,
       active: true,
       passwordHash: 'leak',
     });

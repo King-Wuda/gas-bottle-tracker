@@ -28,7 +28,7 @@ export const createReturnRequestSchema = z
     clientRequestId: z.string().min(8).max(64),
     /** Same mandatory-scan rule as transfers: nothing is returned unscanned. */
     scans: z.array(scanInputSchema).max(500).default([]),
-    /** ADMIN only, and recorded as unscanned evidence — see the transfer schema. */
+    /** PROJECT_MANAGER only, and recorded as unscanned evidence — see the transfer schema. */
     overrideSerials: overrideSerialsSchema.default([]),
     driverName: z.string().min(1).max(200),
     ...driverIdFields,

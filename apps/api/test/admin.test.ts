@@ -134,7 +134,7 @@ async function loginNew(email: string): Promise<string> {
 // ------------------------------------------------------------------ users
 
 describe('admin — people', () => {
-  it('is closed to every role but ADMIN', async () => {
+  it('is closed to every role but PROJECT_MANAGER', async () => {
     for (const token of [techToken, storesToken]) {
       const res = await app.inject({
         method: 'GET',
@@ -175,12 +175,76 @@ describe('admin — people', () => {
       payload: {
         email: DEMO.technician,
         name: 'Impostor',
-        role: 'ADMIN',
+        role: 'STORES_MANAGER',
         password: NEW_USER_PASSWORD,
       },
     });
     expect(res.statusCode).toBe(409);
     expect(res.json().error.code).toBe('EMAIL_TAKEN');
+  });
+
+  it('lists staff only — project managers are not a second list of admins here', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/admin/users',
+      headers: bearer(adminToken),
+    });
+    const emails = res.json().users.map((u: { email: string }) => u.email);
+    expect(emails).toContain(DEMO.technician);
+    expect(emails).toContain(DEMO.stores);
+    expect(emails).not.toContain(DEMO.admin);
+    expect(res.json().users.every((u: { role: string }) => u.role !== 'PROJECT_MANAGER')).toBe(
+      true,
+    );
+  });
+
+  it('cannot create a project manager, or promote anyone to one', async () => {
+    // Either would leave a manager login with no manager record behind it.
+    const create = await app.inject({
+      method: 'POST',
+      url: '/admin/users',
+      headers: bearer(adminToken),
+      payload: {
+        email: `sneaky.${Date.now()}@demo.local`,
+        name: 'Sneaky',
+        role: 'PROJECT_MANAGER',
+        password: NEW_USER_PASSWORD,
+      },
+    });
+    expect(create.statusCode).toBe(400);
+
+    const tech = await prisma.user.findUniqueOrThrow({ where: { email: DEMO.technician } });
+    const promote = await app.inject({
+      method: 'PATCH',
+      url: `/admin/users/${tech.id}`,
+      headers: bearer(adminToken),
+      payload: { role: 'PROJECT_MANAGER' },
+    });
+    expect(promote.statusCode).toBe(400);
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: tech.id } })).role).toBe(
+      'TECHNICIAN',
+    );
+  });
+
+  it('refuses to edit or delete a project manager — that is the managers screen', async () => {
+    const me = await prisma.user.findUniqueOrThrow({ where: { email: DEMO.admin } });
+    for (const [method, payload] of [
+      ['PATCH', { active: false }],
+      ['PATCH', { role: 'TECHNICIAN' }],
+      ['DELETE', undefined],
+    ] as const) {
+      const res = await app.inject({
+        method,
+        url: `/admin/users/${me.id}`,
+        headers: bearer(adminToken),
+        ...(payload ? { payload } : {}),
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.code).toBe('IS_PROJECT_MANAGER');
+    }
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: me.id } });
+    expect(after.active).toBe(true);
+    expect(after.role).toBe('PROJECT_MANAGER');
   });
 
   it('deactivating blocks sign-in, revokes live sessions, and keeps the audit trail', async () => {
@@ -231,140 +295,241 @@ describe('admin — people', () => {
     // ever recorded.
     expect(await prisma.user.findUnique({ where: { id: userId } })).not.toBeNull();
   });
-
-  it('refuses to let an admin deactivate or demote themselves', async () => {
-    const me = await prisma.user.findUniqueOrThrow({ where: { email: DEMO.admin } });
-
-    const deactivate = await app.inject({
-      method: 'PATCH',
-      url: `/admin/users/${me.id}`,
-      headers: bearer(adminToken),
-      payload: { active: false },
-    });
-    expect(deactivate.statusCode).toBe(400);
-    expect(deactivate.json().error.code).toBe('CANNOT_DEMOTE_SELF');
-
-    const demote = await app.inject({
-      method: 'PATCH',
-      url: `/admin/users/${me.id}`,
-      headers: bearer(adminToken),
-      payload: { role: 'TECHNICIAN' },
-    });
-    expect(demote.statusCode).toBe(400);
-
-    // Still an active admin — the refusal actually held.
-    const after = await prisma.user.findUniqueOrThrow({ where: { id: me.id } });
-    expect(after.active).toBe(true);
-    expect(after.role).toBe('ADMIN');
-  });
-
-  it('deactivating a spare admin is fine while another one remains', async () => {
-    const adminsBefore = await prisma.user.count({ where: { role: 'ADMIN', active: true } });
-    const email = `spare.admin.${Date.now()}@demo.local`;
-    const spare = await app.inject({
-      method: 'POST',
-      url: '/admin/users',
-      headers: bearer(adminToken),
-      payload: { email, name: 'Spare Admin', role: 'ADMIN', password: NEW_USER_PASSWORD },
-    });
-    const spareId = spare.json().user.id;
-
-    const res = await app.inject({
-      method: 'PATCH',
-      url: `/admin/users/${spareId}`,
-      headers: bearer(adminToken),
-      payload: { active: false },
-    });
-    expect(res.statusCode).toBe(200);
-    // Relative, not absolute: the seed now creates the two real admins alongside the
-    // demo one, so "exactly 1" would pin a seed detail rather than the behaviour.
-    expect(await prisma.user.count({ where: { role: 'ADMIN', active: true } })).toBe(adminsBefore);
-  });
-
-  it('refuses to remove the last active admin, even from a token that outlived its account', async () => {
-    // The reachable path to this guard is a race, not a click: two admins, one of whom
-    // is deactivated elsewhere while still holding a valid access token. Tokens are
-    // signed and self-contained, so that token keeps working until it expires — and
-    // without this guard its holder could take the organisation's last admin with them.
-    const email = `racer.admin.${Date.now()}@demo.local`;
-    const created = await app.inject({
-      method: 'POST',
-      url: '/admin/users',
-      headers: bearer(adminToken),
-      payload: { email, name: 'Racing Admin', role: 'ADMIN', password: NEW_USER_PASSWORD },
-    });
-    const racerId = created.json().user.id;
-    const racerToken = await loginNew(email);
-
-    // Their account goes away underneath them (another session, another admin).
-    await prisma.user.update({ where: { id: racerId }, data: { active: false } });
-
-    // Park every other admin so the seeded one really IS the last. The seed creates
-    // the two real admins (Jacques, Tumelo) as well as the demo one, and this test is
-    // about the guard, not about how many accounts a fresh install happens to have.
-    const seeded = await prisma.user.findUniqueOrThrow({ where: { email: DEMO.admin } });
-    const parked = await prisma.user.findMany({
-      where: { role: 'ADMIN', active: true, id: { not: seeded.id } },
-      select: { id: true },
-    });
-    await prisma.user.updateMany({
-      where: { id: { in: parked.map((u) => u.id) } },
-      data: { active: false },
-    });
-    expect(await prisma.user.count({ where: { role: 'ADMIN', active: true } })).toBe(1);
-
-    const res = await app.inject({
-      method: 'PATCH',
-      url: `/admin/users/${seeded.id}`,
-      headers: bearer(racerToken),
-      payload: { active: false },
-    });
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error.code).toBe('LAST_ADMIN');
-
-    // The organisation still has a way in.
-    const after = await prisma.user.findUniqueOrThrow({ where: { id: seeded.id } });
-    expect(after.active).toBe(true);
-    expect(after.role).toBe('ADMIN');
-
-    // Put the parked admins back: resetDb reactivates seed accounts, but the tests
-    // after this one in the same file run before that happens.
-    await prisma.user.updateMany({
-      where: { id: { in: parked.map((u) => u.id) } },
-      data: { active: true },
-    });
-  });
 });
 
 // -------------------------------------------------------- project managers
 
+/** POST a project manager through the console; returns the DTO. */
+async function addManager(name: string, email = `pm.${Date.now()}.${Math.random()}@demo.local`) {
+  const res = await app.inject({
+    method: 'POST',
+    url: '/admin/project-managers',
+    headers: bearer(adminToken),
+    payload: { name, email, password: NEW_USER_PASSWORD },
+  });
+  if (res.statusCode !== 201) throw new Error(`addManager: ${res.statusCode} ${res.body}`);
+  return { ...res.json().projectManager, email } as {
+    id: string;
+    userId: string;
+    email: string;
+    hasPassword: boolean;
+  };
+}
+
 describe('admin — project managers', () => {
   it('adds one, and it appears in the picker every flow uses', async () => {
-    const email = `pm.${Date.now()}@demo.local`;
-    const res = await app.inject({
-      method: 'POST',
-      url: '/admin/project-managers',
-      headers: bearer(adminToken),
-      payload: { name: 'Fresh PM', email },
-    });
-    expect(res.statusCode).toBe(201);
+    const pm = await addManager('Fresh PM');
 
     const picker = await app.inject({
       method: 'GET',
       url: '/project-managers',
       headers: bearer(techToken),
     });
-    expect(picker.json().projectManagers.map((m: { email: string }) => m.email)).toContain(email);
+    expect(picker.json().projectManagers.map((m: { email: string }) => m.email)).toContain(
+      pm.email,
+    );
   });
 
-  it('a deactivated manager drops out of the picker but stays resolvable', async () => {
-    const created = await app.inject({
+  it('a new project manager signs in and can run the admin console', async () => {
+    const pm = await addManager('Console PM');
+    expect(pm.hasPassword).toBe(true);
+
+    const token = await loginNew(pm.email);
+    const me = await app.inject({ method: 'GET', url: '/me', headers: bearer(token) });
+    expect(me.json().user.role).toBe('PROJECT_MANAGER');
+
+    // The console's own routes — adding and removing people — are theirs to use.
+    const people = await app.inject({ method: 'GET', url: '/admin/users', headers: bearer(token) });
+    expect(people.statusCode).toBe(200);
+    const added = await app.inject({
+      method: 'POST',
+      url: '/admin/users',
+      headers: bearer(token),
+      payload: {
+        email: `added.by.pm.${Date.now()}@demo.local`,
+        name: 'Added By PM',
+        role: 'TECHNICIAN',
+        password: NEW_USER_PASSWORD,
+      },
+    });
+    expect(added.statusCode).toBe(201);
+  });
+
+  it('refuses an email that already signs in, rather than taking over that account', async () => {
+    const res = await app.inject({
       method: 'POST',
       url: '/admin/project-managers',
       headers: bearer(adminToken),
-      payload: { name: 'Departing PM', email: `dep.${Date.now()}@demo.local` },
+      payload: { name: 'Impostor PM', email: DEMO.technician, password: NEW_USER_PASSWORD },
     });
-    const pmId = created.json().projectManager.id;
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('EMAIL_TAKEN');
+    // ...and left no half-made manager behind.
+    expect(
+      await prisma.projectManager.findUnique({ where: { email: DEMO.technician } }),
+    ).toBeNull();
+  });
+
+  it('name, email and access change on the login and the manager record together', async () => {
+    const pm = await addManager('Rename PM');
+    const newEmail = `renamed.${Date.now()}@demo.local`;
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/admin/project-managers/${pm.id}`,
+      headers: bearer(adminToken),
+      payload: { name: 'Renamed PM', email: newEmail },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: pm.userId } });
+    expect(user).toMatchObject({ name: 'Renamed PM', email: newEmail });
+    // The new address is the one they sign in with.
+    expect(await loginNew(newEmail)).toBeTruthy();
+
+    await app.inject({
+      method: 'PATCH',
+      url: `/admin/project-managers/${pm.id}`,
+      headers: bearer(adminToken),
+      payload: { active: false },
+    });
+    const off = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { email: newEmail, password: NEW_USER_PASSWORD },
+    });
+    expect(off.statusCode).toBe(401);
+  });
+
+  it('another manager can set a password, which ends the old sessions', async () => {
+    const pm = await addManager('Reset PM');
+    const refreshToken = (
+      await app.inject({
+        method: 'POST',
+        url: '/auth/login',
+        payload: { email: pm.email, password: NEW_USER_PASSWORD },
+      })
+    ).json().refreshToken;
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/admin/project-managers/${pm.id}`,
+      headers: bearer(adminToken),
+      payload: { password: 'a-brand-new-one' },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const refresh = await app.inject({
+      method: 'POST',
+      url: '/auth/refresh',
+      payload: { refreshToken },
+    });
+    expect(refresh.statusCode).toBe(401);
+    const login = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { email: pm.email, password: 'a-brand-new-one' },
+    });
+    expect(login.statusCode).toBe(200);
+  });
+
+  it('a manager carried over without a password cannot sign in until one is set', async () => {
+    // What the migration makes of a manager who was only ever an email address.
+    const pm = await makeProjectManager('Carried Over PM');
+    const list = await app.inject({
+      method: 'GET',
+      url: '/admin/project-managers',
+      headers: bearer(adminToken),
+    });
+    const dto = list.json().projectManagers.find((m: { id: string }) => m.id === pm.id);
+    expect(dto.hasPassword).toBe(false);
+
+    const blocked = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { email: pm.email, password: '!no-password' },
+    });
+    expect(blocked.statusCode).toBe(401);
+
+    await app.inject({
+      method: 'PATCH',
+      url: `/admin/project-managers/${pm.id}`,
+      headers: bearer(adminToken),
+      payload: { password: NEW_USER_PASSWORD },
+    });
+    expect(await loginNew(pm.email)).toBeTruthy();
+  });
+
+  it('refuses to let a manager deactivate or delete themselves', async () => {
+    const me = await prisma.projectManager.findUniqueOrThrow({
+      where: { email: DEMO.admin },
+    });
+
+    const deactivate = await app.inject({
+      method: 'PATCH',
+      url: `/admin/project-managers/${me.id}`,
+      headers: bearer(adminToken),
+      payload: { active: false },
+    });
+    expect(deactivate.statusCode).toBe(400);
+    expect(deactivate.json().error.code).toBe('CANNOT_DEMOTE_SELF');
+
+    const del = await app.inject({
+      method: 'DELETE',
+      url: `/admin/project-managers/${me.id}`,
+      headers: bearer(adminToken),
+    });
+    expect(del.statusCode).toBe(400);
+    expect(del.json().error.code).toBe('CANNOT_DELETE_SELF');
+
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: me.userId } });
+    expect(after.active).toBe(true);
+  });
+
+  it('refuses to remove the last active manager, even from a token that outlived its account', async () => {
+    // The reachable path to this guard is a race, not a click: two managers, one of
+    // whom is deactivated elsewhere while still holding a valid access token. Tokens
+    // are signed and self-contained, so that token keeps working until it expires —
+    // and without this guard its holder could take the organisation's last way in.
+    const racer = await addManager('Racing PM');
+    const racerToken = await loginNew(racer.email);
+    await prisma.user.update({ where: { id: racer.userId }, data: { active: false } });
+
+    // Park every other manager so the demo one really IS the last.
+    const seeded = await prisma.projectManager.findUniqueOrThrow({ where: { email: DEMO.admin } });
+    const parked = await prisma.user.findMany({
+      where: { role: 'PROJECT_MANAGER', active: true, id: { not: seeded.userId } },
+      select: { id: true },
+    });
+    await prisma.user.updateMany({
+      where: { id: { in: parked.map((u) => u.id) } },
+      data: { active: false },
+    });
+
+    for (const method of ['PATCH', 'DELETE'] as const) {
+      const res = await app.inject({
+        method,
+        url: `/admin/project-managers/${seeded.id}`,
+        headers: bearer(racerToken),
+        ...(method === 'PATCH' ? { payload: { active: false } } : {}),
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.code).toBe('LAST_PROJECT_MANAGER');
+    }
+
+    // The organisation still has a way in.
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: seeded.userId } });
+    expect(after.active).toBe(true);
+
+    // Put the parked managers back: resetDb reactivates seed accounts, but the tests
+    // after this one in the same file run before that happens.
+    await prisma.user.updateMany({
+      where: { id: { in: parked.map((u) => u.id) } },
+      data: { active: true },
+    });
+  });
+
+  it('a deactivated manager drops out of the picker but stays resolvable', async () => {
+    const { id: pmId } = await addManager('Departing PM');
 
     await app.inject({
       method: 'PATCH',
@@ -398,7 +563,7 @@ describe('admin — project managers', () => {
       method: 'POST',
       url: '/admin/project-managers',
       headers: bearer(adminToken),
-      payload: { name: 'Typo PM', email: original },
+      payload: { name: 'Typo PM', email: original, password: NEW_USER_PASSWORD },
     });
     const pmId = created.json().projectManager.id;
 

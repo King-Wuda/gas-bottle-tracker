@@ -91,7 +91,7 @@ export async function batchRoutes(app: FastifyInstance): Promise<void> {
   // cylinders, queue the PM QR email. ONE batch, however many gases it carries.
   app.post(
     '/batches',
-    { preHandler: app.requireRole('TECHNICIAN', 'SUBCONTRACTOR', 'ADMIN') },
+    { preHandler: app.requireRole('TECHNICIAN', 'SUBCONTRACTOR', 'PROJECT_MANAGER') },
     async (request, reply) => {
       const input = createBatchRequestSchema.parse(request.body);
 

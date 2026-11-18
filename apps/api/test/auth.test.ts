@@ -12,7 +12,9 @@ beforeAll(async () => {
   await resetDb();
   app = await buildApp();
   // throwaway route to exercise the role guard
-  app.get('/test/admin-only', { preHandler: app.requireRole('ADMIN') }, async () => ({ ok: true }));
+  app.get('/test/admin-only', { preHandler: app.requireRole('PROJECT_MANAGER') }, async () => ({
+    ok: true,
+  }));
   app.get('/test/stores-only', { preHandler: app.requireRole('STORES_MANAGER') }, async () => ({
     ok: true,
   }));
@@ -35,7 +37,7 @@ describe('POST /auth/login', () => {
     expect(json.accessToken).toEqual(expect.any(String));
     expect(json.refreshToken).toEqual(expect.any(String));
     expect(json.expiresIn).toBe(900);
-    expect(json.user).toMatchObject({ email: ADMIN.email, role: 'ADMIN', active: true });
+    expect(json.user).toMatchObject({ email: ADMIN.email, role: 'PROJECT_MANAGER', active: true });
     expect(json.user).not.toHaveProperty('passwordHash');
   });
 

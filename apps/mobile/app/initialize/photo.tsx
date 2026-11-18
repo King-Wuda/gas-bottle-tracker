@@ -101,7 +101,7 @@ export default function InitializePhoto() {
           setPhoto(taken);
           void submit({ photo: taken, photoOverride: false });
         }}
-        isAdmin={user?.role === 'ADMIN'}
+        isAdmin={user?.role === 'PROJECT_MANAGER'}
         onOverride={() => {
           overridePhoto();
           void submit({ photo: null, photoOverride: true });

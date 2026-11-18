@@ -36,7 +36,7 @@ export default function TransferPhoto() {
           setPhoto(taken);
           next();
         }}
-        isAdmin={user?.role === 'ADMIN'}
+        isAdmin={user?.role === 'PROJECT_MANAGER'}
         onOverride={() => {
           overridePhoto();
           next();

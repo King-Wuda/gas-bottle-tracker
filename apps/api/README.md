@@ -46,11 +46,11 @@ Print the QR sheet from the email to have labels to scan.
 
 Demo logins — password `password`:
 
-| Email                   | Role           | Can do            |
-| ----------------------- | -------------- | ----------------- |
-| `technician@demo.local` | TECHNICIAN     | New, Transfer     |
-| `stores@demo.local`     | STORES_MANAGER | Transfer, Returns |
-| `admin@demo.local`      | ADMIN          | everything        |
+| Email                   | Role            | Can do            |
+| ----------------------- | --------------- | ----------------- |
+| `technician@demo.local` | TECHNICIAN      | New, Transfer     |
+| `stores@demo.local`     | STORES_MANAGER  | Transfer, Returns |
+| `admin@demo.local`      | PROJECT_MANAGER | everything        |
 
 ## Checks
 

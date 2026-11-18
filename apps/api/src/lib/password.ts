@@ -1,6 +1,16 @@
 import argon2 from 'argon2';
 import { randomBytes } from 'node:crypto';
 
+/**
+ * The `passwordHash` of a login that exists but has no password yet — a project manager
+ * carried over by the migration that made managers into logins. It is not an argon2
+ * string, so `verifyPassword` treats it as a non-match and nobody can sign in with it
+ * until another project manager sets a real one.
+ */
+export const NO_PASSWORD = '!no-password';
+
+export const hasUsablePassword = (hash: string): boolean => hash !== NO_PASSWORD;
+
 export function hashPassword(plain: string): Promise<string> {
   return argon2.hash(plain, { type: argon2.argon2id });
 }

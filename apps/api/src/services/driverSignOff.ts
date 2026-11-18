@@ -36,12 +36,12 @@ export async function prepareDriverSignOff(args: {
   // overrides: an admin's word in place of evidence. Refused outright for every other
   // role rather than quietly ignored — an override that was silently dropped would
   // let a tampered client believe it recorded a document nobody saw.
-  if (args.driverIdOverride && !args.driverIdPhoto && args.role !== 'ADMIN') {
+  if (args.driverIdOverride && !args.driverIdPhoto && args.role !== 'PROJECT_MANAGER') {
     return {
       ok: false,
       status: 403,
       code: 'DRIVER_ID_OVERRIDE_FORBIDDEN',
-      message: `Only an admin can record a batch ${args.verb} without photographing the driver’s ID.`,
+      message: `Only a project manager can record a batch ${args.verb} without photographing the driver’s ID.`,
     };
   }
 

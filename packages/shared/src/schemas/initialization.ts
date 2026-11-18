@@ -39,7 +39,7 @@ export const createInitializationRequestSchema = z
     clientRequestId: z.string().min(8).max(64),
     /** Camera-verified scans. May be empty only when `overrideSerials` is not. */
     scans: z.array(scanInputSchema).max(500).default([]),
-    /** ADMIN only — 403 for every other role, exactly as on transfers. */
+    /** PROJECT_MANAGER only — 403 for every other role, exactly as on transfers. */
     overrideSerials: overrideSerialsSchema.default([]),
     ...photoSubmissionFields,
   })

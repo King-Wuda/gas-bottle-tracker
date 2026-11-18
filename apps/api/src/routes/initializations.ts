@@ -87,7 +87,14 @@ export async function initializationRoutes(app: FastifyInstance): Promise<void> 
 
   app.post(
     '/initializations',
-    { preHandler: app.requireRole('TECHNICIAN', 'SUBCONTRACTOR', 'STORES_MANAGER', 'ADMIN') },
+    {
+      preHandler: app.requireRole(
+        'TECHNICIAN',
+        'SUBCONTRACTOR',
+        'STORES_MANAGER',
+        'PROJECT_MANAGER',
+      ),
+    },
     async (request, reply) => {
       const input = createInitializationRequestSchema.parse(request.body);
 
@@ -96,11 +103,11 @@ export async function initializationRoutes(app: FastifyInstance): Promise<void> 
 
       // The scan requirement is CRITICAL ENFORCEMENT, so its one exception is gated
       // before anything else is evaluated — identical to transfers and returns.
-      if (input.overrideSerials.length > 0 && request.user.role !== 'ADMIN') {
+      if (input.overrideSerials.length > 0 && request.user.role !== 'PROJECT_MANAGER') {
         return reply.code(403).send({
           error: {
             code: 'OVERRIDE_FORBIDDEN',
-            message: 'Only an admin can initialize a cylinder without scanning it.',
+            message: 'Only a project manager can initialize a cylinder without scanning it.',
           },
         });
       }

@@ -17,7 +17,7 @@ export default function AdminLayout() {
 
   if (status === 'loading') return <LoadingState label="Checking access..." />;
   if (!user) return <Redirect href="/login" />;
-  if (user.role !== 'ADMIN') return <Redirect href="/" />;
+  if (user.role !== 'PROJECT_MANAGER') return <Redirect href="/" />;
 
   return (
     <Stack screenOptions={stackScreenOptions}>
