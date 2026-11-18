@@ -120,6 +120,9 @@ const scan = (serialCode: string) => ({
 /** Long enough for `passwordSchema`, which the seed password is not. */
 const NEW_USER_PASSWORD = 'correct-horse-battery';
 
+/** A second test password, for the reset tests to tell apart from the first. */
+const RESET_PASSWORD = 'a-brand-new-one';
+
 /** `loginAs` signs in with the SEED password; accounts created here have their own. */
 async function loginNew(email: string): Promise<string> {
   const res = await app.inject({
@@ -412,7 +415,7 @@ describe('admin — project managers', () => {
       method: 'PATCH',
       url: `/admin/project-managers/${pm.id}`,
       headers: bearer(adminToken),
-      payload: { password: 'a-brand-new-one' },
+      payload: { password: RESET_PASSWORD },
     });
     expect(res.statusCode).toBe(200);
 
@@ -425,7 +428,7 @@ describe('admin — project managers', () => {
     const login = await app.inject({
       method: 'POST',
       url: '/auth/login',
-      payload: { email: pm.email, password: 'a-brand-new-one' },
+      payload: { email: pm.email, password: RESET_PASSWORD },
     });
     expect(login.statusCode).toBe(200);
   });

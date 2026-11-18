@@ -179,6 +179,17 @@ describe('requireRole guard', () => {
   });
 });
 
+/** Made-up passwords for the change-password tests — fixtures, not credentials. */
+const PW = {
+  OWN: 'my-own-password',
+  CHANGED: 'changed-on-my-phone',
+  WRONG: 'not-it',
+  WHATEVER: 'whatever-new',
+  MANAGERS: 'manager-picked-this',
+  ANY_NEW: 'yyyy',
+  TOO_SHORT: 'ab',
+} as const;
+
 describe('POST /me/password — changing your own password', () => {
   /** A login of its own: changing a shared demo account's password would break every
    *  suite after this one, since resetDb does not touch passwords. */
@@ -208,13 +219,13 @@ describe('POST /me/password — changing your own password', () => {
     const acct = await freshAccount();
     const res = await change(acct.accessToken, {
       currentPassword: DEMO_PASSWORD,
-      newPassword: 'my-own-password',
+      newPassword: PW.OWN,
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ accessToken: expect.any(String), expiresIn: 900 });
 
     expect((await login({ email: acct.email, password: DEMO_PASSWORD })).statusCode).toBe(401);
-    expect((await login({ email: acct.email, password: 'my-own-password' })).statusCode).toBe(200);
+    expect((await login({ email: acct.email, password: PW.OWN })).statusCode).toBe(200);
   });
 
   it('ends the other sessions but hands this device a working new one', async () => {
@@ -223,7 +234,7 @@ describe('POST /me/password — changing your own password', () => {
 
     const res = await change(acct.accessToken, {
       currentPassword: DEMO_PASSWORD,
-      newPassword: 'changed-on-my-phone',
+      newPassword: PW.CHANGED,
     });
 
     // The phone that might be lost can no longer renew its session...
@@ -247,8 +258,8 @@ describe('POST /me/password — changing your own password', () => {
   it('refuses a wrong current password with a 400, and changes nothing', async () => {
     const acct = await freshAccount();
     const res = await change(acct.accessToken, {
-      currentPassword: 'not-it',
-      newPassword: 'whatever-new',
+      currentPassword: PW.WRONG,
+      newPassword: PW.WHATEVER,
     });
     // 400, not 401: the session is fine, and a 401 would make the app refresh and retry.
     expect(res.statusCode).toBe(400);
@@ -260,7 +271,7 @@ describe('POST /me/password — changing your own password', () => {
     const acct = await freshAccount('PROJECT_MANAGER');
     const res = await change(acct.accessToken, {
       currentPassword: DEMO_PASSWORD,
-      newPassword: 'manager-picked-this',
+      newPassword: PW.MANAGERS,
     });
     expect(res.statusCode).toBe(200);
   });
@@ -269,14 +280,14 @@ describe('POST /me/password — changing your own password', () => {
     const anon = await app.inject({
       method: 'POST',
       url: '/me/password',
-      payload: { currentPassword: 'x', newPassword: 'yyyy' },
+      payload: { currentPassword: PW.WRONG, newPassword: PW.ANY_NEW },
     });
     expect(anon.statusCode).toBe(401);
 
     const acct = await freshAccount();
     const short = await change(acct.accessToken, {
       currentPassword: DEMO_PASSWORD,
-      newPassword: 'ab',
+      newPassword: PW.TOO_SHORT,
     });
     expect(short.statusCode).toBe(400);
   });
