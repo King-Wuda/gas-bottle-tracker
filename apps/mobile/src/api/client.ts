@@ -1,4 +1,6 @@
 import type {
+  ChangePasswordRequest,
+  ChangePasswordResponse,
   AdminClientResponse,
   AdminClientsResponse,
   AdminGasTypeResponse,
@@ -226,6 +228,26 @@ export function apiLogin(email: string, password: string): Promise<LoginResponse
 
 export function apiMe(): Promise<MeResponse> {
   return apiRequest<MeResponse>('/me');
+}
+
+/**
+ * Change the signed-in user's own password.
+ *
+ * The server ends every session the account holds and hands this device a new pair,
+ * so the new tokens are installed here — otherwise the very next request would 401 on
+ * a revoked refresh token and sign the person out of the phone they just secured.
+ *
+ * Whether the session is remembered is read from storage rather than assumed: someone
+ * who signed in with "Keep me signed in" off must not find themselves persisted on a
+ * shared tablet because they changed their password.
+ */
+export async function apiChangePassword(body: ChangePasswordRequest): Promise<void> {
+  const res = await apiRequest<ChangePasswordResponse>('/me/password', { method: 'POST', body });
+  const remembered = (await loadTokens()) !== null;
+  await setSession(
+    { accessToken: res.accessToken, refreshToken: res.refreshToken },
+    { remember: remembered },
+  );
 }
 
 export async function apiLogout(): Promise<void> {

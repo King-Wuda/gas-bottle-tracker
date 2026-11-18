@@ -1,6 +1,22 @@
 import { z } from 'zod';
 import { roleSchema } from './common';
 
+/**
+ * What every profile starts with: the seed, the console's add forms, and the migration
+ * that reset every existing account to it. Each person then changes their own from the
+ * dashboard (`POST /me/password`).
+ */
+export const DEFAULT_PASSWORD = 'gea';
+
+export const PASSWORD_MIN = 3;
+
+/** Long rather than ornate: length is what actually resists guessing, and a rule the
+ *  operator can satisfy is a rule they will not write on a sticky note. */
+export const passwordSchema = z
+  .string()
+  .min(PASSWORD_MIN, `Password must be at least ${PASSWORD_MIN} characters`)
+  .max(200);
+
 export const loginRequestSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
@@ -42,3 +58,22 @@ export type LogoutRequest = z.infer<typeof logoutRequestSchema>;
 
 export const meResponseSchema = z.object({ user: userDtoSchema });
 export type MeResponse = z.infer<typeof meResponseSchema>;
+
+/**
+ * Changing your own password. The current one is required even though the caller is
+ * already signed in: a phone left unlocked on a site office desk must not be enough to
+ * take over the account for good.
+ */
+export const changePasswordRequestSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: passwordSchema,
+});
+export type ChangePasswordRequest = z.infer<typeof changePasswordRequestSchema>;
+
+/**
+ * A fresh session. Changing a password ends every session the account holds — that is
+ * the point of changing it on a phone you suspect was lost — so the device that made the
+ * change is handed a new pair rather than being signed out with the rest.
+ */
+export const changePasswordResponseSchema = authTokensSchema;
+export type ChangePasswordResponse = z.infer<typeof changePasswordResponseSchema>;

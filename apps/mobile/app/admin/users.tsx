@@ -144,7 +144,7 @@ export default function AdminUsers() {
 
   const update = async (
     target: AdminUserDto,
-    patch: { role?: StaffRole; active?: boolean },
+    patch: { role?: StaffRole; active?: boolean; password?: string },
     confirmMessage?: string,
   ) => {
     if (confirmMessage && !(await confirmAction(confirmMessage))) return;
@@ -289,6 +289,26 @@ export default function AdminUsers() {
                 }}
               >
                 {busyId === u.id ? 'Working…' : u.active ? 'Deactivate' : 'Reactivate'}
+              </Text>
+            </Pressable>
+
+            {/* For someone who changed their password and forgot it. Back to the shared
+                default rather than one the admin picks: it is the password everyone
+                already knows to try, and they change it again from the dashboard. */}
+            <Pressable
+              disabled={busyId === u.id}
+              onPress={() =>
+                void update(
+                  u,
+                  { password: DEFAULT_PASSWORD },
+                  `Reset ${u.name}'s password to "${DEFAULT_PASSWORD}"? They will be signed out ` +
+                    `everywhere, and should change it after signing in.`,
+                )
+              }
+              style={{ paddingVertical: 10 }}
+            >
+              <Text style={{ color: colors.brand, fontWeight: '600' }}>
+                Reset password to {DEFAULT_PASSWORD}
               </Text>
             </Pressable>
 

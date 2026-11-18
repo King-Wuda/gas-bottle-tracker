@@ -108,6 +108,11 @@ export default function Dashboard() {
               {user.company ? ` · ${user.company}` : ''}
             </Text>
           </View>
+          {/* Every account starts on the shared default password, so changing it is
+              something everyone needs to find — next to their own name, not in a menu. */}
+          <Pressable role="button" onPress={() => router.push('/password')} hitSlop={8}>
+            <Text style={styles.accountLink}>Change password</Text>
+          </Pressable>
         </View>
       ) : null}
 
@@ -196,6 +201,7 @@ const styles = StyleSheet.create({
 
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
   signOut: { color: colors.brand, fontSize: 15, fontWeight: '600' },
+  accountLink: { color: colors.brand, fontSize: 14, fontWeight: '600' },
 
   greeting: { flexDirection: 'row', alignItems: 'center', gap: space.md, flexWrap: 'wrap' },
   greetingName: type.display,

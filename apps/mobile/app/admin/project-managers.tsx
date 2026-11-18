@@ -24,8 +24,8 @@ import { confirmAction, confirmByTyping } from '../../src/ui/confirm';
 import { StatusBadge } from '../../src/ui/controls';
 import { colors } from '../../src/ui/theme';
 
-/** Which inline editor is open on which card. */
-type Editing = { id: string; field: 'email' | 'password'; value: string } | null;
+/** Which manager's email is being corrected, and to what. */
+type Editing = { id: string; value: string } | null;
 
 /**
  * Project managers — the admins. Each one signs in, runs this console, and is who QR
@@ -229,43 +229,21 @@ export default function AdminProjectManagers() {
             {edit ? (
               <View style={{ gap: 8, marginTop: 4 }}>
                 <Field
-                  label={
-                    edit.field === 'email'
-                      ? 'Email'
-                      : `New password (at least ${PASSWORD_MIN} characters)`
-                  }
+                  label="Email"
                   value={edit.value}
                   onChangeText={(value) => setEditing({ ...edit, value })}
                   autoCapitalize="none"
                   autoCorrect={false}
-                  {...(edit.field === 'email'
-                    ? { keyboardType: 'email-address' as const }
-                    : { secureTextEntry: true })}
+                  keyboardType="email-address"
                 />
                 <Text style={styles.hint}>
-                  {edit.field === 'email'
-                    ? 'This is the address they sign in with and where their FUTURE paperwork goes. ' +
-                      'Batches already sent keep the address they actually went to.'
-                    : isMe
-                      ? 'You will be signed out on your other devices.'
-                      : 'They will be signed out everywhere and must use the new password.'}
+                  This is the address they sign in with and where their FUTURE paperwork goes.
+                  Batches already sent keep the address they actually went to.
                 </Text>
                 <PrimaryButton
-                  title={edit.field === 'email' ? 'Save email' : 'Save password'}
-                  onPress={() =>
-                    void update(
-                      pm,
-                      edit.field === 'email'
-                        ? { email: edit.value.trim() }
-                        : { password: edit.value },
-                    )
-                  }
-                  disabled={
-                    busy ||
-                    (edit.field === 'email'
-                      ? !validEmail(edit.value)
-                      : edit.value.length < PASSWORD_MIN)
-                  }
+                  title="Save email"
+                  onPress={() => void update(pm, { email: edit.value.trim() })}
+                  disabled={busy || !validEmail(edit.value)}
                   busy={busy}
                 />
                 <SecondaryButton title="Cancel" onPress={() => setEditing(null)} />
@@ -276,14 +254,10 @@ export default function AdminProjectManagers() {
                 <Text style={styles.hint}>
                   {pm.projectCount} project(s) · {pm.openBatchCount} batch(es) still open
                 </Text>
-                {!pm.hasPassword ? (
-                  <Text style={[styles.hint, { color: colors.danger, fontWeight: '600' }]}>
-                    Cannot sign in yet — set a password to give them the console.
-                  </Text>
-                ) : null}
                 {isMe ? (
                   <Text style={styles.hint}>
-                    Another project manager can deactivate or delete your account; you cannot.
+                    Change your own password from the dashboard. Another project manager can
+                    deactivate or delete your account; you cannot.
                   </Text>
                 ) : null}
 
@@ -296,25 +270,28 @@ export default function AdminProjectManagers() {
                     marginTop: 6,
                   }}
                 >
-                  <Pressable
-                    onPress={() => setEditing({ id: pm.id, field: 'email', value: pm.email })}
-                  >
+                  <Pressable onPress={() => setEditing({ id: pm.id, value: pm.email })}>
                     <Text style={{ color: colors.brand, fontWeight: '600' }}>Correct email</Text>
                   </Pressable>
 
-                  <Pressable
-                    onPress={() =>
-                      setEditing({
-                        id: pm.id,
-                        field: 'password',
-                        value: pm.hasPassword ? '' : DEFAULT_PASSWORD,
-                      })
-                    }
-                  >
-                    <Text style={{ color: colors.brand, fontWeight: '600' }}>
-                      {pm.hasPassword ? 'Reset password' : 'Set password'}
-                    </Text>
-                  </Pressable>
+                  {/* Your own goes through Change password, which asks for the current one. */}
+                  {!isMe ? (
+                    <Pressable
+                      disabled={busy}
+                      onPress={() =>
+                        void update(
+                          pm,
+                          { password: DEFAULT_PASSWORD },
+                          `Reset ${pm.name}'s password to "${DEFAULT_PASSWORD}"? They will be ` +
+                            `signed out everywhere, and should change it after signing in.`,
+                        )
+                      }
+                    >
+                      <Text style={{ color: colors.brand, fontWeight: '600' }}>
+                        Reset password to {DEFAULT_PASSWORD}
+                      </Text>
+                    </Pressable>
+                  ) : null}
 
                   {!isMe ? (
                     <Pressable

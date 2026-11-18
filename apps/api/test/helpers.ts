@@ -4,7 +4,6 @@ import type { FastifyInstance } from 'fastify';
 import type { Role } from '@gct/shared';
 import { prisma } from '../src/db.js';
 import { qrPayloadFor } from '../src/services/qr.js';
-import { NO_PASSWORD } from '../src/lib/password.js';
 
 /**
  * Integration tests share one Postgres DB (single fork). Each suite starts from a
@@ -197,7 +196,9 @@ export async function makeProjectManager(
     Math.random() * 1e6,
   )}@demo.local`;
   const user = await prisma.user.create({
-    data: { email, name, role: 'PROJECT_MANAGER', passwordHash: NO_PASSWORD },
+    // Not an argon2 hash, so nothing can sign in as this fixture — and it skips the
+    // ~50ms a real hash costs, which adds up across every suite that makes a manager.
+    data: { email, name, role: 'PROJECT_MANAGER', passwordHash: '!fixture' },
   });
   const pm = await prisma.projectManager.create({ data: { name, email, userId: user.id } });
   return { id: pm.id, email: pm.email, userId: user.id };

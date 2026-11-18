@@ -312,7 +312,6 @@ async function addManager(name: string, email = `pm.${Date.now()}.${Math.random(
     id: string;
     userId: string;
     email: string;
-    hasPassword: boolean;
   };
 }
 
@@ -332,7 +331,6 @@ describe('admin — project managers', () => {
 
   it('a new project manager signs in and can run the admin console', async () => {
     const pm = await addManager('Console PM');
-    expect(pm.hasPassword).toBe(true);
 
     const token = await loginNew(pm.email);
     const me = await app.inject({ method: 'GET', url: '/me', headers: bearer(token) });
@@ -430,33 +428,6 @@ describe('admin — project managers', () => {
       payload: { email: pm.email, password: 'a-brand-new-one' },
     });
     expect(login.statusCode).toBe(200);
-  });
-
-  it('a manager carried over without a password cannot sign in until one is set', async () => {
-    // What the migration makes of a manager who was only ever an email address.
-    const pm = await makeProjectManager('Carried Over PM');
-    const list = await app.inject({
-      method: 'GET',
-      url: '/admin/project-managers',
-      headers: bearer(adminToken),
-    });
-    const dto = list.json().projectManagers.find((m: { id: string }) => m.id === pm.id);
-    expect(dto.hasPassword).toBe(false);
-
-    const blocked = await app.inject({
-      method: 'POST',
-      url: '/auth/login',
-      payload: { email: pm.email, password: '!no-password' },
-    });
-    expect(blocked.statusCode).toBe(401);
-
-    await app.inject({
-      method: 'PATCH',
-      url: `/admin/project-managers/${pm.id}`,
-      headers: bearer(adminToken),
-      payload: { password: NEW_USER_PASSWORD },
-    });
-    expect(await loginNew(pm.email)).toBeTruthy();
   });
 
   it('refuses to let a manager deactivate or delete themselves', async () => {

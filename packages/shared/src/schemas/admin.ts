@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { staffRoleSchema } from './common';
+import { passwordSchema } from './auth';
 import { batchLineInputSchema } from './batch';
 
 /**
@@ -29,18 +30,6 @@ import { batchLineInputSchema } from './batch';
  */
 
 // ----------------------------- users -----------------------------
-
-/** What every new profile starts with; the form pre-fills it and the seed uses it. */
-export const DEFAULT_PASSWORD = 'gea';
-
-export const PASSWORD_MIN = 3;
-
-/** Long rather than ornate: length is what actually resists guessing, and a rule the
- *  operator can satisfy is a rule they will not write on a sticky note. */
-export const passwordSchema = z
-  .string()
-  .min(PASSWORD_MIN, `Password must be at least ${PASSWORD_MIN} characters`)
-  .max(200);
 
 export const adminUserDtoSchema = z.object({
   id: z.string(),
@@ -98,9 +87,6 @@ export const adminProjectManagerDtoSchema = z.object({
   /** Both where their paperwork goes and what they sign in with. */
   email: z.string(),
   active: z.boolean(),
-  /** False for a manager carried over from before managers could sign in, until
-   *  another manager sets them a password. */
-  hasPassword: z.boolean(),
   createdAt: z.string(),
   projectCount: z.number().int().nonnegative(),
   /** Batches still addressed to them. Deactivating does not orphan these — it means

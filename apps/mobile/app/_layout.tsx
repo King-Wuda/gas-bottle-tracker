@@ -37,6 +37,7 @@ function AuthGate() {
       <Stack.Screen name="transfer" options={{ headerShown: false }} />
       <Stack.Screen name="returns" options={{ headerShown: false }} />
       <Stack.Screen name="queue" options={{ title: 'Sync queue' }} />
+      <Stack.Screen name="password" options={{ title: 'Change password' }} />
       <Stack.Screen name="history" options={{ headerShown: false }} />
     </Stack>
   );

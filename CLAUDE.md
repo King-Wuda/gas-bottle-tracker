@@ -121,9 +121,25 @@ project manager is one person held in two rows:
   a manager record out of step.
 - **The lockout guards live on the manager routes**: you cannot deactivate or delete
   yourself, and the last active project manager cannot be removed.
-- **A manager can exist without a usable password** (`passwordHash = '!no-password'`,
-  see `lib/password.ts`) — what the migration made of managers who were only ever an
-  email address. They show "Cannot sign in yet" until another manager sets one.
+
+## Passwords: everyone starts on `gea`, and changes their own
+
+`DEFAULT_PASSWORD` (`gea`, in `packages/shared/src/schemas/auth.ts`) is what the seed,
+both console add-forms, and the console's "Reset password to gea" actions use, and
+migration `20261118130000_reset_all_passwords_to_gea` set every live account to it once.
+From there each person changes their own from the dashboard's "Change password"
+(`POST /me/password`), which:
+
+- **asks for the current password** even though the caller is signed in, and answers a
+  wrong one with **400 `WRONG_PASSWORD`, not 401** — a 401 makes the app's client
+  refresh its token and retry the same wrong password;
+- **ends every session the account holds and returns a fresh pair** for the device that
+  made the change. `apiChangePassword` installs that pair itself; without it the next
+  request would hit a revoked refresh token and sign the person out.
+
+Resetting goes back to `gea` rather than to a password the admin chooses, on purpose:
+it is the one everybody already knows to try. Don't make that migration re-run — it is
+a one-off, and a password someone set afterwards must survive later deploys.
 
 ## Deleting is the one place evidence may be destroyed — treat it as such
 
@@ -197,8 +213,8 @@ when the export looks right but the app cannot reach the API.
    its place — so the browser gets HTML where it asked for JavaScript and the app is a blank
    white page with `Unexpected token '<'` in the console. Nothing about the export looks
    wrong; only the restart fixes it.
-3. `npm run typecheck && npm run lint && npm test` — 425 tests baseline
-   (67 shared, 299 API, 59 mobile). **Stop the dev API server first**: it shares the database
+3. `npm run typecheck && npm run lint && npm test` — 429 tests baseline
+   (67 shared, 303 API, 59 mobile). **Stop the dev API server first**: it shares the database
    with the test run, and its email worker polling across `resetDb()` fails tests at random.
 
    **`npm test` also empties the database you were demonstrating.** The suite shares it,

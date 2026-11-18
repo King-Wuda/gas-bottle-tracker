@@ -8,10 +8,10 @@
 -- Three populations are reconciled, all matched by e-mail (stored lower-case by the
 -- API and the seed, compared lower-case here anyway):
 --   1. an admin who already has a manager row  -> linked;
---   2. a manager with no login                 -> given one, WITHOUT a usable password
---      ('!no-password' is not an argon2 hash, so verify() rejects it). Another project
---      manager sets one from the console. Minting a known password into a migration
---      would hand console access to someone nobody chose to give it to;
+--   2. a manager with no login                 -> given one, with the default password
+--      `gea` (the hash below is argon2id of it, as every new profile starts with) —
+--      the next migration resets every account to it anyway;
+--      a deleted manager's login gets no password at all;
 --   3. an admin with no manager row            -> given one.
 -- A manager whose address matches a technician's or stores manager's login is the same
 -- person, and every project manager is now an admin, so that login is promoted.
@@ -37,7 +37,13 @@ WHERE pm."userId" = u."id" AND u."role" <> 'PROJECT_MANAGER';
 --    tombstone stays a tombstone on both sides.
 INSERT INTO "User" ("id", "email", "passwordHash", "name", "role", "active", "deletedAt",
                     "createdAt", "updatedAt")
-SELECT 'pmu' || substr(md5(pm."id"), 1, 22), lower(pm."email"), '!no-password', pm."name",
+SELECT 'pmu' || substr(md5(pm."id"), 1, 22), lower(pm."email"),
+       -- A deleted manager's login must never accept a password, known or not; '!deleted'
+       -- is not an argon2 hash, so verify() rejects it outright.
+       CASE WHEN pm."deletedAt" IS NULL
+            THEN '$argon2id$v=19$m=65536,p=4,t=3$maTWzaYY2Kdg28HwRIxwJA$FC45tOLKg9mLTWPQCEgPpasY/3Syx89iId+kls1lLR0'
+            ELSE '!deleted' END,
+       pm."name",
        'PROJECT_MANAGER', pm."active", pm."deletedAt", pm."createdAt", CURRENT_TIMESTAMP
 FROM "ProjectManager" pm
 WHERE pm."userId" IS NULL;

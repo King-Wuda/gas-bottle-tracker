@@ -43,7 +43,7 @@ import {
 } from '@gct/shared';
 import { prisma, Prisma } from '../db.js';
 import { env } from '../env.js';
-import { hashPassword, hasUsablePassword } from '../lib/password.js';
+import { hashPassword } from '../lib/password.js';
 import { allocateSerials } from '../services/serial.js';
 import { emailDeliveryFor, loadBatchDto } from '../services/batchView.js';
 import {
@@ -261,8 +261,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     // role changes: moving someone out of the role must not carry the employer along,
     // and moving someone into it must say who employs them.
     const nextRole = input.role ?? target.role;
-    const nextCompany =
-      nextRole === 'SUBCONTRACTOR' ? (input.company ?? target.company) : null;
+    const nextCompany = nextRole === 'SUBCONTRACTOR' ? (input.company ?? target.company) : null;
     if (nextRole === 'SUBCONTRACTOR' && !nextCompany) {
       return reply.code(400).send({
         error: { code: 'COMPANY_REQUIRED', message: 'A subcontractor needs a company.' },
@@ -309,7 +308,6 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     email: string;
     active: boolean;
     createdAt: Date;
-    user: { passwordHash: string };
     _count: { projects: number };
     batches?: { id: string }[];
   }): AdminProjectManagerDto => ({
@@ -318,14 +316,12 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     name: p.name,
     email: p.email,
     active: p.active,
-    hasPassword: hasUsablePassword(p.user.passwordHash),
     createdAt: p.createdAt.toISOString(),
     projectCount: p._count.projects,
     openBatchCount: p.batches?.length ?? 0,
   });
 
   const pmInclude = {
-    user: { select: { passwordHash: true } },
     _count: { select: { projects: true } },
     // Only the batches still live: a manager with 400 closed batches behind them is
     // not the question being asked before deactivating them.
