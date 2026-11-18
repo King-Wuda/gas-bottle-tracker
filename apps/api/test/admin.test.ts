@@ -16,6 +16,7 @@ import {
   uniqueProjectNumber,
   testDriverId,
   testSignOff,
+  batchGasCages,
 } from './helpers.js';
 
 /**
@@ -840,6 +841,7 @@ describe('scan override', () => {
         scans: [],
         overrideSerials: [serials[0]!],
         driverName: 'Sipho',
+        driverPhone: '082 555 0199',
         ...testDriverId(),
         signaturePng: 'x'.repeat(100),
       },
@@ -887,6 +889,7 @@ describe('scan override', () => {
         batchId,
         clientRequestId: randomUUID(),
         destination: { type: 'STORES' },
+        cages: await batchGasCages(batchId),
         scans: [],
         overrideSerials: [],
       },

@@ -6,6 +6,7 @@ import {
   batchPhotoDtoSchema,
 } from './photo';
 import { overrideSerialsSchema, scanInputSchema, scanRejectionSchema } from './transfer';
+import { cageAssignmentDtoSchema, gasCagesSchema } from './stores';
 
 /**
  * Workflow A2 — batch initialization, the first scan.
@@ -41,6 +42,9 @@ export const createInitializationRequestSchema = z
     scans: z.array(scanInputSchema).max(500).default([]),
     /** PROJECT_MANAGER only — 403 for every other role, exactly as on transfers. */
     overrideSerials: overrideSerialsSchema.default([]),
+    /** Which cage each gas booked into STORES goes into. Gases delivered straight to
+     *  a site need none. */
+    cages: gasCagesSchema.default([]),
     ...photoSubmissionFields,
   })
   .refine((i) => i.scans.length + i.overrideSerials.length > 0, {
@@ -62,6 +66,8 @@ export const initializationDtoSchema = z.object({
   /** Null only when an admin overrode the camera. */
   photo: batchPhotoDtoSchema.nullable(),
   photoOverridden: z.boolean(),
+  /** Where each gas that went into stores was put. Empty when none did. */
+  cages: z.array(cageAssignmentDtoSchema),
 });
 export type InitializationDto = z.infer<typeof initializationDtoSchema>;
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CapturedPhoto } from '@gct/shared';
+import { driverPhoneSchema, type CapturedPhoto } from '@gct/shared';
 import { apiReadDriverId } from '../api/client';
 import { hasInk, renderSignature, type Stroke } from '../signature/raster';
 
@@ -24,6 +24,10 @@ type Reading =
 export interface DriverSignOff {
   driverName: string;
   setDriverName: (v: string) => void;
+  driverPhone: string;
+  setDriverPhone: (v: string) => void;
+  /** True once something is typed that the server would not accept as a phone. */
+  driverPhoneInvalid: boolean;
   driverIdNumber: string;
   setDriverIdNumber: (v: string) => void;
   driverIdPhoto: CapturedPhoto | null;
@@ -47,6 +51,7 @@ export interface DriverSignOff {
    */
   build: () => {
     driverName: string;
+    driverPhone: string;
     driverIdNumber: string;
     driverIdPhoto: CapturedPhoto | null;
     driverIdOverride: boolean;
@@ -56,6 +61,7 @@ export interface DriverSignOff {
 
 export function useDriverSignOff({ online }: { online: boolean }): DriverSignOff {
   const [driverName, setDriverName] = useState('');
+  const [driverPhone, setDriverPhone] = useState('');
   const [driverIdNumber, setDriverIdNumber] = useState('');
   const [driverIdPhoto, setDriverIdPhoto] = useState<CapturedPhoto | null>(null);
   const [driverIdOverride, setDriverIdOverride] = useState(false);
@@ -103,23 +109,35 @@ export function useDriverSignOff({ online }: { online: boolean }): DriverSignOff
 
   const signed = hasInk(signature.strokes);
   const idEvidence = driverIdPhoto !== null || driverIdOverride;
+  // The same rule the server applies, so the button cannot enable on a number that
+  // would then be refused — on a queued submission, refused hours later.
+  const phoneOk = driverPhoneSchema.safeParse(driverPhone).success;
   const ready =
-    driverName.trim().length > 0 && driverIdNumber.trim().length >= 4 && idEvidence && signed;
+    driverName.trim().length > 0 &&
+    phoneOk &&
+    driverIdNumber.trim().length >= 4 &&
+    idEvidence &&
+    signed;
 
   const blocker =
     driverName.trim().length === 0
       ? 'Enter the driver’s name'
-      : driverIdNumber.trim().length < 4
-        ? 'Enter the driver’s ID number'
-        : !idEvidence
-          ? 'Photograph the driver’s ID'
-          : !signed
-            ? 'The driver must sign above'
-            : null;
+      : !phoneOk
+        ? 'Enter the driver’s phone number'
+        : driverIdNumber.trim().length < 4
+          ? 'Enter the driver’s ID number'
+          : !idEvidence
+            ? 'Photograph the driver’s ID'
+            : !signed
+              ? 'The driver must sign above'
+              : null;
 
   return {
     driverName,
     setDriverName,
+    driverPhone,
+    setDriverPhone,
+    driverPhoneInvalid: driverPhone.trim().length > 0 && !phoneOk,
     driverIdNumber,
     setDriverIdNumber,
     driverIdPhoto,
@@ -155,6 +173,7 @@ export function useDriverSignOff({ online }: { online: boolean }): DriverSignOff
       if (inkedPixels === 0) return null;
       return {
         driverName: driverName.trim(),
+        driverPhone: driverPhone.trim(),
         driverIdNumber: driverIdNumber.trim(),
         driverIdPhoto,
         // Real evidence outranks an assertion: if a photo was taken after all, the

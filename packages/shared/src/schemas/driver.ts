@@ -35,6 +35,17 @@ export const driverIdNumberSchema = z
   .min(4, 'Enter the number from the driver’s ID')
   .max(40, 'That does not look like an ID number');
 
+/**
+ * The driver's phone number — so the project manager can call whoever has the
+ * cylinders. Loose on format for the same reason the ID number is: a foreign number or
+ * one written with spaces must still be recordable. It needs at least seven digits.
+ */
+export const driverPhoneSchema = z
+  .string()
+  .trim()
+  .regex(/^\+?[0-9(][0-9 ()-]{5,24}$/, 'Enter the driver’s phone number')
+  .refine((v) => v.replace(/\D/g, '').length >= 7, 'Enter the driver’s phone number');
+
 export const DRIVER_ID_PHOTO_REQUIRED_MESSAGE =
   'A photo of the driver’s ID is required. Take one, or ask an admin to override the camera.';
 
@@ -67,6 +78,8 @@ export const driverSignOffDtoFields = {
   /** Null on records that predate driver sign-off on this flow. */
   driverName: z.string().nullable(),
   driverIdNumber: z.string().nullable(),
+  /** Null on records made before the phone number was asked for. */
+  driverPhone: z.string().nullable(),
   /** True when an admin waived the ID photo. `driverIdCaptured` is then false. */
   driverIdOverridden: z.boolean(),
   /** Whether an ID document image is actually on file. */

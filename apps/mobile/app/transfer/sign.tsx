@@ -7,6 +7,7 @@ import { useAuth } from '../../src/auth/AuthContext';
 import { DriverSignOffForm } from '../../src/components/DriverSignOffForm';
 import { useDriverSignOff } from '../../src/driver/useDriverSignOff';
 import { useScanFlow } from '../../src/scanning/ScanFlowContext';
+import { cagesPayload, gasesIn } from '../../src/stores/StoresDropOff';
 import { playCue } from '../../src/sound';
 import { useSync } from '../../src/sync/SyncContext';
 import { enqueueMutation } from '../../src/sync/worker';
@@ -29,7 +30,8 @@ import { ErrorText, Notice, PrimaryButton, ScreenScroll, styles } from '../../sr
  */
 export default function TransferSign() {
   const router = useRouter();
-  const { batch, scans, overrides, photo, photoOverride } = useScanFlow();
+  const { batch, cylinders, scans, overrides, photo, photoOverride, cages, empties } =
+    useScanFlow();
   const { sync, online } = useSync();
   const { user } = useAuth();
   const driver = useDriverSignOff({ online });
@@ -55,6 +57,11 @@ export default function TransferSign() {
   const selectedCount = scans.length + overrides.length;
   const toStores = params.destination === 'STORES';
   const where = toStores ? 'Stores' : (params.siteName ?? 'the selected site');
+  const selectedSerials = [...scans.map((s) => s.serialCode), ...overrides];
+  const gases = gasesIn(cylinders, selectedSerials);
+  // Only the selected cylinders: a mark left on one that was later deselected is not
+  // part of this move.
+  const emptySerials = toStores ? empties.filter((s) => selectedSerials.includes(s)) : [];
 
   const submit = async () => {
     if (!driver.ready) return;
@@ -89,6 +96,9 @@ export default function TransferSign() {
         // Kept separate from `scans` the whole way, so the server can record which
         // cylinders were actually seen and which were asserted.
         overrideSerials: overrides,
+        // Back to stores only — the server refuses either on a move to a site.
+        cages: toStores ? cagesPayload(gases, cages) : [],
+        emptySerials,
         ...signOff,
         // Held on the flow since the photo step, so the destination and the sign-off
         // — which take a while — never cost a retake.
@@ -121,6 +131,12 @@ export default function TransferSign() {
         {selectedCount} cylinder(s) from {batch.projectNumber} → {where}
       </Text>
 
+      {toStores ? (
+        <Notice tone="neutral" title="Into stores">
+          {`${gases.map((g) => `${g.gasTypeName} → cage ${cages[g.gasTypeId] ?? '?'}`).join(' · ')}\n` +
+            `${selectedCount - emptySerials.length} full · ${emptySerials.length} empty`}
+        </Notice>
+      ) : null}
       {overrides.length > 0 ? (
         <Notice tone="warning" title={`${overrides.length} were not scanned`}>
           They will be recorded as an admin override on the audit trail. Make sure the driver sees

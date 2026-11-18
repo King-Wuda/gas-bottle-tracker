@@ -25,6 +25,7 @@ import {
   uniqueProjectNumber,
   testDriverId,
   testSignOff,
+  batchGasCages,
 } from './helpers.js';
 
 /**
@@ -129,7 +130,7 @@ async function makeBatch(
   return { batchId, serials, first: serials[0]! };
 }
 
-const transferTo = (batchId: string, serials: string[], siteId: string | null) =>
+const transferTo = async (batchId: string, serials: string[], siteId: string | null) =>
   app.inject({
     method: 'POST',
     url: '/transfers',
@@ -140,6 +141,7 @@ const transferTo = (batchId: string, serials: string[], siteId: string | null) =
       batchId,
       clientRequestId: randomUUID(),
       destination: siteId ? { type: 'SITE', siteId } : { type: 'STORES' },
+      ...(siteId ? {} : { cages: await batchGasCages(batchId) }),
       scans: serials.map(scan),
     },
   });
@@ -155,6 +157,7 @@ const returnAll = (batchId: string, serials: string[]) =>
       clientRequestId: randomUUID(),
       scans: serials.map(scan),
       driverName: 'Sipho Ndlovu',
+      driverPhone: '082 555 0199',
       ...testDriverId(),
       signaturePng: `data:image/png;base64,${PNG_1X1}`,
     },

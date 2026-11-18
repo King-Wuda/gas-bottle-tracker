@@ -47,6 +47,15 @@ enum CylinderStatus {
   RETURNED // terminal
 }
 
+/// What is in a cylinder, as last assessed. Every cylinder is booked in FULL; the only
+/// moment that changes is a transfer back to stores, where whoever drops them off says
+/// which came back empty. A cylinder out on site keeps the state it left with — nobody
+/// has looked inside it since.
+enum CylinderContents {
+  FULL
+  EMPTY
+}
+
 enum MovementType {
   INTAKE
   /// The first physical scan: the printed labels read back off the cylinders. Kept
@@ -67,6 +76,9 @@ enum DestinationType {
 enum EmailType {
   QR_SHEET
   DELIVERY_NOTE
+  /// Sent to the batch's project manager on every transfer: where the cylinders went,
+  /// who drove them, and the batch photo and driver's ID attached.
+  TRANSFER_NOTICE
 }
 
 enum EmailStatus {
@@ -79,14 +91,14 @@ enum EmailStatus {
 // ----------------------------- MODELS -----------------------------
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
+  id           String    @id @default(cuid())
+  email        String    @unique
   passwordHash String
   name         String
   role         Role
   /// The employer of a SUBCONTRACTOR; null for everyone else.
   company      String?
-  active       Boolean  @default(true)
+  active       Boolean   @default(true)
   /// Set when an admin DELETED this account, as opposed to deactivating it.
   ///
   /// The row survives only because `Batch.createdByUserId`, `MovementEvent.userId` and
@@ -99,8 +111,8 @@ model User {
   /// A user who has authored nothing is deleted outright instead; there is nothing
   /// pointing at them and nothing to attribute.
   deletedAt    DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   batchesCreated  Batch[]               @relation("BatchCreatedBy")
   movementEvents  MovementEvent[]
@@ -144,16 +156,16 @@ model RefreshToken {
 /// because its rows outlive the account in a different way: a deleted manager keeps a
 /// row here so delivery notes still answer "who was this for?".
 model ProjectManager {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   /// The login behind this manager. Restrict, like every other key into history: a
   /// user with a manager row is tombstoned on delete, never removed.
-  userId    String   @unique
+  userId    String    @unique
   name      String
-  email     String   @unique
+  email     String    @unique
   /// Deactivated rather than deleted. A batch's paperwork names the manager it was
   /// addressed to; a row that could vanish would take that answer with it. Inactive
   /// managers stay joinable but drop out of every picker that assigns new work.
-  active    Boolean  @default(true)
+  active    Boolean   @default(true)
   /// Set when an admin DELETED this manager, as opposed to deactivating them.
   ///
   /// Same shape as `User.deletedAt`, for the same reason: `Batch.projectManagerId` is
@@ -163,8 +175,8 @@ model ProjectManager {
   /// still answers "who was this delivered for?", and loses everything else — the
   /// email is released for reuse and they vanish from every picker and list.
   deletedAt DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   user      User       @relation(fields: [userId], references: [id], onDelete: Restrict)
   projects  Project[]
@@ -403,18 +415,25 @@ model BatchLine {
 }
 
 model Cylinder {
-  id            String         @id @default(cuid())
-  serialCode    String         @unique // e.g. NIT26-001; unique is the allocator's backstop, not its mechanism
+  id            String           @id @default(cuid())
+  serialCode    String           @unique // e.g. NIT26-001; unique is the allocator's backstop, not its mechanism
   batchId       String
   /// Which line of the batch booked this cylinder in. Denormalised alongside batchId
   /// rather than reached through it: the per-gas location breakdown groups by line,
   /// and every list in the app renders that breakdown.
   batchLineId   String
   gasTypeId     String
-  status        CylinderStatus @default(IN_STORES)
+  status        CylinderStatus   @default(IN_STORES)
   currentSiteId String? // NULL => physically at stores/depot (there is no Site row for "stores")
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  /// Which stores cage (1, 2 or 3) the cylinder is in. Set when it lands in stores —
+  /// at initialization, or on a transfer back — and cleared when it leaves. A CHECK
+  /// (`Cylinder_cage_only_in_stores`) keeps it 1–3 and only on an IN_STORES cylinder,
+  /// so "in cage 2 but out on site" cannot be written. Null in stores means the
+  /// cylinder arrived before cages were recorded.
+  cage          Int?
+  contents      CylinderContents @default(FULL)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
 
   batch          Batch           @relation(fields: [batchId], references: [id])
   batchLine      BatchLine       @relation(fields: [batchLineId], references: [id], onDelete: Cascade)
@@ -432,11 +451,13 @@ model Cylinder {
   @@index([batchId, batchLineId, currentSiteId, status])
   @@index([currentSiteId])
   @@index([gasTypeId])
+  // The stores console groups exactly here.
+  @@index([gasTypeId, status, cage, contents])
 }
 
 /// Append-only audit trail.
 model MovementEvent {
-  id               String       @id @default(cuid())
+  id               String            @id @default(cuid())
   cylinderId       String
   type             MovementType
   fromSiteId       String? // NULL = from stores
@@ -450,12 +471,18 @@ model MovementEvent {
   returnRecordId   String?
   initializationId String?
   deviceAt         DateTime // when the device recorded it (offline-capable)
-  serverAt         DateTime     @default(now()) // when the server persisted it
+  serverAt         DateTime          @default(now()) // when the server persisted it
   /// TRUE when an admin waved this cylinder through without a physical scan.
   /// The whole justification for scanning is being able to prove a cylinder was seen;
   /// an override is a weaker claim — a named admin's assertion — and the trail has to
   /// say which one it is rather than quietly presenting both as the same evidence.
-  overridden       Boolean      @default(false)
+  overridden       Boolean           @default(false)
+  /// The cage the cylinder was put in by this event, and what was in it at that moment.
+  /// Set only when the event put it in stores (an initialization or a transfer back);
+  /// null otherwise. Snapshots rather than reads of the cylinder, because the cylinder
+  /// moves on and the history must keep saying where it went that day.
+  cage             Int?
+  contents         CylinderContents?
 
   cylinder       Cylinder             @relation(fields: [cylinderId], references: [id])
   user           User                 @relation(fields: [userId], references: [id])
@@ -488,6 +515,8 @@ model Transfer {
   /// flow genuinely have no driver — a backfilled '' would claim one was asked for.
   driverName         String?
   driverIdNumber     String?
+  /// The driver's phone number. Null on transfers recorded before it was asked for.
+  driverPhone        String?
   /// Path to the photographed ID document; null when there is none.
   driverIdPath       String?
   /// TRUE when an ADMIN submitted this without photographing the ID.
@@ -528,6 +557,8 @@ model ReturnRecord {
   /// genuinely do not have one: a column backfilled with '' would claim the number
   /// was collected and left blank, which is a different and false statement.
   driverIdNumber     String?
+  /// The driver's phone number. Null on returns recorded before it was asked for.
+  driverPhone        String?
   /// Path to the photographed ID document. Null when there is none — either because
   /// the return predates the requirement, or because an admin waived it.
   driverIdPath       String?

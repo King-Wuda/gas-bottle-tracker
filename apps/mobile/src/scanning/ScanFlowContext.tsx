@@ -48,6 +48,17 @@ interface ScanFlowValue {
    */
   photoOverride: boolean;
 
+  /**
+   * Putting cylinders into stores: the cage chosen for each gas (by gas id), and the
+   * serials marked as having come back empty. Held on the flow because two flows use
+   * them — initialization (cages) and a transfer back to stores (both) — and because
+   * the transfer collects them a screen before the one that submits.
+   */
+  cages: Record<string, number>;
+  empties: string[];
+  setCage: (gasTypeId: string, cage: number) => void;
+  toggleEmpty: (serialCode: string) => void;
+
   selectBatch: (batch: CachedBatch, cylinders: CachedCylinder[], sites: CachedSite[]) => void;
   addScan: (scan: HeldScan) => void;
   removeScan: (serialCode: string) => void;
@@ -73,6 +84,8 @@ export function ScanFlowProvider({ children }: { children: ReactNode }) {
   const [overrides, setOverrides] = useState<string[]>([]);
   const [photo, setPhotoState] = useState<CapturedPhoto | null>(null);
   const [photoOverride, setPhotoOverride] = useState(false);
+  const [cages, setCages] = useState<Record<string, number>>({});
+  const [empties, setEmpties] = useState<string[]>([]);
 
   const selectBatch = useCallback<ScanFlowValue['selectBatch']>((b, cyls, siteRows) => {
     setBatch(b);
@@ -83,6 +96,18 @@ export function ScanFlowProvider({ children }: { children: ReactNode }) {
     setOverrides([]);
     setPhotoState(null);
     setPhotoOverride(false);
+    setCages({});
+    setEmpties([]);
+  }, []);
+
+  const setCage = useCallback((gasTypeId: string, cage: number) => {
+    setCages((prev) => ({ ...prev, [gasTypeId]: cage }));
+  }, []);
+
+  const toggleEmpty = useCallback((serialCode: string) => {
+    setEmpties((prev) =>
+      prev.includes(serialCode) ? prev.filter((s) => s !== serialCode) : [...prev, serialCode],
+    );
   }, []);
 
   const addScan = useCallback((scan: HeldScan) => {
@@ -136,6 +161,8 @@ export function ScanFlowProvider({ children }: { children: ReactNode }) {
     setOverrides([]);
     setPhotoState(null);
     setPhotoOverride(false);
+    setCages({});
+    setEmpties([]);
   }, []);
 
   const value = useMemo<ScanFlowValue>(
@@ -147,6 +174,10 @@ export function ScanFlowProvider({ children }: { children: ReactNode }) {
       overrides,
       photo,
       photoOverride,
+      cages,
+      empties,
+      setCage,
+      toggleEmpty,
       selectBatch,
       addScan,
       removeScan,
@@ -166,6 +197,10 @@ export function ScanFlowProvider({ children }: { children: ReactNode }) {
       overrides,
       photo,
       photoOverride,
+      cages,
+      empties,
+      setCage,
+      toggleEmpty,
       selectBatch,
       addScan,
       removeScan,

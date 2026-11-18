@@ -18,7 +18,10 @@ import type { CachedBatch, CachedCylinder, CachedSite, OutboxRecord, Store } fro
 // name and gained client_id. `CREATE TABLE IF NOT EXISTS` is a silent no-op on a
 // device already holding the old shape, so the bump is what actually rebuilds it —
 // see the note in CLAUDE.md. The cache is a server mirror, so dropping is safe.
-const CACHE_SCHEMA_VERSION = 3;
+// 4: cached_cylinder gained gas_type_id and delivery_point, so a transfer back to
+// stores can name a cage per gas (the API takes ids, not names) and an initialization
+// knows which gases went into stores — both with no signal.
+const CACHE_SCHEMA_VERSION = 4;
 
 const DROP_STALE_CACHE = `
 DROP TABLE IF EXISTS cached_batch;
@@ -64,6 +67,8 @@ CREATE TABLE IF NOT EXISTS cached_cylinder (
   serial_code     TEXT PRIMARY KEY,
   batch_id        TEXT NOT NULL,
   gas_type_name   TEXT NOT NULL DEFAULT '',
+  gas_type_id     TEXT NOT NULL DEFAULT '',
+  delivery_point  TEXT NOT NULL DEFAULT 'STORES',
   status          TEXT NOT NULL,
   current_site_id TEXT
 );
@@ -228,9 +233,18 @@ export async function createSqliteStore(): Promise<Store> {
         for (const c of cylinders) {
           await db.runAsync(
             `INSERT OR REPLACE INTO cached_cylinder
-               (serial_code, batch_id, gas_type_name, status, current_site_id)
-             VALUES (?, ?, ?, ?, ?)`,
-            [c.serialCode, c.batchId, c.gasTypeName, c.status, c.currentSiteId],
+               (serial_code, batch_id, gas_type_name, gas_type_id, delivery_point,
+                status, current_site_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [
+              c.serialCode,
+              c.batchId,
+              c.gasTypeName,
+              c.gasTypeId,
+              c.deliveryPoint,
+              c.status,
+              c.currentSiteId,
+            ],
           );
         }
         for (const s of sites) {
@@ -273,6 +287,8 @@ export async function createSqliteStore(): Promise<Store> {
         serial_code: string;
         batch_id: string;
         gas_type_name: string;
+        gas_type_id: string;
+        delivery_point: string;
         status: string;
         current_site_id: string | null;
       }>('SELECT * FROM cached_cylinder WHERE batch_id = ? ORDER BY serial_code ASC', [batchId]);
@@ -280,6 +296,8 @@ export async function createSqliteStore(): Promise<Store> {
         serialCode: r.serial_code,
         batchId: r.batch_id,
         gasTypeName: r.gas_type_name,
+        gasTypeId: r.gas_type_id,
+        deliveryPoint: r.delivery_point === 'SITE' ? ('SITE' as const) : ('STORES' as const),
         status: r.status,
         currentSiteId: r.current_site_id,
       }));

@@ -17,6 +17,8 @@ import {
   uniqueProjectNumber,
   testDriverId,
   testSignOff,
+  batchGasCages,
+  storesCagesFor,
 } from './helpers.js';
 
 /**
@@ -101,12 +103,18 @@ const scan = (serialCode: string): ScanInput => ({
   scannedAt: new Date().toISOString(),
 });
 
-const postInit = (payload: Record<string, unknown>, token = techToken) =>
+/** Cages default to what the batch needs (cage 1 for each gas in stores), so a test
+ *  about something else does not have to spell them out. Pass `cages` to override. */
+const postInit = async (payload: Record<string, unknown>, token = techToken) =>
   app.inject({
     method: 'POST',
     url: '/initializations',
     headers: bearer(token),
-    payload: { photo: testPhoto(), ...payload },
+    payload: {
+      photo: testPhoto(),
+      cages: await storesCagesFor(String(payload.batchId)),
+      ...payload,
+    },
   });
 
 const initBody = (batchId: string, serials: string[], extra: Record<string, unknown> = {}) => ({
@@ -368,6 +376,7 @@ describe('an uninitialized batch is inert', () => {
         clientRequestId: randomUUID(),
         scans: serials.map(scan),
         driverName: 'Sipho Ndlovu',
+        driverPhone: '082 555 0199',
         ...testDriverId(),
         signaturePng: `data:image/png;base64,${Buffer.from([
           0x89,
@@ -398,6 +407,7 @@ describe('an uninitialized batch is inert', () => {
         batchId,
         clientRequestId: randomUUID(),
         destination: { type: 'STORES' },
+        cages: await batchGasCages(batchId),
         scans: [],
         overrideSerials: serials,
       },

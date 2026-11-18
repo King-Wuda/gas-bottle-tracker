@@ -47,7 +47,7 @@ export function BatchPicker({ next, config }: { next: Href; config: BatchBrowser
       // Each cylinder carries its own gas name, resolved from the line it belongs to.
       // A batch can hold several gases now, so the scan checklist has to be able to
       // group them without another round trip — which it will not have offline.
-      const gasByLine = new Map(batch.lines.map((l) => [l.id, l.gasTypeName]));
+      const lineById = new Map(batch.lines.map((l) => [l.id, l]));
       // Cylinders already returned are terminal — they cannot move or come back
       // again, so they are left out of the checklist the scanner works against.
       const cylinders = batch.cylinders
@@ -55,7 +55,12 @@ export function BatchPicker({ next, config }: { next: Href; config: BatchBrowser
         .map((c) => ({
           serialCode: c.serialCode,
           batchId: batch.id,
-          gasTypeName: gasByLine.get(c.batchLineId) ?? '—',
+          gasTypeName: lineById.get(c.batchLineId)?.gasTypeName ?? '—',
+          gasTypeId: lineById.get(c.batchLineId)?.gasTypeId ?? '',
+          deliveryPoint:
+            lineById.get(c.batchLineId)?.initialDeliveryPoint === 'SITE'
+              ? ('SITE' as const)
+              : ('STORES' as const),
           status: c.status,
           currentSiteId: c.currentSiteId,
         }));

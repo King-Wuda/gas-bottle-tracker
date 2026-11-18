@@ -180,6 +180,7 @@ describe('email worker — delivery note', () => {
           scannedAt: new Date().toISOString(),
         })),
         driverName: 'Thabo Mokoena',
+        driverPhone: '082 555 0199',
         ...testDriverId(),
         signaturePng: SIGNATURE,
       },
@@ -199,7 +200,11 @@ describe('email worker — delivery note', () => {
 
     const row = await prisma.outboundEmail.findUniqueOrThrow({ where: { id: pending.id } });
     expect(row.status).toBe('SENT');
-    expect(row.attachmentPaths).toHaveLength(1);
+    // The signed note first, then the two photographs it was taken against: the
+    // cylinders, and the driver's ID.
+    expect(row.attachmentPaths).toHaveLength(3);
+    expect(row.attachmentPaths[1]).toMatch(/batch-/);
+    expect(row.attachmentPaths[2]).toMatch(/driver-id-/);
 
     const pdf = await readFileAt(row.attachmentPaths[0]!);
     expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');

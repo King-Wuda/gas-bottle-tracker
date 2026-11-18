@@ -87,8 +87,23 @@ export default function EventDetail() {
         <Row label="Site" value={event.siteName} />
         <Row label="Batch holds" value={event.contents} />
         {event.destinationName ? <Row label="Destination" value={event.destinationName} /> : null}
-        {event.driverName ? <Row label="Collected by" value={event.driverName} /> : null}
+        {event.driverName ? (
+          <Row
+            label={event.kind === 'TRANSFER' ? 'Driver' : 'Collected by'}
+            value={event.driverName}
+          />
+        ) : null}
+        {event.driverPhone ? <Row label="Driver phone" value={event.driverPhone} /> : null}
         {event.driverIdNumber ? <Row label="Driver ID" value={event.driverIdNumber} /> : null}
+        {event.cages.map((c) => (
+          <Row key={c.gasTypeId} label={`${c.gasTypeName} into`} value={`Cage ${c.cage}`} />
+        ))}
+        {event.kind === 'TRANSFER' && event.cages.length > 0 ? (
+          <Row
+            label="Came back"
+            value={`${event.serials.length - event.emptySerials.length} full · ${event.emptySerials.length} empty`}
+          />
+        ) : null}
       </Card>
 
       {event.photo ? (
@@ -145,6 +160,7 @@ export default function EventDetail() {
                   style={[styles.serial, unscanned && styles.serialUnscanned]}
                 >
                   {s}
+                  {event.emptySerials.includes(s) ? ' · empty' : ''}
                 </Text>
               );
             })}

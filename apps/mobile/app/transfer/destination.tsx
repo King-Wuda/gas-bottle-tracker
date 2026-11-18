@@ -4,6 +4,7 @@ import { Redirect, useRouter } from 'expo-router';
 import type { ProjectManagerDto } from '@gct/shared';
 import { apiProjectManagers } from '../../src/api/client';
 import { useScanFlow } from '../../src/scanning/ScanFlowContext';
+import { allCaged, CageChooser, EmptyMarker, gasesIn } from '../../src/stores/StoresDropOff';
 import { useSync } from '../../src/sync/SyncContext';
 import {
   Card,
@@ -21,7 +22,19 @@ type Choice = { kind: 'site'; id: string; name: string } | { kind: 'stores' };
 /** Workflow B4 — New Site or Back to Stores, then B5, the sync. */
 export default function Destination() {
   const router = useRouter();
-  const { batch, scans, overrides, sites, photo, photoOverride } = useScanFlow();
+  const {
+    batch,
+    cylinders,
+    scans,
+    overrides,
+    sites,
+    photo,
+    photoOverride,
+    cages,
+    empties,
+    setCage,
+    toggleEmpty,
+  } = useScanFlow();
   const { online } = useSync();
 
   const [choice, setChoice] = useState<Choice | null>(null);
@@ -49,6 +62,10 @@ export default function Destination() {
   if (!photo && !photoOverride) return <Redirect href="/transfer/photo" />;
 
   const selectedCount = scans.length + overrides.length;
+  const selectedSerials = [...scans.map((s) => s.serialCode), ...overrides];
+  const gases = gasesIn(cylinders, selectedSerials);
+  const toStores = choice?.kind === 'stores';
+  const cagesChosen = !toStores || allCaged(gases, cages);
 
   // A cylinder cannot be transferred to where it already is, so the batch's own
   // site is still offered — some of the scanned cylinders may have moved away from
@@ -76,6 +93,10 @@ export default function Destination() {
    */
   const toSignOff = () => {
     if (!choice) return;
+    if (!cagesChosen) {
+      setError('Choose a cage for every gas going into stores.');
+      return;
+    }
     if (mustReassign && !managerChanged) {
       setError(
         `${batch.projectManagerName} has been deactivated and can no longer receive this ` +
@@ -132,11 +153,25 @@ export default function Destination() {
             <Text style={{ opacity: 0.7 }}>
               {d.kind === 'site'
                 ? sites.find((s) => s.id === d.id)?.location
-                : 'Cylinders return to the depot and leave every site.'}
+                : 'Cylinders come back to the depot, into a cage, and leave every site.'}
             </Text>
           </Card>
         );
       })}
+
+      {/* Back to stores: which cage each gas goes into, and which came back empty —
+          e.g. five taken to site, five back, but only three used. */}
+      {toStores ? (
+        <>
+          <CageChooser gases={gases} cages={cages} onChange={setCage} />
+          <EmptyMarker
+            cylinders={cylinders}
+            serials={selectedSerials}
+            empties={empties}
+            onToggle={toggleEmpty}
+          />
+        </>
+      ) : null}
 
       {/* Handing the batch over. A batch outlives the manager who booked it in, and a
           move is the natural moment for it to change hands — so the same picker the
@@ -164,9 +199,15 @@ export default function Destination() {
 
       <View style={{ marginTop: 8 }}>
         <PrimaryButton
-          title={choice ? 'Driver sign-off' : 'Choose a destination'}
+          title={
+            !choice
+              ? 'Choose a destination'
+              : !cagesChosen
+                ? 'Choose a cage for each gas'
+                : 'Driver sign-off'
+          }
           onPress={toSignOff}
-          disabled={!choice}
+          disabled={!choice || !cagesChosen}
         />
       </View>
     </ScreenScroll>

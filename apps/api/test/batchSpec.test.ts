@@ -21,6 +21,7 @@ import {
   uniqueProjectNumber,
   testDriverId,
   testSignOff,
+  batchGasCages,
 } from './helpers.js';
 
 const PNG_1X1 =
@@ -406,6 +407,7 @@ describe('GET /batches — the shared Transfer / Returns / History list', () => 
         batchId: returned,
         clientRequestId: randomUUID(),
         driverName: 'Driver D',
+        driverPhone: '082 555 0199',
         ...testDriverId(),
         signaturePng: SIGNATURE,
         scans: r.serials.map(scan),
@@ -440,6 +442,7 @@ describe('GET /batches — the shared Transfer / Returns / History list', () => 
         batchId: p.batchId,
         clientRequestId: randomUUID(),
         driverName: 'Driver P',
+        driverPhone: '082 555 0199',
         ...testDriverId(),
         signaturePng: SIGNATURE,
         scans: [scan(p.serials[0]!)],
@@ -465,6 +468,7 @@ describe('GET /batches — the shared Transfer / Returns / History list', () => 
         batchId: transferred,
         clientRequestId: randomUUID(),
         destination: { type: 'STORES' },
+        cages: await batchGasCages(transferred),
         scans: (await prisma.cylinder.findMany({ where: { batchId: transferred } })).map((c) =>
           scan(c.serialCode),
         ),

@@ -9,6 +9,7 @@ import { prisma, Prisma } from '../db.js';
 import { toPhotoDto, type PhotoRow } from '../services/photoView.js';
 import { preparePhoto } from '../services/photo.js';
 import { resolveScans } from '../services/scans.js';
+import { applyCages, cageAssignments, cageEventSelect, checkCages } from '../services/cages.js';
 
 /**
  * Workflow A2 (server side) — the first scan.
@@ -49,13 +50,17 @@ type InitializationRow = {
   userId: string;
   photoOverridden: boolean;
   createdAt: Date;
-  movementEvents: { overridden: boolean; cylinder: { serialCode: string } }[];
+  movementEvents: {
+    overridden: boolean;
+    cage: number | null;
+    cylinder: { serialCode: string; gasType: { id: string; name: string } };
+  }[];
   photo: PhotoRow | null;
 };
 
 export const initializationInclude = {
   movementEvents: {
-    select: { overridden: true, cylinder: { select: { serialCode: true } } },
+    select: { overridden: true, ...cageEventSelect },
     orderBy: { cylinder: { serialCode: 'asc' } },
   },
   photo: { include: { user: { select: { name: true } } } },
@@ -70,6 +75,7 @@ export const toInitializationDto = (i: InitializationRow): InitializationDto => 
   overriddenSerials: i.movementEvents.filter((m) => m.overridden).map((m) => m.cylinder.serialCode),
   photo: i.photo ? toPhotoDto(i.photo) : null,
   photoOverridden: i.photoOverridden,
+  cages: cageAssignments(i.movementEvents),
 });
 
 export async function initializationRoutes(app: FastifyInstance): Promise<void> {
@@ -114,7 +120,18 @@ export async function initializationRoutes(app: FastifyInstance): Promise<void> 
 
       const batch = await prisma.batch.findUnique({
         where: { id: input.batchId },
-        select: { id: true, initializedAt: true },
+        select: {
+          id: true,
+          initializedAt: true,
+          // The cylinders booked into stores — every gas among them needs a cage.
+          // By the LINE's delivery point: every cylinder is recorded IN_STORES at
+          // intake, but one on a line delivered straight to site is physically there
+          // and in no cage.
+          cylinders: {
+            where: { status: 'IN_STORES', batchLine: { initialDeliveryPoint: 'STORES' } },
+            select: { id: true, gasTypeId: true },
+          },
+        },
       });
       if (!batch) {
         return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Batch not found' } });
@@ -130,6 +147,21 @@ export async function initializationRoutes(app: FastifyInstance): Promise<void> 
           },
         });
       }
+
+      // Every gas booked into stores goes into a cage, chosen per gas. Checked before
+      // any file is written or row locked: it is a question about the request alone.
+      const storesIdsByGas = new Map<string, string[]>();
+      for (const c of batch.cylinders) {
+        storesIdsByGas.set(c.gasTypeId, [...(storesIdsByGas.get(c.gasTypeId) ?? []), c.id]);
+      }
+      const cageCheck = checkCages(new Set(storesIdsByGas.keys()), input.cages);
+      if (!cageCheck.ok) {
+        return reply.code(cageCheck.status).send({
+          error: { code: cageCheck.code, message: cageCheck.message, details: cageCheck.details },
+        });
+      }
+      const storesIds = new Set(batch.cylinders.map((c) => c.id));
+      const gasById = new Map(batch.cylinders.map((c) => [c.id, c.gasTypeId]));
 
       const userId = request.user.sub;
       const prepared = await preparePhoto({
@@ -199,8 +231,17 @@ export async function initializationRoutes(app: FastifyInstance): Promise<void> 
                 initializationId: initialization.id,
                 deviceAt: c.scannedAt,
                 overridden: c.overridden,
+                // Booked in full, into the cage chosen for its gas — when it is in
+                // stores. A cylinder delivered straight to site is in no cage.
+                ...(storesIds.has(c.id)
+                  ? {
+                      cage: cageCheck.cageByGas.get(gasById.get(c.id) ?? '') ?? null,
+                      contents: 'FULL' as const,
+                    }
+                  : {}),
               })),
             });
+            await applyCages(tx, storesIdsByGas, cageCheck.cageByGas);
 
             if (prepared.columns) {
               await tx.batchPhoto.create({

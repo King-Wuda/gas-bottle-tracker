@@ -17,3 +17,4 @@ export * from './schemas/initialization';
 export * from './schemas/return';
 export * from './schemas/history';
 export * from './schemas/admin';
+export * from './schemas/stores';

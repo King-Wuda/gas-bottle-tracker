@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { SERIAL_CODE_RE } from '../serial';
+import { cageAssignmentDtoSchema, gasCagesSchema } from './stores';
 import {
   batchPhotoDtoSchema,
   hasPhotoEvidence,
@@ -8,6 +9,7 @@ import {
 } from './photo';
 import {
   driverIdFields,
+  driverPhoneSchema,
   driverSignOffDtoFields,
   hasDriverIdEvidence,
   signaturePngSchema,
@@ -93,7 +95,18 @@ export const createTransferRequestSchema = z
      * backwards. See `schemas/driver.ts`.
      */
     driverName: z.string().min(1).max(200),
+    driverPhone: driverPhoneSchema,
     ...driverIdFields,
+    /**
+     * Moving back to stores only: which cage each gas goes into, and which of the
+     * moved cylinders came back empty (everything else is recorded as full). Refused
+     * for a move to a site — a cylinder on a truck to Durban is in no cage.
+     */
+    cages: gasCagesSchema.default([]),
+    emptySerials: z
+      .array(z.string().regex(SERIAL_CODE_RE, 'Not a cylinder serial code'))
+      .max(500)
+      .default([]),
     signaturePng: signaturePngSchema,
   })
   .refine((t) => t.scans.length + t.overrideSerials.length > 0, {
@@ -141,6 +154,9 @@ export const transferDtoSchema = z.object({
   movedSerials: z.array(z.string()),
   /** The subset of `movedSerials` an admin waved through unscanned. */
   overriddenSerials: z.array(z.string()),
+  /** Back to stores only: where each gas went, and which cylinders came back empty. */
+  cages: z.array(cageAssignmentDtoSchema),
+  emptySerials: z.array(z.string()),
   /** Set when this transfer also handed the batch to a different manager. */
   projectManagerId: z.string().nullable(),
   projectManagerName: z.string().nullable(),

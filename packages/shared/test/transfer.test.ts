@@ -32,6 +32,7 @@ const validPhoto = {
  */
 const validSignOff = {
   driverName: 'Sipho Ndlovu',
+  driverPhone: '082 555 0199',
   driverIdNumber: '8801015009087',
   driverIdPhoto: { ...validPhoto, capturedAt: '2026-08-28T07:01:00.000Z' },
   signaturePng: `data:image/png;base64,${'A'.repeat(200)}`,
@@ -169,7 +170,7 @@ describe('transfer driver sign-off', () => {
       ...validSignOff,
     };
 
-    for (const field of ['driverName', 'driverIdNumber', 'signaturePng'] as const) {
+    for (const field of ['driverName', 'driverPhone', 'driverIdNumber', 'signaturePng'] as const) {
       const transfer = { ...base, [field]: '' };
       const ret = { ...returnBase, [field]: '' };
       expect(createTransferRequestSchema.safeParse(transfer).success, `transfer.${field}`).toBe(

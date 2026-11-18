@@ -41,12 +41,18 @@ and `db:seed` — works only once both `.env` files already exist.
 
 A batch passes through four kinds of event, and the order is enforced rather than assumed:
 
-| Step           | What it records                                                                          |
-| -------------- | ---------------------------------------------------------------------------------------- |
-| **Create**     | Serials allocated, QR sheet emailed to the project manager. Nothing physical yet.        |
-| **Initialize** | The labels, scanned back off the cylinders they were stuck to, plus a photo of the batch |
-| **Transfer**   | Cylinders moved to another site or back to stores, plus a photo                          |
-| **Return**     | Cylinders collected by a named driver who signs on screen, plus a photo                  |
+| Step           | What it records                                                                                                                                            |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Create**     | Serials allocated, QR sheet emailed to the project manager. Nothing physical yet. Every cylinder is booked in full.                                        |
+| **Initialize** | The labels, scanned back off the cylinders they were stuck to, plus a photo of the batch. Each gas delivered to stores goes into a cage (1, 2 or 3).       |
+| **Transfer**   | Cylinders moved between stores and site, any number of times, with driver sign-off and a photo. Back to stores: a cage per gas, and which came back empty. |
+| **Return**     | Final: cylinders go back to the supplier and leave the system, with driver sign-off, a photo and a signed delivery note.                                   |
+
+Every transfer and every return emails the batch's project manager the details — the
+driver's name, phone and ID number, and the photos of the cylinders and the driver's ID.
+The **Stores** screen (stores managers and project managers) shows every cylinder still in
+rotation by gas: how many are full and empty in stores, which cage they are in, and how many
+are out on site.
 
 **Initialization is a gate, not a formality.** Until every label on a batch has been scanned
 back off its own cylinder, `POST /transfers` and `POST /returns` refuse it with

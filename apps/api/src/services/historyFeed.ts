@@ -17,6 +17,7 @@
  * merge is over at most 1000 items in memory. It is a field app for one company's
  * yard, not a public timeline.
  */
+import { cageAssignments, cageEventSelect } from './cages.js';
 import {
   summariseLines,
   type AmendmentChange,
@@ -257,7 +258,7 @@ export async function historyFeed(
       }`,
       detail: t.destinationSiteId
         ? `Transferred to site ${t.destinationSite?.location ?? ''}.`
-        : 'Returned to the depot.',
+        : 'Brought back into stores.',
       cylinderCount: t._count.movementEvents,
       overriddenCount: t.movementEvents.length,
       ...photoFields(t.photo, t.photoOverridden),
@@ -271,7 +272,7 @@ export async function historyFeed(
       userId: r.storesManagerId,
       userName: r.storesManager.name,
       headline: `${plural(r._count.movementEvents, 'cylinder')} returned to supplier`,
-      detail: `Collected by ${r.driverName}, signed for on device.`,
+      detail: `Taken out of rotation. Collected by ${r.driverName}, signed for on device.`,
       cylinderCount: r._count.movementEvents,
       overriddenCount: r.movementEvents.length,
       ...photoFields(r.photo, r.photoOverridden),
@@ -348,6 +349,9 @@ export async function historyEvent(
     destinationName: null,
     driverName: null,
     driverIdNumber: null,
+    driverPhone: null,
+    cages: [],
+    emptySerials: [],
     changes: [],
     reason: null,
   };
@@ -385,7 +389,7 @@ export async function historyEvent(
   const [events, photo] = await Promise.all([
     prisma.movementEvent.findMany({
       where: link,
-      select: { overridden: true, cylinder: { select: { serialCode: true } } },
+      select: { overridden: true, ...cageEventSelect },
       orderBy: { cylinder: { serialCode: 'asc' } },
     }),
     prisma.batchPhoto.findFirst({ where: link, include: { user: { select: { name: true } } } }),
@@ -396,18 +400,29 @@ export async function historyEvent(
       ? await prisma.transfer
           .findUnique({
             where: { id: recordId },
-            select: { destinationSite: { select: { location: true } } },
+            select: {
+              destinationSite: { select: { location: true } },
+              driverName: true,
+              driverIdNumber: true,
+              driverPhone: true,
+            },
           })
-          .then((t) => ({ destinationName: t ? (t.destinationSite?.location ?? STORES) : null }))
+          .then((t) => ({
+            destinationName: t ? (t.destinationSite?.location ?? STORES) : null,
+            driverName: t?.driverName ?? null,
+            driverIdNumber: t?.driverIdNumber ?? null,
+            driverPhone: t?.driverPhone ?? null,
+          }))
       : kind === 'RETURN'
         ? await prisma.returnRecord
             .findUnique({
               where: { id: recordId },
-              select: { driverName: true, driverIdNumber: true },
+              select: { driverName: true, driverIdNumber: true, driverPhone: true },
             })
             .then((r) => ({
               driverName: r?.driverName ?? null,
               driverIdNumber: r?.driverIdNumber ?? null,
+              driverPhone: r?.driverPhone ?? null,
             }))
         : {};
 
@@ -415,6 +430,8 @@ export async function historyEvent(
     ...base,
     serials: events.map((e) => e.cylinder.serialCode),
     overriddenSerials: events.filter((e) => e.overridden).map((e) => e.cylinder.serialCode),
+    cages: cageAssignments(events),
+    emptySerials: events.filter((e) => e.contents === 'EMPTY').map((e) => e.cylinder.serialCode),
     photo: photo ? toPhotoDto(photo) : null,
     ...extra,
   };

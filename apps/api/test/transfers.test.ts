@@ -17,6 +17,7 @@ import {
   testDriverId,
   testPhoto,
   uniqueProjectNumber,
+  batchGasCages,
 } from './helpers.js';
 
 let app: FastifyInstance;
@@ -141,6 +142,7 @@ const postTransfer = (payload: Record<string, unknown>, token = techToken) =>
     payload: {
       photo: testPhoto(),
       driverName: 'Sipho Ndlovu',
+      driverPhone: '082 555 0199',
       signaturePng: SIGNATURE,
       ...testDriverId(),
       ...payload,
@@ -328,6 +330,7 @@ describe('POST /transfers — happy paths', () => {
       batchId,
       clientRequestId: randomUUID(),
       destination: toStores,
+      cages: await batchGasCages(batchId),
       scans: serials.map(scan),
     });
 
@@ -545,7 +548,8 @@ describe('POST /transfers — per-serial scan validation', () => {
     const { batchId, serials } = await makeBatch(1);
     await prisma.cylinder.update({
       where: { serialCode: serials[0]! },
-      data: { status: 'RETURNED', currentSiteId: null },
+      // Out of its cage too, as the return route does — a cage is only for stores.
+      data: { status: 'RETURNED', currentSiteId: null, cage: null },
     });
 
     const res = await postTransfer({

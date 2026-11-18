@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
+import type { Role } from '@gct/shared';
 import { useAuth } from '../src/auth/AuthContext';
 import { primeSounds } from '../src/sound';
 import { useSync } from '../src/sync/SyncContext';
@@ -11,12 +12,13 @@ import {
   HistoryIcon,
   NewBatchIcon,
   ReturnIcon,
+  StoresIcon,
   SyncIcon,
   TransferIcon,
 } from '../src/ui/icons';
 import { colors, radius, shadow, space, type } from '../src/ui/theme';
 
-type DashboardRoute = '/new' | '/transfer' | '/returns' | '/history' | '/admin';
+type DashboardRoute = '/new' | '/transfer' | '/returns' | '/stores' | '/history' | '/admin';
 
 interface Action {
   key: string;
@@ -24,11 +26,15 @@ interface Action {
   hint: string;
   route: DashboardRoute;
   icon: (color: string) => ReactNode;
+  /** Shown only to these roles; everyone when omitted. The server is the real gate —
+   *  this only stops offering a tile that would answer 403. */
+  roles?: Role[];
 }
 
 /**
- * The four things a person comes here to do, in the order the batch lifecycle
- * happens: book it in, move it, take it back, look at what happened.
+ * The things a person comes here to do, in the order the batch lifecycle happens:
+ * book it in, move it, send it back to the supplier, see what is in stores, look at
+ * what happened.
  */
 const ACTIONS: Action[] = [
   {
@@ -41,16 +47,27 @@ const ACTIONS: Action[] = [
   {
     key: 'transfer',
     label: 'Transfer',
-    hint: 'Scan cylinders onto a truck or to a site',
+    hint: 'Move cylinders between stores and site',
     route: '/transfer',
     icon: (c) => <TransferIcon color={c} size={26} />,
   },
   {
     key: 'returns',
-    label: 'Returns',
-    hint: 'Scan cylinders back and take driver sign-off',
+    // A return is FINAL: the cylinders go back to the supplier and leave the system.
+    // Bringing them back from site into stores is a Transfer. The label says so,
+    // because "Returns" on its own reads as the second one.
+    label: 'Return to supplier',
+    hint: 'Send cylinders back for good, with driver sign-off',
     route: '/returns',
     icon: (c) => <ReturnIcon color={c} size={26} />,
+  },
+  {
+    key: 'stores',
+    label: 'Stores',
+    hint: 'Full and empty cylinders, by gas and cage',
+    route: '/stores',
+    icon: (c) => <StoresIcon color={c} size={26} />,
+    roles: ['STORES_MANAGER', 'PROJECT_MANAGER'],
   },
   {
     key: 'history',
@@ -104,7 +121,8 @@ export default function Dashboard() {
         <View style={styles.greeting}>
           <Text style={styles.greetingName}>{user.name}</Text>
           <View style={styles.rolePill}>
-            <Text style={styles.rolePillText}>{readableRole(user.role)}
+            <Text style={styles.rolePillText}>
+              {readableRole(user.role)}
               {user.company ? ` · ${user.company}` : ''}
             </Text>
           </View>
@@ -170,7 +188,7 @@ export default function Dashboard() {
       ) : null}
 
       <View style={styles.grid}>
-        {ACTIONS.map((a) => (
+        {ACTIONS.filter((a) => !a.roles || (user && a.roles.includes(user.role))).map((a) => (
           <Pressable
             key={a.key}
             role="button"
