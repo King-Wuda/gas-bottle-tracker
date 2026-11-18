@@ -25,6 +25,7 @@ const base = {
   clientRequestId: '11111111-2222-3333-4444-555555555555',
   scans: [scan],
   driverName: 'Sipho Ndlovu',
+  driverPhone: '082 555 0199',
   driverIdNumber: '8801015009087',
   driverIdPhoto,
   signaturePng,

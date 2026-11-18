@@ -280,9 +280,45 @@ export const TEST_SIGNATURE =
  * things — see `schemas/driver.ts`. A test about scans or photos spreads this so it
  * fails for the reason it is named after.
  */
+export const TEST_DRIVER_PHONE = '082 555 0199';
+
+/**
+ * Cage 1 for each gas on a line delivered to stores — what an initialization must name. Read from the database rather than passed in, so a test
+ * whose batch mixes stores and site lines does not have to know which is which.
+ */
+export async function storesCagesFor(
+  batchId: string,
+  cage = 1,
+): Promise<{ gasTypeId: string; cage: number }[]> {
+  const rows = await prisma.cylinder.findMany({
+    where: { batchId, status: 'IN_STORES', batchLine: { initialDeliveryPoint: 'STORES' } },
+    select: { gasTypeId: true },
+    distinct: ['gasTypeId'],
+  });
+  return rows.map((r) => ({ gasTypeId: r.gasTypeId, cage }));
+}
+
+/**
+ * One cage for every gas in the batch — for a transfer back to stores. Transfers accept
+ * a cage for a gas that did not move (the moved set is only known after the claim), so
+ * a test that does not care which cage can send this whatever it scanned.
+ */
+export async function batchGasCages(
+  batchId: string,
+  cage = 1,
+): Promise<{ gasTypeId: string; cage: number }[]> {
+  const rows = await prisma.cylinder.findMany({
+    where: { batchId },
+    select: { gasTypeId: true },
+    distinct: ['gasTypeId'],
+  });
+  return rows.map((r) => ({ gasTypeId: r.gasTypeId, cage }));
+}
+
 export function testSignOff(overrides: Record<string, unknown> = {}) {
   return {
     driverName: 'Sipho Ndlovu',
+    driverPhone: TEST_DRIVER_PHONE,
     signaturePng: TEST_SIGNATURE,
     ...testDriverId(),
     ...overrides,
@@ -315,6 +351,7 @@ export async function initializeBatch(
         qrPayload: qrPayloadFor(serialCode),
         scannedAt: new Date().toISOString(),
       })),
+      cages: await storesCagesFor(batchId),
       photo: testPhoto(),
     },
   });

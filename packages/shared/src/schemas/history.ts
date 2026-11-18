@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { cageAssignmentDtoSchema } from './stores';
 import { cylinderStatusSchema } from './batch';
 import { batchPhotoDtoSchema } from './photo';
 import { movementTypeSchema } from './transfer';
@@ -164,10 +165,16 @@ export const batchEventDetailSchema = batchEventSummarySchema.extend({
 
   /** TRANSFER only: where the cylinders went. */
   destinationName: z.string().nullable(),
-  /** RETURN only: who signed for them. */
+  /** TRANSFER and RETURN: who signed for them. */
   driverName: z.string().nullable(),
-  /** RETURN only: the number off the ID they presented, where one was recorded. */
+  /** TRANSFER and RETURN: the number off the ID they presented, where one was recorded. */
   driverIdNumber: z.string().nullable(),
+  /** TRANSFER and RETURN: the driver's phone, where one was recorded. */
+  driverPhone: z.string().nullable(),
+  /** INITIALIZED and TRANSFER to stores: which cage each gas went into. */
+  cages: z.array(cageAssignmentDtoSchema),
+  /** TRANSFER to stores: the cylinders that came back empty. */
+  emptySerials: z.array(z.string()),
   /** AMENDED only: what was changed, and why. */
   changes: z.array(amendmentChangeSchema),
   reason: z.string().nullable(),

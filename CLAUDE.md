@@ -122,6 +122,35 @@ project manager is one person held in two rows:
 - **The lockout guards live on the manager routes**: you cannot deactivate or delete
   yourself, and the last active project manager cannot be removed.
 
+## Transfers repeat; a return is final
+
+- **A transfer** moves cylinders between stores and a site, as often as needed. Both
+  directions take full driver sign-off (name, phone, ID number, ID photo, signature)
+  and a batch photo, and every transfer emails the batch's project manager a
+  `TRANSFER_NOTICE` with the batch photo and the driver's ID attached.
+- **A return** sends cylinders back to the SUPPLIER. It is terminal (`RETURNED`): the
+  cylinder leaves rotation, leaves its cage, and stops counting anywhere. It is labelled
+  "Return to supplier" in the app because "Returns" alone reads as "back to stores",
+  which is a transfer. Don't merge the two.
+
+**Cages and full/empty live on the cylinder, and only in stores.** `Cylinder.cage` is
+1-3 and the `Cylinder_cage_only_in_stores` CHECK refuses one on anything not
+`IN_STORES`, so every path that moves a cylinder out of stores must clear it (the
+transfer and return claims set `"cage" = NULL`). Cages are chosen **per gas, per
+drop-off** — every argon cylinder in one drop-off goes into the same cage — at
+initialization (only for lines delivered to STORES; every cylinder is recorded
+`IN_STORES` at intake, but a SITE line's cylinders are physically on site) and on every
+transfer back to stores. Everything is booked in `FULL`; a transfer back to stores is
+the one moment contents change (`emptySerials`, everything else is set FULL).
+`MovementEvent.cage`/`contents` snapshot it for History and the email.
+
+A transfer's cages are checked against what actually MOVED, after the claim
+(`checkCages(..., { allowExtra: true })`): a cage for a gas whose cylinders were all
+rejected is not an error. An initialization's are checked up front and extras refused.
+
+`cached_cylinder` carries `gas_type_id` and `delivery_point` for this, offline —
+`CACHE_SCHEMA_VERSION` 4.
+
 ## Passwords: everyone starts on `gea`, and changes their own
 
 `DEFAULT_PASSWORD` (`gea`, in `packages/shared/src/schemas/auth.ts`) is what the seed,
@@ -213,8 +242,8 @@ when the export looks right but the app cannot reach the API.
    its place — so the browser gets HTML where it asked for JavaScript and the app is a blank
    white page with `Unexpected token '<'` in the console. Nothing about the export looks
    wrong; only the restart fixes it.
-3. `npm run typecheck && npm run lint && npm test` — 429 tests baseline
-   (67 shared, 303 API, 59 mobile). **Stop the dev API server first**: it shares the database
+3. `npm run typecheck && npm run lint && npm test` — 455 tests baseline
+   (72 shared, 321 API, 62 mobile). **Stop the dev API server first**: it shares the database
    with the test run, and its email worker polling across `resetDb()` fails tests at random.
 
    **`npm test` also empties the database you were demonstrating.** The suite shares it,

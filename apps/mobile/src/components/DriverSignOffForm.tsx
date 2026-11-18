@@ -7,10 +7,10 @@ import { Card, Field, SecondaryButton, styles } from '../ui/components';
 /**
  * The driver sign-off form, shared by transfer and return.
  *
- * All four things on ONE screen because they are one conversation at the gate: the
- * driver hands over their ID, the operator reads the number off it, photographs it,
- * and hands the phone across to sign. Splitting them across steps would turn a single
- * exchange into four.
+ * Name, phone, ID number, ID photo and signature all on ONE screen, because they are
+ * one conversation at the gate: the driver hands over their ID, the operator reads the
+ * number off it, photographs it, and hands the phone across to sign. Splitting them
+ * across steps would turn a single exchange into five.
  *
  * Purely presentational — every piece of state lives in `useDriverSignOff`, so the
  * two screens that use this cannot drift apart in what they collect or when they
@@ -39,6 +39,17 @@ export function DriverSignOffForm({
           autoCapitalize="words"
           placeholder="As it appears on their ID"
           editable={!submitting}
+        />
+        <Field
+          label="Driver phone number"
+          value={driver.driverPhone}
+          onChangeText={driver.setDriverPhone}
+          keyboardType="phone-pad"
+          autoComplete="tel"
+          autoCorrect={false}
+          placeholder="e.g. 082 555 0199"
+          editable={!submitting}
+          error={driver.driverPhoneInvalid ? 'That does not look like a phone number.' : null}
         />
         <Field
           label="Driver ID number"

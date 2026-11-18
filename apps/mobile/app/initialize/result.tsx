@@ -88,6 +88,11 @@ function Accepted({ result }: { result: string | null }) {
         This batch can now be transferred and returned. The scan, and the photo that went with it,
         are on the audit trail.
       </Text>
+      {(initialization.cages ?? []).map((c) => (
+        <Text key={c.gasTypeId} style={{ fontWeight: '600' }}>
+          {c.gasTypeName} → cage {c.cage}
+        </Text>
+      ))}
 
       {initialization.photoOverridden ? (
         <Text style={{ color: colors.warning, fontWeight: '600' }}>

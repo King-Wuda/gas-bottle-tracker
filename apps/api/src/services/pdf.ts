@@ -166,6 +166,8 @@ export interface DeliveryNoteMeta {
   /** Off whatever document the driver presented. Null on returns that predate ID
    *  capture — printed as such, rather than left blank as if nobody had looked. */
   driverIdNumber: string | null;
+  /** Null on returns recorded before the phone number was asked for. */
+  driverPhone: string | null;
   /** True when an admin waived the ID photograph. Printed, because the note is the
    *  evidence somebody signs against and they are entitled to know what is missing. */
   driverIdOverridden: boolean;
@@ -236,6 +238,7 @@ export async function renderDeliveryNote(
   line('Contents', meta.contents);
   line('Returned', fmt(meta.returnedAt));
   line('Driver ID number', meta.driverIdNumber ?? 'Not recorded');
+  line('Driver phone', meta.driverPhone ?? 'Not recorded');
   line('Received by', meta.storesManagerName);
   line('Cylinders returned', String(rows.length));
   const overriddenCount = rows.filter((r) => r.overridden).length;

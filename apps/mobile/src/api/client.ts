@@ -41,6 +41,7 @@ import type {
   MeResponse,
   ProjectDetailResponse,
   ProjectManagersResponse,
+  StoresSummaryResponse,
   ProjectSearchResponse,
   ReadDriverIdRequest,
   ReadDriverIdResponse,
@@ -273,6 +274,11 @@ export function apiGasTypes(): Promise<GasTypesResponse> {
 }
 
 /** Options for the project-manager dropdown. */
+/** The stores console: cylinders in rotation by gas, cage and full/empty. */
+export function apiStoresSummary(): Promise<StoresSummaryResponse> {
+  return apiRequest<StoresSummaryResponse>('/stores/summary');
+}
+
 export function apiProjectManagers(): Promise<ProjectManagersResponse> {
   return apiRequest<ProjectManagersResponse>('/project-managers');
 }

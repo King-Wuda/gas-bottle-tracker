@@ -9,6 +9,7 @@ import {
 } from './photo';
 import {
   driverIdFields,
+  driverPhoneSchema,
   driverSignOffDtoFields,
   hasDriverIdEvidence,
   signaturePngSchema,
@@ -31,6 +32,7 @@ export const createReturnRequestSchema = z
     /** PROJECT_MANAGER only, and recorded as unscanned evidence — see the transfer schema. */
     overrideSerials: overrideSerialsSchema.default([]),
     driverName: z.string().min(1).max(200),
+    driverPhone: driverPhoneSchema,
     ...driverIdFields,
     signaturePng: signaturePngSchema,
     /** The batch photo, taken between the scan step and the signature. */

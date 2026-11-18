@@ -10,6 +10,14 @@ import { prepareDriverSignOff } from '../services/driverSignOff.js';
 import { preparePhoto } from '../services/photo.js';
 import { toPhotoDto, type PhotoRow } from '../services/photoView.js';
 import { resolveScans, scanRejection } from '../services/scans.js';
+import {
+  applyCages,
+  cageAssignments,
+  cageEventSelect,
+  CageCheckError,
+  checkCages,
+} from '../services/cages.js';
+import { transferNotice } from '../services/notices.js';
 
 /** Thrown to roll the transaction back when nothing survived validation, so no
  *  orphan Transfer row is left behind for a submission that moved no cylinders. */
@@ -29,12 +37,18 @@ type TransferRow = {
   photoOverridden: boolean;
   driverName: string | null;
   driverIdNumber: string | null;
+  driverPhone: string | null;
   driverIdPath: string | null;
   driverIdOverridden: boolean;
   createdAt: Date;
   destinationSite: { location: string } | null;
   projectManager: { name: string } | null;
-  movementEvents: { overridden: boolean; cylinder: { serialCode: string } }[];
+  movementEvents: {
+    overridden: boolean;
+    cage: number | null;
+    contents: 'FULL' | 'EMPTY' | null;
+    cylinder: { serialCode: string; gasType: { id: string; name: string } };
+  }[];
   photo: PhotoRow | null;
 };
 
@@ -42,7 +56,7 @@ export const transferInclude = {
   destinationSite: { select: { location: true } },
   projectManager: { select: { name: true } },
   movementEvents: {
-    select: { overridden: true, cylinder: { select: { serialCode: true } } },
+    select: { overridden: true, ...cageEventSelect },
     orderBy: { cylinder: { serialCode: 'asc' } },
   },
   photo: { include: { user: { select: { name: true } } } },
@@ -58,12 +72,17 @@ const toTransferDto = (t: TransferRow): TransferDto => ({
   createdAt: t.createdAt.toISOString(),
   movedSerials: t.movementEvents.map((m) => m.cylinder.serialCode),
   overriddenSerials: t.movementEvents.filter((m) => m.overridden).map((m) => m.cylinder.serialCode),
+  cages: cageAssignments(t.movementEvents),
+  emptySerials: t.movementEvents
+    .filter((m) => m.contents === 'EMPTY')
+    .map((m) => m.cylinder.serialCode),
   projectManagerId: t.projectManagerId,
   projectManagerName: t.projectManager?.name ?? null,
   photo: t.photo ? toPhotoDto(t.photo) : null,
   photoOverridden: t.photoOverridden,
   driverName: t.driverName,
   driverIdNumber: t.driverIdNumber,
+  driverPhone: t.driverPhone,
   driverIdOverridden: t.driverIdOverridden,
   // Derived from the file actually on record rather than from the absence of an
   // override, so a transfer that predates sign-off reads as "no document" instead of
@@ -76,6 +95,7 @@ const toTransferDto = (t: TransferRow): TransferDto => ({
 interface ClaimedRow {
   id: string;
   serialCode: string;
+  gasTypeId: string;
   fromSiteId: string | null;
 }
 
@@ -118,6 +138,21 @@ export async function transferRoutes(app: FastifyInstance): Promise<void> {
           error: {
             code: 'OVERRIDE_FORBIDDEN',
             message: 'Only a project manager can move a cylinder without scanning it.',
+          },
+        });
+      }
+
+      // Cages and full/empty belong to stores. A cylinder going to a site is in no
+      // cage and nobody has looked inside it, so sending either is refused rather than
+      // quietly dropped — the screen and the server would disagree about the move.
+      if (
+        input.destination.type === 'SITE' &&
+        (input.cages.length > 0 || input.emptySerials.length > 0)
+      ) {
+        return reply.code(400).send({
+          error: {
+            code: 'STORES_ONLY',
+            message: 'Cages and empty cylinders are only recorded on a move back to stores.',
           },
         });
       }
@@ -246,6 +281,7 @@ export async function transferRoutes(app: FastifyInstance): Promise<void> {
                 photoOverridden: prepared.overridden,
                 driverName: input.driverName,
                 driverIdNumber: input.driverIdNumber,
+                driverPhone: input.driverPhone,
                 driverIdPath: signOff.driverIdPath,
                 driverIdOverridden: signOff.driverIdOverridden,
                 signaturePath: signOff.signaturePath,
@@ -305,10 +341,14 @@ export async function transferRoutes(app: FastifyInstance): Promise<void> {
               UPDATE "Cylinder" AS c
               SET "status" = ${newStatus}::"CylinderStatus",
                   "currentSiteId" = ${destSiteId}::text,
+                  -- Out of whatever cage it was in. A move back to stores sets the
+                  -- new one below, per gas, once the request's cages are checked
+                  -- against what actually moved.
+                  "cage" = NULL,
                   "updatedAt" = now()
               FROM locked AS l
               WHERE c."id" = l."id"
-              RETURNING c."id", c."serialCode", l."currentSiteId" AS "fromSiteId"
+              RETURNING c."id", c."serialCode", c."gasTypeId", l."currentSiteId" AS "fromSiteId"
             `;
 
             const claimedIds = new Set(claimed.map((c) => c.id));
@@ -325,6 +365,39 @@ export async function transferRoutes(app: FastifyInstance): Promise<void> {
             }
             if (claimed.length === 0) throw new NoValidScansError(rejected);
 
+            // Back to stores: into the cage chosen for each gas, and recorded full or
+            // empty as the person dropping them off said. Only now is it known which
+            // gases actually moved, so this is where a missing cage is caught.
+            let cageByGas = new Map<string, number>();
+            const empties = new Set(input.emptySerials);
+            if (!destSiteId) {
+              const idsByGas = new Map<string, string[]>();
+              for (const c of claimed) {
+                idsByGas.set(c.gasTypeId, [...(idsByGas.get(c.gasTypeId) ?? []), c.id]);
+              }
+              const check = checkCages(new Set(idsByGas.keys()), input.cages, {
+                allowExtra: true,
+              });
+              if (!check.ok) throw new CageCheckError(check);
+              cageByGas = check.cageByGas;
+              await applyCages(tx, idsByGas, cageByGas);
+
+              const emptyIds = claimed.filter((c) => empties.has(c.serialCode)).map((c) => c.id);
+              const fullIds = claimed.filter((c) => !empties.has(c.serialCode)).map((c) => c.id);
+              if (emptyIds.length > 0) {
+                await tx.cylinder.updateMany({
+                  where: { id: { in: emptyIds } },
+                  data: { contents: 'EMPTY' },
+                });
+              }
+              if (fullIds.length > 0) {
+                await tx.cylinder.updateMany({
+                  where: { id: { in: fullIds } },
+                  data: { contents: 'FULL' },
+                });
+              }
+            }
+
             const bySerial = new Map(movable.map((c) => [c.serialCode, c]));
             await tx.movementEvent.createMany({
               data: claimed.map((c) => ({
@@ -336,6 +409,12 @@ export async function transferRoutes(app: FastifyInstance): Promise<void> {
                 transferId: transfer.id,
                 deviceAt: bySerial.get(c.serialCode)?.scannedAt ?? new Date(),
                 overridden: bySerial.get(c.serialCode)?.overridden ?? false,
+                ...(destSiteId
+                  ? {}
+                  : {
+                      cage: cageByGas.get(c.gasTypeId) ?? null,
+                      contents: empties.has(c.serialCode) ? ('EMPTY' as const) : ('FULL' as const),
+                    }),
               })),
             });
 
@@ -366,11 +445,34 @@ export async function transferRoutes(app: FastifyInstance): Promise<void> {
               });
             }
 
+            // Tell the batch's project manager — the new one, if this move handed it
+            // over. Queued in the same transaction, so a rolled-back transfer sends
+            // nothing; the photos are attached by the worker at send time.
+            const notice = await transferNotice(tx, transfer.id);
+            await tx.outboundEmail.create({
+              data: {
+                to: newManager?.email ?? batch.projectManagerEmail,
+                type: 'TRANSFER_NOTICE',
+                subject: notice.subject,
+                bodyText: notice.text,
+                payload: { transferId: transfer.id },
+              },
+            });
+
             return { transferId: transfer.id, rejected };
           },
           { timeout: 20_000, maxWait: 10_000 },
         );
       } catch (err) {
+        if (err instanceof CageCheckError) {
+          return reply.code(err.check.status).send({
+            error: {
+              code: err.check.code,
+              message: err.check.message,
+              details: err.check.details,
+            },
+          });
+        }
         if (err instanceof NoValidScansError) {
           return reply.code(422).send({
             error: {

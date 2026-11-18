@@ -140,6 +140,7 @@ async function buildDeliveryNote(
         .join(', '),
       driverName: record.driverName,
       driverIdNumber: record.driverIdNumber,
+      driverPhone: record.driverPhone,
       driverIdOverridden: record.driverIdOverridden,
       storesManagerName: record.storesManager.name,
       returnedAt: record.createdAt,
@@ -176,6 +177,53 @@ async function buildDeliveryNote(
   };
 }
 
+/**
+ * The photographs behind a transfer or return — the cylinders, and the driver's ID —
+ * as attachments, so the project manager can see them without opening the app.
+ *
+ * Best effort, like the ID photo inside the delivery note: a file that cannot be read
+ * is left off rather than failing the email. The text, the serials and (for a return)
+ * the signed note are what the message exists for, and a retry would not bring a
+ * missing file back. The body already says which photos were waived.
+ */
+async function evidenceAttachments(
+  projectNumber: string,
+  photoPath: string | null,
+  driverIdPath: string | null,
+): Promise<{ attachments: MailAttachment[]; relPaths: string[] }> {
+  const attachments: MailAttachment[] = [];
+  const relPaths: string[] = [];
+  const add = async (relPath: string | null, name: string): Promise<void> => {
+    if (!relPath) return;
+    const content = await readFileAt(relPath).catch(() => null);
+    if (!content) return;
+    const ext = relPath.toLowerCase().endsWith('.png') ? 'png' : 'jpg';
+    attachments.push({
+      filename: `${name}-${projectNumber}.${ext}`,
+      content,
+      contentType: ext === 'png' ? 'image/png' : 'image/jpeg',
+    });
+    relPaths.push(relPath);
+  };
+  await add(photoPath, 'cylinders');
+  await add(driverIdPath, 'driver-id');
+  return { attachments, relPaths };
+}
+
+async function buildTransferNotice(
+  transferId: string,
+): Promise<{ attachments: MailAttachment[]; relPaths: string[] }> {
+  const t = await prisma.transfer.findUniqueOrThrow({
+    where: { id: transferId },
+    select: {
+      driverIdPath: true,
+      photo: { select: { path: true } },
+      batch: { select: { project: { select: { projectNumber: true } } } },
+    },
+  });
+  return evidenceAttachments(t.batch.project.projectNumber, t.photo?.path ?? null, t.driverIdPath);
+}
+
 async function processOne(id: string, log?: FastifyBaseLogger): Promise<void> {
   const row = await prisma.outboundEmail.findUniqueOrThrow({ where: { id } });
   try {
@@ -192,8 +240,25 @@ async function processOne(id: string, log?: FastifyBaseLogger): Promise<void> {
       const returnRecordId = (row.payload as { returnRecordId?: string } | null)?.returnRecordId;
       if (!returnRecordId) throw new Error('DELIVERY_NOTE email has no payload.returnRecordId');
       const { attachment, relPath } = await buildDeliveryNote(returnRecordId);
-      attachments = [attachment];
-      relPaths = [relPath];
+      const r = await prisma.returnRecord.findUniqueOrThrow({
+        where: { id: returnRecordId },
+        select: {
+          driverIdPath: true,
+          photo: { select: { path: true } },
+          batch: { select: { project: { select: { projectNumber: true } } } },
+        },
+      });
+      const evidence = await evidenceAttachments(
+        r.batch.project.projectNumber,
+        r.photo?.path ?? null,
+        r.driverIdPath,
+      );
+      attachments = [attachment, ...evidence.attachments];
+      relPaths = [relPath, ...evidence.relPaths];
+    } else if (row.type === 'TRANSFER_NOTICE') {
+      const transferId = (row.payload as { transferId?: string } | null)?.transferId;
+      if (!transferId) throw new Error('TRANSFER_NOTICE email has no payload.transferId');
+      ({ attachments, relPaths } = await buildTransferNotice(transferId));
     } else {
       throw new Error(`email type ${row.type as string} not supported`);
     }

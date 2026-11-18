@@ -86,8 +86,22 @@ function Accepted({ result }: { result: string | null }) {
       </Text>
       <Text style={{ opacity: 0.7 }}>
         Destination: {transfer.destinationSiteName ?? 'Stores'}. The movement is recorded in the
-        audit log.
+        audit log, and the project manager is emailed the details and photos.
       </Text>
+      {/* `?? []`: a reply held in the outbox from before cages were recorded has none. */}
+      {(transfer.cages ?? []).length > 0 ? (
+        <Card>
+          {(transfer.cages ?? []).map((c) => (
+            <Text key={c.gasTypeId} style={{ fontWeight: '600' }}>
+              {c.gasTypeName} → cage {c.cage}
+            </Text>
+          ))}
+          <Text style={{ opacity: 0.7 }}>
+            {transfer.movedSerials.length - (transfer.emptySerials ?? []).length} full ·{' '}
+            {(transfer.emptySerials ?? []).length} empty
+          </Text>
+        </Card>
+      ) : null}
 
       <Card>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>

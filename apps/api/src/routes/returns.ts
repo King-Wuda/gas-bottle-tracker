@@ -29,6 +29,7 @@ type ReturnRow = {
   batchId: string;
   driverName: string;
   driverIdNumber: string | null;
+  driverPhone: string | null;
   driverIdPath: string | null;
   driverIdOverridden: boolean;
   storesManagerId: string;
@@ -68,6 +69,7 @@ export async function returnRoutes(app: FastifyInstance): Promise<void> {
     batchId: r.batchId,
     driverName: r.driverName,
     driverIdNumber: r.driverIdNumber,
+    driverPhone: r.driverPhone,
     driverIdOverridden: r.driverIdOverridden,
     // Derived from the file actually on record rather than from the absence of an
     // override, so a return that predates ID capture reads as "no document" instead
@@ -233,6 +235,7 @@ export async function returnRoutes(app: FastifyInstance): Promise<void> {
                 storesManagerId: userId,
                 driverName: input.driverName,
                 driverIdNumber: input.driverIdNumber,
+                driverPhone: input.driverPhone,
                 driverIdPath: signOff.driverIdPath,
                 driverIdOverridden: signOff.driverIdOverridden,
                 signaturePath: signOff.signaturePath,
@@ -268,7 +271,8 @@ export async function returnRoutes(app: FastifyInstance): Promise<void> {
                 FOR UPDATE
               )
               UPDATE "Cylinder" AS c
-              SET "status" = 'RETURNED', "currentSiteId" = NULL, "updatedAt" = now()
+              -- Back to the supplier: out of every site and out of its stores cage.
+              SET "status" = 'RETURNED', "currentSiteId" = NULL, "cage" = NULL, "updatedAt" = now()
               FROM locked AS l
               WHERE c."id" = l."id"
               RETURNING c."id", c."serialCode", l."currentSiteId" AS "fromSiteId"
@@ -328,12 +332,19 @@ export async function returnRoutes(app: FastifyInstance): Promise<void> {
                 type: 'DELIVERY_NOTE',
                 subject: `Delivery note — ${claimed.length} cylinder(s) returned, project ${batch.project.projectNumber}`,
                 bodyText:
-                  `${claimed.length} cylinder(s) were collected from "${batch.site.client.name}" ` +
-                  `and signed for by ${input.driverName}.\n` +
+                  `${claimed.length} cylinder(s) were returned to the supplier for ` +
+                  `"${batch.site.client.name}".\n` +
                   (outstanding === 0
                     ? 'This completes the batch — all cylinders are now returned.\n'
                     : `${outstanding} cylinder(s) from this batch are still outstanding.\n`) +
-                  'The signed delivery note is attached.',
+                  `\nDriver\n` +
+                  `  Name:       ${input.driverName}\n` +
+                  `  Phone:      ${input.driverPhone}\n` +
+                  `  ID number:  ${input.driverIdNumber}\n` +
+                  `\nAttached: the signed delivery note` +
+                  (signOff.driverIdPath ? ', the photo of the driver’s ID' : '') +
+                  (prepared.columns ? ' and the photo of the cylinders' : '') +
+                  '.',
                 payload: { returnRecordId: record.id },
               },
             });

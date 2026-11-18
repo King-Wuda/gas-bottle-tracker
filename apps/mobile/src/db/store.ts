@@ -70,6 +70,11 @@ export interface CachedCylinder {
   /** Which gas this particular cylinder is. The scan checklist groups by it, which
    *  only became necessary once one batch could hold several. */
   gasTypeName: string;
+  /** The gas's id — what a cage choice is keyed by on the server. */
+  gasTypeId: string;
+  /** Where the cylinder's line was delivered: an initialization puts the STORES ones
+   *  into a cage, while SITE ones are physically out on site already. */
+  deliveryPoint: 'STORES' | 'SITE';
   status: string;
   currentSiteId: string | null;
 }

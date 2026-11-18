@@ -100,6 +100,35 @@ export function ReturnIcon({ size = 24, color = colors.ink }: IconProps) {
 }
 
 /** History: a clock with a hand, plus the arc of going back. */
+/** Three cages side by side, a cylinder standing in the middle one — the stores yard. */
+export function StoresIcon({ size = 24, color = colors.ink }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox={`0 0 ${S} ${S}`} fill="none">
+      <Path
+        d="M3 20.25V8.5l9-4.75 9 4.75v11.75M3 20.25h18"
+        stroke={color}
+        strokeWidth={STROKE}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M8.5 20.25v-7.5M15.5 20.25v-7.5M8.5 12.75h7"
+        stroke={color}
+        strokeWidth={STROKE}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M11 20.25v-4.5a1 1 0 0 1 2 0v4.5"
+        stroke={color}
+        strokeWidth={STROKE}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
 export function HistoryIcon({ size = 24, color = colors.ink }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox={`0 0 ${S} ${S}`} fill="none">

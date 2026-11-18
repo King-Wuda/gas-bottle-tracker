@@ -129,6 +129,7 @@ const returnBody = (batchId: string, serials: string[], extra: Record<string, un
   clientRequestId: randomUUID(),
   scans: serials.map(scan),
   driverName: 'Sipho Ndlovu',
+  driverPhone: '082 555 0199',
   ...testDriverId(),
   signaturePng: SIGNATURE,
   ...extra,

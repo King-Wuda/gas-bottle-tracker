@@ -6,11 +6,11 @@ export default function ReturnsLayout() {
   return (
     <ScanFlowProvider>
       <Stack screenOptions={stackScreenOptions}>
-        <Stack.Screen name="index" options={{ title: 'Returns — find batch' }} />
+        <Stack.Screen name="index" options={{ title: 'Return to supplier' }} />
         <Stack.Screen name="scan" options={{ title: 'Verify cylinders' }} />
         <Stack.Screen name="photo" options={{ title: 'Photo of the batch' }} />
         <Stack.Screen name="sign" options={{ title: 'Driver sign-off' }} />
-        <Stack.Screen name="result" options={{ title: 'Return submitted' }} />
+        <Stack.Screen name="result" options={{ title: 'Returned to supplier' }} />
       </Stack>
     </ScanFlowProvider>
   );
