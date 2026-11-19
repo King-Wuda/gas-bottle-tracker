@@ -16,6 +16,7 @@ import {
 import { prisma, Prisma } from '../db.js';
 import { env } from '../env.js';
 import { allocateSerials } from '../services/serial.js';
+import { copyToStoresManagers } from '../services/notices.js';
 import {
   batchInclude,
   batchRelations,
@@ -282,16 +283,23 @@ export async function batchRoutes(app: FastifyInstance): Promise<void> {
                 deviceAt,
               })),
             });
-            await tx.outboundEmail.create({
-              data: qrSheetEmail({
-                to: manager.email,
-                batchId: batch.id,
-                projectNumber: project.projectNumber,
-                siteName: site.client.name,
-                lines: resolved,
-                serials: allSerials,
-                resend: false,
-              }),
+            const sheet = qrSheetEmail({
+              to: manager.email,
+              batchId: batch.id,
+              projectNumber: project.projectNumber,
+              siteName: site.client.name,
+              lines: resolved,
+              serials: allSerials,
+              resend: false,
+            });
+            await tx.outboundEmail.create({ data: sheet });
+            // Stores is told a batch is coming, with the same QR sheet attached.
+            await copyToStoresManagers(tx, {
+              type: 'QR_SHEET',
+              subject: sheet.subject,
+              bodyText: sheet.bodyText,
+              payload: { batchId: batch.id },
+              alreadyTo: manager.email,
             });
 
             return { batchId: batch.id, serials: allSerials };

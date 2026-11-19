@@ -82,3 +82,45 @@ export async function transferNotice(
     text,
   };
 }
+
+/**
+ * Every active stores manager gets a copy of each event email — a new batch's QR sheet,
+ * every transfer notice and every return's delivery note — so stores knows what is
+ * coming in and going out without waiting to be told.
+ *
+ * A copy is the same email (same type, subject, body and attachments, rendered by the
+ * worker from the same payload) to a different address, marked `copy: 'stores'` in its
+ * payload so the batch screen's "was the QR sheet delivered?" keeps reporting on the
+ * project manager's email, not on whichever copy happened to be queued last. Nobody gets
+ * it twice: an address already on the event is skipped.
+ */
+export async function copyToStoresManagers(
+  tx: Prisma.TransactionClient,
+  email: {
+    type: 'QR_SHEET' | 'TRANSFER_NOTICE' | 'DELIVERY_NOTE';
+    subject: string;
+    bodyText: string;
+    payload: Record<string, string | boolean>;
+    alreadyTo: string;
+  },
+): Promise<number> {
+  const managers = await tx.user.findMany({
+    where: { role: 'STORES_MANAGER', active: true, deletedAt: null },
+    select: { email: true },
+  });
+  const skip = email.alreadyTo.trim().toLowerCase();
+  const to = [...new Set(managers.map((m) => m.email.trim().toLowerCase()))].filter(
+    (address) => address !== skip,
+  );
+  if (to.length === 0) return 0;
+  await tx.outboundEmail.createMany({
+    data: to.map((address) => ({
+      to: address,
+      type: email.type,
+      subject: email.subject,
+      bodyText: email.bodyText,
+      payload: { ...email.payload, copy: 'stores' },
+    })),
+  });
+  return to.length;
+}

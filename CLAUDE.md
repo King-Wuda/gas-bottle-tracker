@@ -133,6 +133,13 @@ project manager is one person held in two rows:
   "Return to supplier" in the app because "Returns" alone reads as "back to stores",
   which is a transfer. Don't merge the two.
 
+**Every event email is copied to the stores managers.** A new batch's QR sheet, every
+`TRANSFER_NOTICE` and every return's `DELIVERY_NOTE` go to the project manager AND, via
+`copyToStoresManagers` (`services/notices.ts`), to every active `STORES_MANAGER` — the
+same email and attachments, payload marked `copy: 'stores'`. `emailDeliveryFor` skips
+copies, so the batch screen keeps reporting the project manager's QR sheet. Tests about
+the PM's own email filter them out with `notStoresCopy` (test/helpers.ts).
+
 **Cages and full/empty live on the cylinder, and only in stores.** `Cylinder.cage` is
 1-3 and the `Cylinder_cage_only_in_stores` CHECK refuses one on anything not
 `IN_STORES`, so every path that moves a cylinder out of stores must clear it (the
@@ -263,8 +270,8 @@ when the export looks right but the app cannot reach the API.
    its place — so the browser gets HTML where it asked for JavaScript and the app is a blank
    white page with `Unexpected token '<'` in the console. Nothing about the export looks
    wrong; only the restart fixes it.
-3. `npm run typecheck && npm run lint && npm test` — 475 tests baseline
-   (78 shared, 332 API, 65 mobile). **Stop the dev API server first**: it shares the database
+3. `npm run typecheck && npm run lint && npm test` — 478 tests baseline
+   (78 shared, 335 API, 65 mobile). **Stop the dev API server first**: it shares the database
    with the test run, and its email worker polling across `resetDb()` fails tests at random.
 
    **`npm test` also empties the database you were demonstrating.** The suite shares it,

@@ -20,6 +20,7 @@ import {
   testPhoto,
   uniqueProjectNumber,
   testDriverId,
+  notStoresCopy,
 } from './helpers.js';
 
 let app: FastifyInstance;
@@ -90,7 +91,11 @@ afterAll(async () => {
 describe('email worker — QR sheet', () => {
   it('renders a PDF, marks the row SENT, and hands it to the transport', async () => {
     const pending = await prisma.outboundEmail.findFirstOrThrow({
-      where: { type: 'QR_SHEET', payload: { path: ['batchId'], equals: batchId } },
+      where: {
+        ...notStoresCopy,
+        type: 'QR_SHEET',
+        payload: { path: ['batchId'], equals: batchId },
+      },
     });
     expect(pending.status).toBe('PENDING');
 
@@ -262,7 +267,11 @@ describe('GET /batches/:id — emailDelivery', () => {
 
   it('surfaces a refusal instead of leaving it in the table', async () => {
     const row = await prisma.outboundEmail.findFirstOrThrow({
-      where: { type: 'QR_SHEET', payload: { path: ['batchId'], equals: batchId } },
+      where: {
+        ...notStoresCopy,
+        type: 'QR_SHEET',
+        payload: { path: ['batchId'], equals: batchId },
+      },
       orderBy: { createdAt: 'desc' },
     });
     const refusal =
@@ -302,7 +311,11 @@ describe('GET /batches/:id — emailDelivery', () => {
 
   it('reports the NEWEST row, so a resend is what the screen shows', async () => {
     const original = await prisma.outboundEmail.findFirstOrThrow({
-      where: { type: 'QR_SHEET', payload: { path: ['batchId'], equals: batchId } },
+      where: {
+        ...notStoresCopy,
+        type: 'QR_SHEET',
+        payload: { path: ['batchId'], equals: batchId },
+      },
       orderBy: { createdAt: 'desc' },
     });
     const resent = await prisma.outboundEmail.create({

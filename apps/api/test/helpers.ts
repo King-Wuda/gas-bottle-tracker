@@ -74,6 +74,13 @@ export const DEMO = {
   admin: 'admin@demo.local',
 } as const;
 
+/**
+ * Excludes the stores manager's copy of an event email (`copyToStoresManagers`) — for
+ * tests about the project manager's own email: the QR sheet's resend lock, its delivery
+ * status, one sheet per batch. The suite's stores account is the only stores manager.
+ */
+export const notStoresCopy = { NOT: { to: 'stores@demo.local' } } as const;
+
 /** The role each seeded demo account is supposed to have, so resetDb can restore it. */
 const SEED_ROLES = {
   TECHNICIAN: 'technician@demo.local',

@@ -15,6 +15,7 @@ import { readIdNumber } from '../services/idOcr.js';
 import { preparePhoto } from '../services/photo.js';
 import { toPhotoDto, type PhotoRow } from '../services/photoView.js';
 import { resolveScans, scanRejection } from '../services/scans.js';
+import { copyToStoresManagers } from '../services/notices.js';
 
 /** Rolls the transaction back when nothing survived validation, so a submission that
  *  returned no cylinder leaves neither a ReturnRecord nor a queued email. */
@@ -324,29 +325,36 @@ export async function returnRoutes(app: FastifyInstance): Promise<void> {
               },
             });
 
-            await tx.outboundEmail.create({
-              data: {
-                // The batch's own manager, which a transfer or an admin correction may
-                // have changed since it was booked in — not the project's default.
-                to: batch.projectManagerEmail,
-                type: 'DELIVERY_NOTE',
-                subject: `Delivery note — ${claimed.length} cylinder(s) returned, project ${batch.project.projectNumber}`,
-                bodyText:
-                  `${claimed.length} cylinder(s) were returned to the supplier for ` +
-                  `"${batch.site.client.name}".\n` +
-                  (outstanding === 0
-                    ? 'This completes the batch — all cylinders are now returned.\n'
-                    : `${outstanding} cylinder(s) from this batch are still outstanding.\n`) +
-                  `\nDriver\n` +
-                  `  Name:       ${input.driverName}\n` +
-                  `  Phone:      ${input.driverPhone}\n` +
-                  `  ID number:  ${input.driverIdNumber}\n` +
-                  `\nAttached: the signed delivery note` +
-                  (signOff.driverIdPath ? ', the photo of the driver’s ID' : '') +
-                  (prepared.columns ? ' and the photo of the cylinders' : '') +
-                  '.',
-                payload: { returnRecordId: record.id },
-              },
+            const note = {
+              // The batch's own manager, which a transfer or an admin correction may
+              // have changed since it was booked in — not the project's default.
+              to: batch.projectManagerEmail,
+              type: 'DELIVERY_NOTE' as const,
+              subject: `Delivery note — ${claimed.length} cylinder(s) returned, project ${batch.project.projectNumber}`,
+              bodyText:
+                `${claimed.length} cylinder(s) were returned to the supplier for ` +
+                `"${batch.site.client.name}".\n` +
+                (outstanding === 0
+                  ? 'This completes the batch — all cylinders are now returned.\n'
+                  : `${outstanding} cylinder(s) from this batch are still outstanding.\n`) +
+                `\nDriver\n` +
+                `  Name:       ${input.driverName}\n` +
+                `  Phone:      ${input.driverPhone}\n` +
+                `  ID number:  ${input.driverIdNumber}\n` +
+                `\nAttached: the signed delivery note` +
+                (signOff.driverIdPath ? ', the photo of the driver’s ID' : '') +
+                (prepared.columns ? ' and the photo of the cylinders' : '') +
+                '.',
+              payload: { returnRecordId: record.id },
+            };
+            await tx.outboundEmail.create({ data: note });
+            // Stores is told too: the cylinders have left rotation for good.
+            await copyToStoresManagers(tx, {
+              type: 'DELIVERY_NOTE',
+              subject: note.subject,
+              bodyText: note.bodyText,
+              payload: { returnRecordId: record.id },
+              alreadyTo: note.to,
             });
 
             return { returnRecordId: record.id, rejected };

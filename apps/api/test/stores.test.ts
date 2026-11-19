@@ -583,3 +583,100 @@ describe('GET /stores/summary', () => {
     expect(res.statusCode).toBe(403);
   });
 });
+
+// ------------------------------------------------- copies to the stores manager
+
+describe('the stores manager is copied on every event', () => {
+  const copiesFor = (where: object) =>
+    prisma.outboundEmail.findMany({ where: { ...where, to: DEMO.stores } });
+
+  it('gets the QR sheet of a new batch, a transfer notice and a delivery note', async () => {
+    const b = await makeBatch({ qty: 2, to: 'STORES' }, { qty: 1, to: 'STORES' });
+    const [qr] = await copiesFor({
+      type: 'QR_SHEET',
+      payload: { path: ['batchId'], equals: b.batchId },
+    });
+    expect(qr).toBeTruthy();
+    expect((qr!.payload as { copy?: string }).copy).toBe('stores');
+
+    await initialize(
+      b.batchId,
+      [...b.argon, ...b.nitrogen],
+      [
+        { gasTypeId: argonId, cage: 1 },
+        { gasTypeId: nitrogenId, cage: 2 },
+      ],
+    );
+    const t = await transfer({
+      batchId: b.batchId,
+      destination: { type: 'SITE', siteId },
+      scans: b.argon.map(scan),
+    });
+    const transferId = t.json().transfer.id as string;
+    const notices = await copiesFor({
+      type: 'TRANSFER_NOTICE',
+      payload: { path: ['transferId'], equals: transferId },
+    });
+    expect(notices).toHaveLength(1);
+    // Same email as the project manager's — not a summary of it.
+    const pmNotice = await prisma.outboundEmail.findFirstOrThrow({
+      where: {
+        type: 'TRANSFER_NOTICE',
+        to: pm.email,
+        payload: { path: ['transferId'], equals: transferId },
+      },
+    });
+    expect(notices[0]!.bodyText).toBe(pmNotice.bodyText);
+
+    const r = await app.inject({
+      method: 'POST',
+      url: '/returns',
+      headers: bearer(storesToken),
+      payload: {
+        ...testSignOff(),
+        photo: testPhoto(),
+        clientRequestId: randomUUID(),
+        batchId: b.batchId,
+        scans: b.nitrogen.map(scan),
+      },
+    });
+    expect(r.statusCode).toBe(201);
+    const notes = await copiesFor({
+      type: 'DELIVERY_NOTE',
+      payload: { path: ['returnRecordId'], equals: r.json().returnRecord.id },
+    });
+    expect(notes).toHaveLength(1);
+
+    // The copy carries the same attachments when it is sent.
+    clearCapturedMail();
+    while ((await processPendingEmails(20)) > 0) {
+      /* drain */
+    }
+    const sentCopy = capturedMail().find(
+      (m) => m.to === DEMO.stores && m.subject === notes[0]!.subject,
+    );
+    expect(sentCopy?.attachments?.some((a) => a.filename.startsWith('delivery-note'))).toBe(true);
+  });
+
+  it('a deactivated stores manager is not copied', async () => {
+    await prisma.user.updateMany({ where: { email: DEMO.stores }, data: { active: false } });
+    try {
+      const b = await makeBatch({ qty: 1, to: 'STORES' }, { qty: 1, to: 'STORES' });
+      expect(
+        await copiesFor({ type: 'QR_SHEET', payload: { path: ['batchId'], equals: b.batchId } }),
+      ).toHaveLength(0);
+    } finally {
+      await prisma.user.updateMany({ where: { email: DEMO.stores }, data: { active: true } });
+    }
+  });
+
+  it("the batch screen's email status still reports the project manager's QR sheet", async () => {
+    const b = await makeBatch({ qty: 1, to: 'STORES' }, { qty: 1, to: 'STORES' });
+    const res = await app.inject({
+      method: 'GET',
+      url: `/batches/${b.batchId}`,
+      headers: bearer(techToken),
+    });
+    expect(res.json().emailDelivery.to).toBe(pm.email);
+  });
+});

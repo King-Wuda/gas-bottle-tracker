@@ -18,6 +18,7 @@ import {
   testSignOff,
   testPhoto,
   uniqueProjectNumber,
+  notStoresCopy,
 } from './helpers.js';
 
 let app: FastifyInstance;
@@ -280,12 +281,11 @@ describe('POST /returns — idempotency', () => {
     expect(replay.json().returnRecord.returnedSerials).toEqual([...serials].sort());
 
     expect(await prisma.returnRecord.count({ where: { batchId } })).toBe(1);
-    // Exactly one delivery note — the PM is not emailed twice for one collection.
-    expect(
-      await prisma.outboundEmail.count({
-        where: { payload: { path: ['returnRecordId'], equals: first.json().returnRecord.id } },
-      }),
-    ).toBe(1);
+    // Exactly one delivery note — the PM is not emailed twice for one collection, and
+    // neither is the stores manager's copy (copyToStoresManagers).
+    const notes = { payload: { path: ['returnRecordId'], equals: first.json().returnRecord.id } };
+    expect(await prisma.outboundEmail.count({ where: { ...notes, ...notStoresCopy } })).toBe(1);
+    expect(await prisma.outboundEmail.count({ where: { ...notes, to: DEMO.stores } })).toBe(1);
   });
 
   it('concurrent replays of one queued return produce exactly one record', async () => {

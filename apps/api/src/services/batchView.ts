@@ -264,11 +264,24 @@ export function toBatchDto(
  * rows, and this would be a query per row for a fact nobody reads from a list.
  */
 export async function emailDeliveryFor(batchId: string): Promise<EmailDelivery | null> {
-  const row = await prisma.outboundEmail.findFirst({
+  // The project manager's email, not a stores manager's copy (`copy: 'stores'`): the
+  // copies are queued in the same transaction, so "latest" alone could be one of them.
+  // Filtered here rather than in SQL, where a "not equal" on a JSON key that is absent
+  // also drops the rows without it.
+  const rows = await prisma.outboundEmail.findMany({
     where: { type: 'QR_SHEET', payload: { path: ['batchId'], equals: batchId } },
     orderBy: { createdAt: 'desc' },
-    select: { status: true, lastError: true, attempts: true, sentAt: true, to: true },
+    select: {
+      status: true,
+      lastError: true,
+      attempts: true,
+      sentAt: true,
+      to: true,
+      payload: true,
+    },
+    take: 20,
   });
+  const row = rows.find((r) => (r.payload as { copy?: string } | null)?.copy !== 'stores');
   if (!row) return null;
   return {
     status: row.status,

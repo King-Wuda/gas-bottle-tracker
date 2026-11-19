@@ -17,7 +17,7 @@ import {
   CageCheckError,
   checkCages,
 } from '../services/cages.js';
-import { transferNotice } from '../services/notices.js';
+import { copyToStoresManagers, transferNotice } from '../services/notices.js';
 
 /** Thrown to roll the transaction back when nothing survived validation, so no
  *  orphan Transfer row is left behind for a submission that moved no cylinders. */
@@ -449,14 +449,22 @@ export async function transferRoutes(app: FastifyInstance): Promise<void> {
             // over. Queued in the same transaction, so a rolled-back transfer sends
             // nothing; the photos are attached by the worker at send time.
             const notice = await transferNotice(tx, transfer.id);
+            const pmEmail = newManager?.email ?? batch.projectManagerEmail;
             await tx.outboundEmail.create({
               data: {
-                to: newManager?.email ?? batch.projectManagerEmail,
+                to: pmEmail,
                 type: 'TRANSFER_NOTICE',
                 subject: notice.subject,
                 bodyText: notice.text,
                 payload: { transferId: transfer.id },
               },
+            });
+            await copyToStoresManagers(tx, {
+              type: 'TRANSFER_NOTICE',
+              subject: notice.subject,
+              bodyText: notice.text,
+              payload: { transferId: transfer.id },
+              alreadyTo: pmEmail,
             });
 
             return { transferId: transfer.id, rejected };
