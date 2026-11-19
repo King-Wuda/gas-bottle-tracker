@@ -151,6 +151,15 @@ rejected is not an error. An initialization's are checked up front and extras re
 `cached_cylinder` carries `gas_type_id` and `delivery_point` for this, offline —
 `CACHE_SCHEMA_VERSION` 4.
 
+## QR labels are sized to the sticker, not the page
+
+The QR sheet (`renderQrSheet` in `apps/api/src/services/pdf.ts`) prints one label per
+**100 × 75 mm sticker**, 2 across × 3 down on A4 — the most that size fits. The sheet's
+geometry is the single `LABEL_SHEET` constant, in millimetres: a sticker sheet with
+different margins or gaps is a change there (`origin`, `gap`), nothing else.
+`test/qrLabels.test.ts` pins the sizes. Labels must be printed at 100% ("Actual
+size"); the page header says so.
+
 ## Passwords: everyone starts on `gea`, and changes their own
 
 `DEFAULT_PASSWORD` (`gea`, in `packages/shared/src/schemas/auth.ts`) is what the seed,
@@ -242,8 +251,8 @@ when the export looks right but the app cannot reach the API.
    its place — so the browser gets HTML where it asked for JavaScript and the app is a blank
    white page with `Unexpected token '<'` in the console. Nothing about the export looks
    wrong; only the restart fixes it.
-3. `npm run typecheck && npm run lint && npm test` — 455 tests baseline
-   (72 shared, 321 API, 62 mobile). **Stop the dev API server first**: it shares the database
+3. `npm run typecheck && npm run lint && npm test` — 464 tests baseline
+   (75 shared, 324 API, 65 mobile). **Stop the dev API server first**: it shares the database
    with the test run, and its email worker polling across `resetDb()` fails tests at random.
 
    **`npm test` also empties the database you were demonstrating.** The suite shares it,
