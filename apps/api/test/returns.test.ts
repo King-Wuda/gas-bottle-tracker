@@ -451,7 +451,7 @@ describe('POST /returns — the driver', () => {
       data: {
         name: 'Bongani',
         surname: 'Zulu',
-        email: 'bongani@example.com',
+        email: 'bongani@demo.local',
         phone: '071 234 5678',
       },
     });
@@ -466,7 +466,7 @@ describe('POST /returns — the driver', () => {
     expect(res.json().returnRecord).toMatchObject({
       driverId: driver.id,
       driverName: 'Bongani Zulu',
-      driverEmail: 'bongani@example.com',
+      driverEmail: 'bongani@demo.local',
       driverPhone: '071 234 5678',
     });
   });
@@ -489,7 +489,7 @@ describe('POST /returns — the driver', () => {
       data: {
         name: 'Pieter',
         surname: 'van Wyk',
-        email: 'pieter@example.com',
+        email: 'pieter@demo.local',
         phone: '082 444 1234',
       },
     });
@@ -504,7 +504,7 @@ describe('POST /returns — the driver', () => {
     expect(row).toMatchObject({
       driverId: null,
       driverName: 'Pieter van Wyk',
-      driverEmail: 'pieter@example.com',
+      driverEmail: 'pieter@demo.local',
       driverPhone: '082 444 1234',
     });
   });

@@ -214,7 +214,7 @@ describe('POST /transfers — driver sign-off', () => {
       data: {
         name: 'Bongani',
         surname: 'Zulu',
-        email: 'bongani@example.com',
+        email: 'bongani@demo.local',
         phone: '071 234 5678',
       },
     });
@@ -230,7 +230,7 @@ describe('POST /transfers — driver sign-off', () => {
     expect(res.json().transfer).toMatchObject({
       driverId: driver.id,
       driverName: 'Bongani Zulu',
-      driverEmail: 'bongani@example.com',
+      driverEmail: 'bongani@demo.local',
       driverPhone: '071 234 5678',
     });
   });

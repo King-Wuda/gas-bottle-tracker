@@ -266,7 +266,7 @@ export function testPhoto(overrides: Record<string, unknown> = {}) {
  * How to reach the driver, which every transfer and return carries alongside their
  * name and phone. The ID number and photo of the driver's ID are no longer asked for.
  */
-export const TEST_DRIVER_EMAIL = 'sipho.driver@example.com';
+export const TEST_DRIVER_EMAIL = 'sipho.driver@demo.local';
 
 export function testDriverContact(overrides: Record<string, unknown> = {}) {
   return { driverEmail: TEST_DRIVER_EMAIL, ...overrides };

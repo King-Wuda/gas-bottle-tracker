@@ -31,7 +31,7 @@ const create = (payload: Record<string, unknown>, token = adminToken) =>
 const bongani = {
   name: 'Bongani',
   surname: 'Zulu',
-  email: 'Bongani.Zulu@Example.com',
+  email: 'Bongani.Zulu@Demo.Local',
   phone: '071 234 5678',
 };
 
@@ -44,7 +44,7 @@ describe('driver profiles', () => {
       surname: 'Zulu',
       fullName: 'Bongani Zulu',
       // Lowercased, like every address in the system.
-      email: 'bongani.zulu@example.com',
+      email: 'bongani.zulu@demo.local',
       phone: '071 234 5678',
       active: true,
       transfers: 0,
@@ -53,20 +53,20 @@ describe('driver profiles', () => {
   });
 
   it('refuses a second driver with the same email, whatever its case', async () => {
-    const res = await create({ ...bongani, email: 'BONGANI.ZULU@example.com' });
+    const res = await create({ ...bongani, email: 'BONGANI.ZULU@demo.local' });
     expect(res.statusCode).toBe(409);
     expect(res.json().error.code).toBe('DRIVER_EXISTS');
   });
 
   it('requires every field', async () => {
     for (const field of ['name', 'surname', 'email', 'phone'] as const) {
-      const res = await create({ ...bongani, email: `x-${field}@example.com`, [field]: '' });
+      const res = await create({ ...bongani, email: `x-${field}@demo.local`, [field]: '' });
       expect(res.statusCode, field).toBe(400);
     }
   });
 
   it('only a project manager manages them', async () => {
-    expect((await create({ ...bongani, email: 'tech@example.com' }, techToken)).statusCode).toBe(
+    expect((await create({ ...bongani, email: 'tech@demo.local' }, techToken)).statusCode).toBe(
       403,
     );
     const list = await app.inject({
@@ -82,7 +82,7 @@ describe('driver profiles', () => {
       await create({
         name: 'Pieter',
         surname: 'van Wyk',
-        email: 'pieter@example.com',
+        email: 'pieter@demo.local',
         phone: '082 444 1234',
       })
     ).json().driver;
