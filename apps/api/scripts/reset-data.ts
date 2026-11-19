@@ -24,7 +24,10 @@
 import { prisma } from '../src/db.js';
 
 /** Suppliers minted by the integration suite, e.g. "After 1788257088255.824280". */
-const TEST_SUPPLIER_RE = /^(After|Before|Lonely|Orphan|Renamed) \d/;
+const TEST_SUPPLIER_RE =
+  /^((After|Before|Lonely|Orphan|Renamed) \d|(Supplier|Supply) [0-9a-f]{6}$)/;
+/** Gases the admin tests create (`unusedGasName` in test/adminDelete.test.ts). */
+const TEST_GAS_RE = /^Testgas [0-9a-f]{8}$/;
 
 async function main(): Promise<void> {
   if (!process.argv.includes('--yes')) {
@@ -83,6 +86,21 @@ async function main(): Promise<void> {
     await prisma.$transaction([
       prisma.gasSupplier.deleteMany({ where: { supplierId: { in: junkIds } } }),
       prisma.supplier.deleteMany({ where: { id: { in: junkIds } } }),
+    ]);
+  }
+
+  // Test-residue gases, their pairings and serial counters. Safe here: every batch,
+  // and so every line and cylinder that could name one, was removed above.
+  const junkGases = (
+    await prisma.gasType.findMany({ select: { id: true, name: true, prefix: true } })
+  ).filter((g) => TEST_GAS_RE.test(g.name));
+  if (junkGases.length > 0) {
+    await prisma.$transaction([
+      prisma.gasSupplier.deleteMany({ where: { gasTypeId: { in: junkGases.map((g) => g.id) } } }),
+      prisma.serialSequence.deleteMany({
+        where: { prefix: { in: junkGases.map((g) => g.prefix) } },
+      }),
+      prisma.gasType.deleteMany({ where: { id: { in: junkGases.map((g) => g.id) } } }),
     ]);
   }
 
