@@ -17,8 +17,17 @@ export const passwordSchema = z
   .min(PASSWORD_MIN, `Password must be at least ${PASSWORD_MIN} characters`)
   .max(200);
 
+/**
+ * Email addresses are compared without regard to case or surrounding spaces: phones
+ * capitalise the first letter of a field, and "Sipho@Example.com" is the same mailbox
+ * as "sipho@example.com". Every address is stored lowercased (the console lowercases on
+ * the way in; migration 20261119150000 lowercased the ones already there), so the login
+ * normalises what was typed the same way before looking it up.
+ */
+export const loginEmailSchema = z.string().trim().toLowerCase().email();
+
 export const loginRequestSchema = z.object({
-  email: z.string().email(),
+  email: loginEmailSchema,
   password: z.string().min(1),
 });
 export type LoginRequest = z.infer<typeof loginRequestSchema>;

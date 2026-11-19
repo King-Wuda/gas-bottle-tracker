@@ -54,6 +54,38 @@ describe('POST /auth/login', () => {
     expect(res.json().error.code).toBe('INVALID_CREDENTIALS');
   });
 
+  it('ignores the case of the email address, and spaces around it', async () => {
+    for (const typed of [
+      ADMIN.email.toUpperCase(),
+      ADMIN.email.charAt(0).toUpperCase() + ADMIN.email.slice(1),
+      `  ${ADMIN.email}  `,
+    ]) {
+      const res = await login({ email: typed, password: ADMIN.password });
+      expect(res.statusCode, typed).toBe(200);
+      expect(res.json().user.email).toBe(ADMIN.email);
+    }
+  });
+
+  it('still signs in an account whose address was stored with capitals', async () => {
+    await prisma.user.create({
+      data: {
+        email: 'Mixed.Case@Demo.Local',
+        name: 'Mixed Case',
+        role: 'TECHNICIAN',
+        passwordHash: await hashPassword('gea'),
+      },
+    });
+    const res = await login({ email: 'mixed.case@demo.local', password: 'gea' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().user.name).toBe('Mixed Case');
+  });
+
+  it('a different case does not get past a wrong password', async () => {
+    const res = await login({ email: ADMIN.email.toUpperCase(), password: 'nope' });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error.code).toBe('INVALID_CREDENTIALS');
+  });
+
   it('400s on a malformed body', async () => {
     const res = await login({ email: 'not-an-email' });
     expect(res.statusCode).toBe(400);

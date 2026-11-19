@@ -194,6 +194,12 @@ From there each person changes their own from the dashboard's "Change password"
   made the change. `apiChangePassword` installs that pair itself; without it the next
   request would hit a revoked refresh token and sign the person out.
 
+**Email addresses are case-insensitive at sign-in.** `loginEmailSchema` trims and
+lowercases what was typed (phones capitalise the first letter), every address is stored
+lowercased (the console lowercases on the way in; migration
+`20261119150000_lowercase_emails` fixed the ones already there, skipping any pair that
+differs only by case), and `/auth/login` looks up case-insensitively as a backstop.
+
 Resetting goes back to `gea` rather than to a password the admin chooses, on purpose:
 it is the one everybody already knows to try. Don't make that migration re-run — it is
 a one-off, and a password someone set afterwards must survive later deploys.
@@ -270,8 +276,8 @@ when the export looks right but the app cannot reach the API.
    its place — so the browser gets HTML where it asked for JavaScript and the app is a blank
    white page with `Unexpected token '<'` in the console. Nothing about the export looks
    wrong; only the restart fixes it.
-3. `npm run typecheck && npm run lint && npm test` — 478 tests baseline
-   (78 shared, 335 API, 65 mobile). **Stop the dev API server first**: it shares the database
+3. `npm run typecheck && npm run lint && npm test` — 481 tests baseline
+   (78 shared, 338 API, 65 mobile). **Stop the dev API server first**: it shares the database
    with the test run, and its email worker polling across `resetDb()` fails tests at random.
 
    **`npm test` also empties the database you were demonstrating.** The suite shares it,

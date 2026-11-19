@@ -39,7 +39,20 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post('/auth/login', async (request, reply) => {
     const { email, password } = loginRequestSchema.parse(request.body);
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    // `email` arrives trimmed and lowercased (loginRequestSchema). The lookup is also
+    // case-insensitive, so an address stored with capitals — written before addresses
+    // were normalised, or by hand — still signs in. Should two rows differ only by case
+    // (the migration leaves such a pair alone rather than guess), the exact lowercase one
+    // wins, then an active one.
+    const candidates = await prisma.user.findMany({
+      where: { email: { equals: email, mode: 'insensitive' } },
+      orderBy: { createdAt: 'asc' },
+    });
+    const user =
+      candidates.find((u) => u.email === email) ??
+      candidates.find((u) => u.active) ??
+      candidates[0] ??
+      null;
     // Always run one argon2 verify, even for an unknown email, so response time does
     // not reveal whether the account exists (see dummyHash).
     const passwordOk = await verifyPassword(user?.passwordHash ?? (await dummyHash()), password);
