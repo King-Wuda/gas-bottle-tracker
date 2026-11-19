@@ -337,6 +337,12 @@ export const updateSupplierRequestSchema = z
   .object({
     name: z.string().trim().min(1).max(120).optional(),
     active: z.boolean().optional(),
+    /**
+     * The complete set of gases this supplier offers, replacing the current one. A gas
+     * left out stops being offered for future batches; nothing already booked changes,
+     * because each batch line keeps the supplier's name.
+     */
+    gasTypeIds: z.array(z.string().min(1)).max(100).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'Nothing to update' });
 export type UpdateSupplierRequest = z.infer<typeof updateSupplierRequestSchema>;

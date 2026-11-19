@@ -257,6 +257,14 @@ would delete batches belonging to other clients — every job that person booked
 every delivery note addressed to them. Both are destroyed as records and kept as names.
 Don't "fix" that asymmetry.
 
+**Suppliers delete without taking anything.** A batch line keeps the supplier's NAME
+(`BatchLine.supplierName`), so `deleteSupplier` only unlinks its lines (`supplierId`
+NULL), drops its gas pairings and removes the row: no batch, cylinder or note changes,
+and the supplier simply stops being offered. Its `/impact` is therefore empty; the
+screen's warning uses `usageCount`. Which gases a supplier offers is editable from
+either side — Gases (per pairing) or Suppliers (`gasTypeIds` on PATCH, replaced as a
+set). Deleting a GAS still cascades, because its cylinders' serials belong to it.
+
 **Clients and projects delete along different seams**, and have separate screens for it.
 A client and its locations are reference data; deleting a CLIENT takes their projects
 and every delivery too. Deleting a PROJECT takes one job and leaves the customer alone.
@@ -305,8 +313,8 @@ when the export looks right but the app cannot reach the API.
    its place — so the browser gets HTML where it asked for JavaScript and the app is a blank
    white page with `Unexpected token '<'` in the console. Nothing about the export looks
    wrong; only the restart fixes it.
-3. `npm run typecheck && npm run lint && npm test` — 490 tests baseline
-   (79 shared, 347 API, 64 mobile). **Stop the dev API server first**: it shares the database
+3. `npm run typecheck && npm run lint && npm test` — 492 tests baseline
+   (79 shared, 349 API, 64 mobile). **Stop the dev API server first**: it shares the database
    with the test run, and its email worker polling across `resetDb()` fails tests at random.
 
    **`npm test` also empties the database you were demonstrating.** The suite shares it,

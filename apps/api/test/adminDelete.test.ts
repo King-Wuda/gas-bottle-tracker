@@ -588,6 +588,134 @@ describe('gases, suppliers and their pairing', () => {
     expect(await prisma.gasType.count({ where: { id: gasId } })).toBe(0);
   });
 
+  it('changes which gases a supplier offers, as a set', async () => {
+    const gases = await Promise.all(
+      [0, 1].map(
+        async () =>
+          (
+            await app.inject({
+              method: 'POST',
+              url: '/admin/gas-types',
+              headers: bearer(adminToken),
+              payload: { name: unusedGasName(), prefix: await unusedPrefix() },
+            })
+          ).json().gasType.id as string,
+      ),
+    );
+    const [a, b] = gases as [string, string];
+    const created = await app.inject({
+      method: 'POST',
+      url: '/admin/suppliers',
+      headers: bearer(adminToken),
+      payload: { name: `Supply ${randomUUID().slice(0, 6)}`, gasTypeIds: [a] },
+    });
+    const supplierId = created.json().supplier.id as string;
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/admin/suppliers/${supplierId}`,
+      headers: bearer(adminToken),
+      payload: { gasTypeIds: [b] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().supplier.gasTypes.map((g: { id: string }) => g.id)).toEqual([b]);
+
+    const offered = async (gasTypeId: string) =>
+      (
+        await app.inject({
+          method: 'GET',
+          url: `/suppliers?gasTypeId=${gasTypeId}`,
+          headers: bearer(techToken),
+        })
+      )
+        .json()
+        .suppliers.map((s: { id: string }) => s.id);
+    expect(await offered(a)).not.toContain(supplierId);
+    expect(await offered(b)).toContain(supplierId);
+
+    const unknown = await app.inject({
+      method: 'PATCH',
+      url: `/admin/suppliers/${supplierId}`,
+      headers: bearer(adminToken),
+      payload: { gasTypeIds: ['nope'] },
+    });
+    expect(unknown.statusCode).toBe(400);
+  });
+
+  it('deleting a supplier keeps its batches exactly as they were', async () => {
+    const gas = await app.inject({
+      method: 'POST',
+      url: '/admin/gas-types',
+      headers: bearer(adminToken),
+      payload: { name: unusedGasName(), prefix: await unusedPrefix() },
+    });
+    const gasId = gas.json().gasType.id as string;
+    const name = `Supply ${randomUUID().slice(0, 6)}`;
+    const supplier = await app.inject({
+      method: 'POST',
+      url: '/admin/suppliers',
+      headers: bearer(adminToken),
+      payload: { name, gasTypeIds: [gasId] },
+    });
+    const supplierId = supplier.json().supplier.id as string;
+    const pm = await makeProjectManager('Supplier PM');
+    const project = await app.inject({
+      method: 'POST',
+      url: '/projects',
+      headers: bearer(techToken),
+      payload: {
+        projectNumber: uniqueProjectNumber(),
+        projectManagerId: pm.id,
+        clientName: 'Supplier Yard',
+        location: 'GP',
+      },
+    });
+    const batch = await app.inject({
+      method: 'POST',
+      url: '/batches',
+      headers: bearer(techToken),
+      payload: {
+        projectId: project.json().project.id,
+        siteId: project.json().project.sites[0].id,
+        clientRequestId: randomUUID(),
+        lines: [{ gasTypeId: gasId, supplierId, quantity: 2, initialDeliveryPoint: 'STORES' }],
+      },
+    });
+    expect(batch.statusCode).toBe(201);
+    const batchId = batch.json().batch.id as string;
+
+    const impact = await app.inject({
+      method: 'GET',
+      url: `/admin/suppliers/${supplierId}/impact`,
+      headers: bearer(adminToken),
+    });
+    expect(impact.json().impact).toMatchObject({ batches: 0, cylinders: 0 });
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/admin/suppliers/${supplierId}`,
+      headers: bearer(adminToken),
+    });
+    expect(res.statusCode).toBe(200);
+
+    expect(await prisma.supplier.count({ where: { id: supplierId } })).toBe(0);
+    expect(await prisma.batch.count({ where: { id: batchId } })).toBe(1);
+    expect(await prisma.cylinder.count({ where: { batchId } })).toBe(2);
+    const view = await app.inject({
+      method: 'GET',
+      url: `/batches/${batchId}`,
+      headers: bearer(techToken),
+    });
+    expect(view.json().batch.lines[0]).toMatchObject({ supplierId: null, supplierName: name });
+    // And it is no longer offered for future batches.
+    const offered = await app.inject({
+      method: 'GET',
+      url: `/suppliers?gasTypeId=${gasId}`,
+      headers: bearer(techToken),
+    });
+    expect(offered.json().suppliers).toEqual([]);
+  });
+
   it('deleting a gas takes the batches that used it', async () => {
     const prefix = await unusedPrefix();
     const gas = await app.inject({

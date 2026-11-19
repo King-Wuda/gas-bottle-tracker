@@ -240,12 +240,14 @@ export async function gasTypeImpact(gasTypeId: string): Promise<DeletionImpact> 
   return impactOfBatches([...new Set(lines.map((l) => l.batchId))]);
 }
 
-export async function supplierImpact(supplierId: string): Promise<DeletionImpact> {
-  const lines = await prisma.batchLine.findMany({
-    where: { supplierId },
-    select: { batchId: true },
-  });
-  return impactOfBatches([...new Set(lines.map((l) => l.batchId))]);
+/**
+ * Deleting a supplier destroys nothing but the supplier: every batch line keeps the
+ * supplier's NAME as it was at intake (`BatchLine.supplierName`), so the batches,
+ * cylinders, QR sheets and delivery notes all read exactly as before. The impact is
+ * therefore empty — the screen says how many lines named them, from `usageCount`.
+ */
+export async function supplierImpact(): Promise<DeletionImpact> {
+  return impactOfBatches([]);
 }
 
 // ------------------------------------------------------------------- the cascade
@@ -494,27 +496,25 @@ export async function deleteGasType(
   return impact;
 }
 
-/** Remove a supplier, its pairings, and every batch that was sourced from it. */
+/**
+ * Remove a supplier so it is no longer offered for future batches — and change nothing
+ * that already happened. Its batch lines are unlinked (`supplierId` NULL, which the
+ * column allows for exactly this) but keep the name they were booked under, and its
+ * gas pairings go. No batch, cylinder, movement or file is touched.
+ */
 export async function deleteSupplier(
   supplierId: string,
   log?: FastifyBaseLogger,
 ): Promise<DeletionImpact> {
-  const impact = await supplierImpact(supplierId);
-  const paths = await prisma.$transaction(async (tx) => {
-    const touched = [
-      ...new Set(
-        (await tx.batchLine.findMany({ where: { supplierId }, select: { batchId: true } })).map(
-          (l) => l.batchId,
-        ),
-      ),
-    ];
-    const orphaned = await purgeBatches(tx, touched);
+  const unlinked = await prisma.$transaction(async (tx) => {
+    const { count } = await tx.batchLine.updateMany({
+      where: { supplierId },
+      data: { supplierId: null },
+    });
     await tx.gasSupplier.deleteMany({ where: { supplierId } });
     await tx.supplier.delete({ where: { id: supplierId } });
-    return orphaned;
+    return count;
   }, TX_OPTIONS);
-
-  const removed = await deleteFiles(paths);
-  log?.warn({ supplierId, impact, filesRemoved: removed }, 'admin deleted a supplier');
-  return impact;
+  log?.warn({ supplierId, batchLinesKeptByName: unlinked }, 'admin deleted a supplier');
+  return impactOfBatches([]);
 }

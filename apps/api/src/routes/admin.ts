@@ -1021,16 +1021,47 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     if (!(await prisma.supplier.findUnique({ where: { id } }))) {
       return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Supplier not found' } });
     }
-    const supplier = await prisma.supplier.update({
-      where: { id },
-      data: {
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.active !== undefined ? { active: input.active } : {}),
-      },
-      include: supplierInclude,
-    });
-    const body: AdminSupplierResponse = { supplier: toSupplierDto(supplier) };
-    return body;
+    if (input.gasTypeIds) {
+      const known = await prisma.gasType.count({ where: { id: { in: input.gasTypeIds } } });
+      if (known !== new Set(input.gasTypeIds).size) {
+        return reply.code(400).send({
+          error: { code: 'UNKNOWN_GAS_TYPE', message: 'One of those gases no longer exists.' },
+        });
+      }
+    }
+    try {
+      const supplier = await prisma.$transaction(async (tx) => {
+        // The gases it offers: replaced as a set. Only the pairings change — what the
+        // batch form offers from now on — never a batch already booked.
+        if (input.gasTypeIds) {
+          const wanted = [...new Set(input.gasTypeIds)];
+          await tx.gasSupplier.deleteMany({
+            where: { supplierId: id, gasTypeId: { notIn: wanted } },
+          });
+          await tx.gasSupplier.createMany({
+            data: wanted.map((gasTypeId) => ({ gasTypeId, supplierId: id })),
+            skipDuplicates: true,
+          });
+        }
+        return tx.supplier.update({
+          where: { id },
+          data: {
+            ...(input.name !== undefined ? { name: input.name } : {}),
+            ...(input.active !== undefined ? { active: input.active } : {}),
+          },
+          include: supplierInclude,
+        });
+      });
+      const body: AdminSupplierResponse = { supplier: toSupplierDto(supplier) };
+      return body;
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        return reply.code(409).send({
+          error: { code: 'SUPPLIER_EXISTS', message: 'A supplier with that name already exists.' },
+        });
+      }
+      throw err;
+    }
   });
 
   app.get('/admin/suppliers/:id/impact', adminOnly, async (request, reply) => {
@@ -1038,7 +1069,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     if (!(await prisma.supplier.findUnique({ where: { id } }))) {
       return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Supplier not found' } });
     }
-    const body: DeletionImpactResponse = { impact: await supplierImpact(id) };
+    const body: DeletionImpactResponse = { impact: await supplierImpact() };
     return body;
   });
 

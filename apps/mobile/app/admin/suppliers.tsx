@@ -1,21 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import {
-  describeImpact,
-  impactIsDestructive,
-  type AdminGasTypeDto,
-  type AdminSupplierDto,
-} from '@gct/shared';
+import type { AdminGasTypeDto, AdminSupplierDto } from '@gct/shared';
 import {
   ApiError,
   apiAdminCreateSupplier,
   apiAdminGasTypes,
   apiAdminDeleteSupplier,
-  apiAdminSupplierImpact,
   apiAdminSuppliers,
   apiAdminUpdateSupplier,
 } from '../../src/api/client';
-import { confirmAction, confirmByTyping } from '../../src/ui/confirm';
+import { confirmAction } from '../../src/ui/confirm';
 import {
   Card,
   Checkbox,
@@ -34,14 +28,15 @@ import { colors } from '../../src/ui/theme';
 /**
  * The companies cylinders are bought from.
  *
- * Which GASES each one carries is set on the Gases screen, not here — see the note
- * there. This screen owns the supplier's own existence: adding one, renaming it,
- * hiding it from the pickers, and deleting it outright.
+ * This screen owns the supplier: adding one, renaming it, changing which gases it
+ * offers ("Edit gases" — the same pairing the Gases screen edits from the other side),
+ * hiding it from the pickers, and deleting it.
  *
- * "Stop offering" is almost always the right action and is deliberately the
- * unremarkable one. A depot that stops buying from Afrox still has three years of
- * Afrox cylinders in the yard, and the delivery notes for them have to keep naming who
- * supplied them.
+ * Nothing here changes a batch already booked. Every batch line keeps the supplier's
+ * name as it was at intake, so renaming, re-pairing or deleting a supplier only
+ * changes what the batch form offers from now on. "Stop offering" is the reversible
+ * way to do that; "Delete" removes the supplier for good, and its batches stay exactly
+ * as they were.
  */
 export default function AdminSuppliers() {
   const [suppliers, setSuppliers] = useState<AdminSupplierDto[]>([]);
@@ -64,6 +59,10 @@ export default function AdminSuppliers() {
    */
   const [gases, setGases] = useState<AdminGasTypeDto[]>([]);
   const [pickedGasIds, setPickedGasIds] = useState<string[]>([]);
+
+  /** Which supplier's gases are being edited, and the gases ticked. */
+  const [gasEditId, setGasEditId] = useState<string | null>(null);
+  const [gasEditIds, setGasEditIds] = useState<string[]>([]);
 
   /** Which supplier is being renamed, and to what. */
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -152,33 +151,27 @@ export default function AdminSuppliers() {
     );
   };
 
+  const saveGases = async (supplier: AdminSupplierDto) => {
+    await run(
+      supplier.id,
+      async () => {
+        await apiAdminUpdateSupplier(supplier.id, { gasTypeIds: gasEditIds });
+        setGasEditId(null);
+      },
+      'Could not change the gases.',
+    );
+  };
+
+  /** Nothing booked is touched: batch lines keep the supplier's name. */
   const remove = async (supplier: AdminSupplierDto) => {
-    setBusyId(supplier.id);
-    setActionError(null);
-    let summary: string | null;
-    try {
-      const { impact } = await apiAdminSupplierImpact(supplier.id);
-      summary = impactIsDestructive(impact) ? describeImpact(impact) : null;
-    } catch (e) {
-      setBusyId(null);
-      setActionError(e instanceof ApiError ? e.message : 'Could not check what this would delete.');
-      return;
-    }
-    setBusyId(null);
-
-    const ok = summary
-      ? await confirmByTyping(
-          `Deleting ${supplier.name} will permanently destroy ${summary}.\n\n` +
-            `Every batch sourced from them goes, along with its signed delivery notes. ` +
-            `If you only want them out of the batch form, use "Stop offering" ` +
-            `instead.\n\nType ${supplier.name} to confirm.`,
-          supplier.name,
-        )
-      : await confirmAction(
-          `Delete ${supplier.name}? Nothing has been booked from them, so nothing else is affected.`,
-        );
+    const ok = await confirmAction(
+      supplier.usageCount === 0
+        ? `Delete ${supplier.name}? Nothing has been booked from them.`
+        : `Delete ${supplier.name}? They will no longer be offered for new batches. The ` +
+            `${supplier.usageCount} batch line${supplier.usageCount === 1 ? '' : 's'} booked ` +
+            `from them stay exactly as they are and keep naming them.`,
+    );
     if (!ok) return;
-
     await run(
       supplier.id,
       () => apiAdminDeleteSupplier(supplier.id),
@@ -198,7 +191,8 @@ export default function AdminSuppliers() {
   return (
     <ScreenScroll>
       <Text style={{ opacity: 0.7 }}>
-        Who cylinders are bought from. Which gases each carries is set on the Gases screen.
+        Who cylinders are bought from, and which gases each one offers. Changes here only affect new
+        batches — nothing already booked changes.
       </Text>
 
       {actionError ? <ErrorText>{actionError}</ErrorText> : null}
@@ -257,16 +251,42 @@ export default function AdminSuppliers() {
 
           <Text style={styles.hint}>
             {s.gasTypes.length === 0
-              ? 'Carries no gases yet — add it to one on the Gases screen.'
+              ? 'Carries no gases yet — tap Edit gases to choose some.'
               : `Carries ${s.gasTypes.map((g) => g.name).join(', ')}.`}
           </Text>
           <Text style={styles.hint}>
             {s.usageCount === 0
-              ? 'Never used — safe to delete.'
-              : `Used on ${s.usageCount} batch line${s.usageCount === 1 ? '' : 's'}.`}
+              ? 'Never used.'
+              : `Used on ${s.usageCount} batch line${s.usageCount === 1 ? '' : 's'} — deleting keeps them.`}
           </Text>
 
-          {editingId === s.id ? (
+          {gasEditId === s.id ? (
+            <View style={{ marginTop: 6 }}>
+              <Text style={{ fontWeight: '600' }}>Which gases do they supply?</Text>
+              {gases.map((g) => (
+                <Checkbox
+                  key={g.id}
+                  label={`${g.name} (${g.prefix})`}
+                  value={gasEditIds.includes(g.id)}
+                  onChange={(next) =>
+                    setGasEditIds((ids) =>
+                      next ? [...ids, g.id] : ids.filter((id) => id !== g.id),
+                    )
+                  }
+                />
+              ))}
+              <Text style={styles.hint}>
+                Only what the batch form offers from now on changes. Batches already booked keep
+                their supplier.
+              </Text>
+              <PrimaryButton
+                title="Save gases"
+                onPress={() => void saveGases(s)}
+                disabled={busyId === s.id}
+              />
+              <SecondaryButton title="Cancel" onPress={() => setGasEditId(null)} />
+            </View>
+          ) : editingId === s.id ? (
             <View style={{ marginTop: 6 }}>
               <Field label="New name" value={editName} onChangeText={setEditName} />
               <Text style={styles.hint}>
@@ -291,13 +311,22 @@ export default function AdminSuppliers() {
               >
                 <Text style={{ color: colors.brand, fontWeight: '600' }}>Rename</Text>
               </Pressable>
+              <Pressable
+                disabled={busyId === s.id}
+                onPress={() => {
+                  setGasEditId(s.id);
+                  setGasEditIds(s.gasTypes.map((g) => g.id));
+                }}
+              >
+                <Text style={{ color: colors.brand, fontWeight: '600' }}>Edit gases</Text>
+              </Pressable>
               <Pressable disabled={busyId === s.id} onPress={() => void toggleActive(s)}>
                 <Text style={{ color: colors.brand, fontWeight: '600' }}>
                   {busyId === s.id ? 'Working…' : s.active ? 'Stop offering' : 'Offer again'}
                 </Text>
               </Pressable>
               <Pressable disabled={busyId === s.id} onPress={() => void remove(s)}>
-                <Text style={{ color: colors.danger, fontWeight: '600' }}>Delete permanently</Text>
+                <Text style={{ color: colors.danger, fontWeight: '600' }}>Delete</Text>
               </Pressable>
             </View>
           )}
