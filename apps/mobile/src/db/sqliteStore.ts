@@ -1,5 +1,12 @@
 import * as SQLite from 'expo-sqlite';
-import type { CachedBatch, CachedCylinder, CachedSite, OutboxRecord, Store } from './store';
+import type {
+  CachedBatch,
+  CachedCylinder,
+  CachedDriver,
+  CachedSite,
+  OutboxRecord,
+  Store,
+} from './store';
 
 /**
  * Bumped whenever a **cache** table changes shape.
@@ -27,6 +34,7 @@ const DROP_STALE_CACHE = `
 DROP TABLE IF EXISTS cached_batch;
 DROP TABLE IF EXISTS cached_cylinder;
 DROP TABLE IF EXISTS cached_site;
+DROP TABLE IF EXISTS cached_driver;
 `;
 
 const SCHEMA = `
@@ -78,6 +86,16 @@ CREATE TABLE IF NOT EXISTS cached_site (
   id        TEXT PRIMARY KEY,
   client_id TEXT NOT NULL,
   location  TEXT NOT NULL
+);
+
+-- The driver profiles, for the sign-off picker with no signal. A NEW table, so
+-- CREATE TABLE IF NOT EXISTS does create it on a device that has never had it; a
+-- later change to its columns needs CACHE_SCHEMA_VERSION bumped like the others.
+CREATE TABLE IF NOT EXISTS cached_driver (
+  id        TEXT PRIMARY KEY,
+  full_name TEXT NOT NULL,
+  email     TEXT NOT NULL,
+  phone     TEXT NOT NULL
 );
 `;
 
@@ -313,6 +331,33 @@ export async function createSqliteStore(): Promise<Store> {
         id: r.id,
         clientId: r.client_id,
         location: r.location,
+      }));
+    },
+
+    async cacheDrivers(rows: CachedDriver[]) {
+      await db.withTransactionAsync(async () => {
+        await db.runAsync('DELETE FROM cached_driver');
+        for (const d of rows) {
+          await db.runAsync(
+            'INSERT OR REPLACE INTO cached_driver (id, full_name, email, phone) VALUES (?, ?, ?, ?)',
+            [d.id, d.fullName, d.email, d.phone],
+          );
+        }
+      });
+    },
+
+    async getCachedDrivers() {
+      const rows = await db.getAllAsync<{
+        id: string;
+        full_name: string;
+        email: string;
+        phone: string;
+      }>('SELECT * FROM cached_driver ORDER BY full_name ASC');
+      return rows.map((r) => ({
+        id: r.id,
+        fullName: r.full_name,
+        email: r.email,
+        phone: r.phone,
       }));
     },
   };

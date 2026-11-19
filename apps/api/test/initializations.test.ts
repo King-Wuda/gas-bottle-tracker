@@ -15,7 +15,7 @@ import {
   supplierForGas,
   testPhoto,
   uniqueProjectNumber,
-  testDriverId,
+  testDriverContact,
   testSignOff,
   batchGasCages,
   storesCagesFor,
@@ -377,7 +377,7 @@ describe('an uninitialized batch is inert', () => {
         scans: serials.map(scan),
         driverName: 'Sipho Ndlovu',
         driverPhone: '082 555 0199',
-        ...testDriverId(),
+        ...testDriverContact(),
         signaturePng: `data:image/png;base64,${Buffer.from([
           0x89,
           0x50,
@@ -545,5 +545,130 @@ describe('admin corrections and the initialization flag', () => {
       orderBy: { createdAt: 'desc' },
     });
     expect(JSON.stringify(amendment.changes)).toContain('re-initialized');
+  });
+});
+
+describe('adding a gas to a batch that has already moved', () => {
+  it('re-initializes by scanning only the new cylinders — not the ones on site or returned', async () => {
+    // The real case: a batch booked as nitrogen went out, some came back to the
+    // supplier, and then it turned out argon belonged on it too.
+    const gt = await app.inject({ method: 'GET', url: '/gas-types', headers: bearer(techToken) });
+    const argonId = gt.json().gasTypes.find((g: { name: string }) => g.name === 'Argon').id;
+    const argonSupplier = await supplierForGas(argonId);
+
+    const { batchId, serials } = await rawBatch(3);
+    await initializeBatch(app, techToken, batchId, serials);
+    const [toSite, returned, inStores] = serials as [string, string, string];
+
+    const moved = await app.inject({
+      method: 'POST',
+      url: '/transfers',
+      headers: bearer(techToken),
+      payload: {
+        ...testSignOff(),
+        photo: testPhoto(),
+        batchId,
+        clientRequestId: randomUUID(),
+        destination: { type: 'SITE', siteId: siteB },
+        scans: [scan(toSite), scan(returned)],
+      },
+    });
+    expect(moved.statusCode).toBe(201);
+    const back = await app.inject({
+      method: 'POST',
+      url: '/returns',
+      headers: bearer(storesToken),
+      payload: {
+        ...testSignOff(),
+        photo: testPhoto(),
+        batchId,
+        clientRequestId: randomUUID(),
+        scans: [scan(returned)],
+      },
+    });
+    expect(back.statusCode).toBe(201);
+
+    const added = await app.inject({
+      method: 'PATCH',
+      url: `/admin/batches/${batchId}`,
+      headers: bearer(adminToken),
+      payload: {
+        lines: [
+          {
+            gasTypeId: argonId,
+            supplierId: argonSupplier,
+            quantity: 2,
+            initialDeliveryPoint: 'STORES',
+          },
+        ],
+      },
+    });
+    expect(added.statusCode).toBe(200);
+    expect((await prisma.batch.findUniqueOrThrow({ where: { id: batchId } })).initializedAt).toBe(
+      null,
+    );
+
+    // The batch says which cylinders still need scanning in.
+    const view = await app.inject({
+      method: 'GET',
+      url: `/batches/${batchId}`,
+      headers: bearer(techToken),
+    });
+    const cylinders = view.json().batch.cylinders as { serialCode: string; initialized: boolean }[];
+    const fresh = cylinders.filter((c) => !c.initialized).map((c) => c.serialCode);
+    expect(fresh).toHaveLength(2);
+    expect(fresh.every((s) => s.startsWith('ARG'))).toBe(true);
+    expect(cylinders.filter((c) => c.initialized).map((c) => c.serialCode)).toEqual(
+      expect.arrayContaining(serials),
+    );
+
+    // Half of the new ones is still refused, and the refusal names the other.
+    const partial = await postInit({
+      ...initBody(batchId, [fresh[0]!]),
+      cages: [{ gasTypeId: argonId, cage: 2 }],
+    });
+    expect(partial.statusCode).toBe(422);
+    expect(partial.json().error.details.missingSerials).toEqual([fresh[1]]);
+
+    // Both new ones, and only them: initialized again. A cage is asked for argon only —
+    // the nitrogen already in stores keeps its cage.
+    const res = await postInit({
+      ...initBody(batchId, fresh),
+      cages: [{ gasTypeId: argonId, cage: 2 }],
+    });
+    expect(res.statusCode).toBe(201);
+    expect(
+      (await prisma.batch.findUniqueOrThrow({ where: { id: batchId } })).initializedAt,
+    ).not.toBeNull();
+
+    const bySerial = new Map(
+      (
+        await prisma.cylinder.findMany({
+          where: { batchId },
+          select: { serialCode: true, status: true, cage: true },
+        })
+      ).map((c) => [c.serialCode, c]),
+    );
+    expect(bySerial.get(toSite)).toMatchObject({ status: 'DEPLOYED', cage: null });
+    expect(bySerial.get(returned)).toMatchObject({ status: 'RETURNED', cage: null });
+    expect(bySerial.get(inStores)).toMatchObject({ status: 'IN_STORES', cage: 1 });
+    for (const s of fresh) expect(bySerial.get(s)).toMatchObject({ status: 'IN_STORES', cage: 2 });
+
+    // And the batch moves again.
+    const again = await app.inject({
+      method: 'POST',
+      url: '/transfers',
+      headers: bearer(techToken),
+      payload: {
+        ...testSignOff(),
+        photo: testPhoto(),
+        batchId,
+        clientRequestId: randomUUID(),
+        destination: { type: 'SITE', siteId: siteB },
+        scans: fresh.map(scan),
+      },
+    });
+    expect(again.statusCode).toBe(201);
+    expect(again.json().rejected).toEqual([]);
   });
 });

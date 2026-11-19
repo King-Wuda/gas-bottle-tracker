@@ -17,6 +17,7 @@ import {
   testPhoto,
   testSignOff,
   TEST_DRIVER_PHONE,
+  TEST_DRIVER_EMAIL,
   uniqueProjectNumber,
 } from './helpers.js';
 
@@ -395,7 +396,7 @@ describe("the driver's phone number", () => {
 // ------------------------------------------------------------------ the emails
 
 describe('the project manager hears about every transfer and return', () => {
-  it('a transfer emails the PM the details, with the cylinder photo and the driver ID', async () => {
+  it('a transfer emails the PM the driver’s details, with the cylinder photo', async () => {
     const b = await makeBatch({ qty: 2, to: 'STORES' }, { qty: 1, to: 'STORES' });
     const all = [...b.argon, ...b.nitrogen];
     await initialize(b.batchId, all, [
@@ -417,7 +418,7 @@ describe('the project manager hears about every transfer and return', () => {
     expect(row.subject).toContain('Durban');
     expect(row.bodyText).toContain('Sipho Ndlovu');
     expect(row.bodyText).toContain(TEST_DRIVER_PHONE);
-    expect(row.bodyText).toContain('8801015009087');
+    expect(row.bodyText).toContain(TEST_DRIVER_EMAIL);
     for (const s of all) expect(row.bodyText).toContain(s);
 
     clearCapturedMail();
@@ -429,7 +430,7 @@ describe('the project manager hears about every transfer and return', () => {
     const mail = capturedMail().find((m) => m.subject === row.subject)!;
     const names = (mail.attachments ?? []).map((a) => a.filename);
     expect(names.some((n) => n.startsWith('cylinders-'))).toBe(true);
-    expect(names.some((n) => n.startsWith('driver-id-'))).toBe(true);
+    expect(names.some((n) => n.startsWith('driver-id-'))).toBe(false);
   });
 
   it('the email for a move back to stores says which came back empty and into which cage', async () => {

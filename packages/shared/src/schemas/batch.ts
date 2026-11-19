@@ -83,6 +83,12 @@ export const cylinderDtoSchema = z.object({
   /** Which line of the batch this cylinder was booked in under. */
   batchLineId: z.string(),
   currentSiteId: z.string().nullable(),
+  /**
+   * Whether this cylinder's label has been scanned in (initialized). False for every
+   * cylinder of a new batch, and for cylinders an admin added to a batch afterwards —
+   * those are the only ones a re-initialization has to scan.
+   */
+  initialized: z.boolean(),
 });
 export type CylinderDto = z.infer<typeof cylinderDtoSchema>;
 

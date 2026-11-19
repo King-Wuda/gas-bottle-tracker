@@ -141,6 +141,7 @@ async function buildDeliveryNote(
       driverName: record.driverName,
       driverIdNumber: record.driverIdNumber,
       driverPhone: record.driverPhone,
+      driverEmail: record.driverEmail,
       driverIdOverridden: record.driverIdOverridden,
       storesManagerName: record.storesManager.name,
       returnedAt: record.createdAt,

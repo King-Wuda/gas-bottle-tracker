@@ -17,17 +17,13 @@ const photo = {
   locationError: null,
 };
 
-/** The driver's ID document, captured the same way the batch photo is. */
-const driverIdPhoto = { ...photo, capturedAt: '2026-08-28T07:01:00.000Z' };
-
 const base = {
   batchId: 'b1',
   clientRequestId: '11111111-2222-3333-4444-555555555555',
   scans: [scan],
   driverName: 'Sipho Ndlovu',
   driverPhone: '082 555 0199',
-  driverIdNumber: '8801015009087',
-  driverIdPhoto,
+  driverEmail: 'sipho@example.com',
   signaturePng,
   photo,
 };
@@ -63,52 +59,31 @@ describe('return schemas', () => {
     ).toBe(false);
   });
 
-  it('requires the driver ID number', () => {
-    expect(createReturnRequestSchema.safeParse({ ...base, driverIdNumber: '' }).success).toBe(
-      false,
-    );
-    expect(createReturnRequestSchema.safeParse({ ...base, driverIdNumber: '123' }).success).toBe(
-      false,
-    );
-    expect(
-      createReturnRequestSchema.safeParse({ ...base, driverIdNumber: 'x'.repeat(41) }).success,
-    ).toBe(false);
-  });
-
-  it('accepts any document number, not only a South African ID', () => {
-    // A passport or a foreign licence has to be recordable: a driver who cannot be
-    // recorded is a driver who leaves with the cylinders and no name against them.
-    for (const number of ['8801015009087', 'A04512399', 'ZW-DL-88231/04', 'M 123 456 78']) {
-      const parsed = createReturnRequestSchema.safeParse({ ...base, driverIdNumber: number });
-      expect(parsed.success, number).toBe(true);
-      if (parsed.success) expect(parsed.data.driverIdNumber).toBe(number.trim());
+  it('no longer asks for the driver’s ID number or a photo of their ID', () => {
+    const parsed = createReturnRequestSchema.safeParse(base);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data).not.toHaveProperty('driverIdNumber');
+      expect(parsed.data).not.toHaveProperty('driverIdPhoto');
     }
   });
 
-  it('trims the driver ID number rather than storing the spaces around it', () => {
-    const parsed = createReturnRequestSchema.safeParse({
-      ...base,
-      driverIdNumber: '  8801015009087  ',
-    });
-    expect(parsed.success).toBe(true);
-    if (parsed.success) expect(parsed.data.driverIdNumber).toBe('8801015009087');
-  });
-
-  it('refuses a return with neither an ID photo nor an admin override', () => {
-    // Same rule as the batch photo, for the same reason: the role is checked
-    // server-side, because a schema cannot know who is asking.
-    expect(createReturnRequestSchema.safeParse({ ...base, driverIdPhoto: null }).success).toBe(
+  it('takes either a registered driver or an unregistered one, with email and phone', () => {
+    expect(createReturnRequestSchema.safeParse({ ...base, driverId: 'drv1' }).success).toBe(true);
+    const parsed = createReturnRequestSchema.safeParse(base);
+    if (parsed.success) expect(parsed.data.driverId).toBeNull();
+    expect(createReturnRequestSchema.safeParse({ ...base, driverEmail: '' }).success).toBe(false);
+    expect(createReturnRequestSchema.safeParse({ ...base, driverEmail: 'nope' }).success).toBe(
       false,
     );
-    expect(
-      createReturnRequestSchema.safeParse({ ...base, driverIdPhoto: null, driverIdOverride: true })
-        .success,
-    ).toBe(true);
   });
 
-  it('defaults the ID override to false when the client omits it', () => {
-    const parsed = createReturnRequestSchema.safeParse(base);
+  it('lowercases the driver’s email address', () => {
+    const parsed = createReturnRequestSchema.safeParse({
+      ...base,
+      driverEmail: ' Sipho@Example.COM ',
+    });
     expect(parsed.success).toBe(true);
-    if (parsed.success) expect(parsed.data.driverIdOverride).toBe(false);
+    if (parsed.success) expect(parsed.data.driverEmail).toBe('sipho@example.com');
   });
 });

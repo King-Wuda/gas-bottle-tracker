@@ -5,7 +5,8 @@ import type { Prisma } from '../db.js';
  *
  * Written from the transfer's own movement events, inside the transaction that created
  * them, so it lists exactly the cylinders that moved — never the ones merely scanned
- * and then rejected. The batch photo and the driver's ID go as attachments, read from
+ * and then rejected. The batch photo goes as an attachment (and, on transfers recorded
+ * while it was still asked for, the photo of the driver's ID), read from
  * storage when the worker sends it (see `emailWorker.ts`), the same way the delivery
  * note is rendered at send time.
  */
@@ -63,10 +64,10 @@ export async function transferNotice(
     'Driver',
     `  Name:       ${t.driverName ?? '—'}`,
     `  Phone:      ${t.driverPhone ?? '—'}`,
-    `  ID number:  ${t.driverIdNumber ?? '—'}`,
-    t.driverIdOverridden
-      ? '  ID photo:   not taken — waived by a project manager'
-      : '  ID photo:   attached',
+    `  Email:      ${t.driverEmail ?? '—'}`,
+    // Only transfers recorded while the driver's ID was still asked for have these.
+    ...(t.driverIdNumber ? [`  ID number:  ${t.driverIdNumber}`] : []),
+    ...(t.driverIdPath ? ['  ID photo:   attached'] : []),
     '',
     `Recorded by ${t.user.name} on ${t.createdAt.toISOString().replace('T', ' ').slice(0, 16)} UTC.`,
     t.photoOverridden

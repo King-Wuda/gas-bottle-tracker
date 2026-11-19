@@ -350,6 +350,7 @@ export async function historyEvent(
     driverName: null,
     driverIdNumber: null,
     driverPhone: null,
+    driverEmail: null,
     cages: [],
     emptySerials: [],
     changes: [],
@@ -405,6 +406,7 @@ export async function historyEvent(
               driverName: true,
               driverIdNumber: true,
               driverPhone: true,
+              driverEmail: true,
             },
           })
           .then((t) => ({
@@ -412,17 +414,24 @@ export async function historyEvent(
             driverName: t?.driverName ?? null,
             driverIdNumber: t?.driverIdNumber ?? null,
             driverPhone: t?.driverPhone ?? null,
+            driverEmail: t?.driverEmail ?? null,
           }))
       : kind === 'RETURN'
         ? await prisma.returnRecord
             .findUnique({
               where: { id: recordId },
-              select: { driverName: true, driverIdNumber: true, driverPhone: true },
+              select: {
+                driverName: true,
+                driverIdNumber: true,
+                driverPhone: true,
+                driverEmail: true,
+              },
             })
             .then((r) => ({
               driverName: r?.driverName ?? null,
               driverIdNumber: r?.driverIdNumber ?? null,
               driverPhone: r?.driverPhone ?? null,
+              driverEmail: r?.driverEmail ?? null,
             }))
         : {};
 

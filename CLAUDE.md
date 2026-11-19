@@ -31,11 +31,10 @@ touches one of these:
 | `apps/mobile/src/photo/capture.ts`            | `navigator.geolocation` (HTTPS only) | Play Services / GPS        |
 | `apps/mobile/app/login.tsx`                   | (no-op)                              | iOS `KeyboardAvoidingView` |
 | `apps/mobile/app/new/create-site.tsx`         | (no-op)                              | iOS `KeyboardAvoidingView` |
-| `apps/mobile/src/components/IdCapture.tsx`    | getUserMedia frame                   | device camera file         |
 | `apps/mobile/src/components/SignaturePad.tsx` | needs `touchAction: 'none'`          | style key ignored          |
 | `apps/mobile/src/sound/index.ts`              | blocked until a user gesture         | plays whenever asked       |
 
-None of the last five branch on `Platform.OS` in our own source — they differ inside
+None of the last four branch on `Platform.OS` in our own source — they differ inside
 `expo-camera` / `expo-location` / `expo-image-manipulator` / `expo-audio`, or in what the
 browser will allow — which makes them the easiest of all to forget, because there is no
 visible `if` to notice. See [docs/WEB_PARITY.md](docs/WEB_PARITY.md) for what each does
@@ -125,13 +124,32 @@ project manager is one person held in two rows:
 ## Transfers repeat; a return is final
 
 - **A transfer** moves cylinders between stores and a site, as often as needed. Both
-  directions take full driver sign-off (name, phone, ID number, ID photo, signature)
-  and a batch photo, and every transfer emails the batch's project manager a
-  `TRANSFER_NOTICE` with the batch photo and the driver's ID attached.
+  directions take driver sign-off (who, phone, email, signature) and a batch photo, and
+  every transfer emails the batch's project manager a `TRANSFER_NOTICE` with the batch
+  photo attached.
 - **A return** sends cylinders back to the SUPPLIER. It is terminal (`RETURNED`): the
   cylinder leaves rotation, leaves its cage, and stops counting anywhere. It is labelled
   "Return to supplier" in the app because "Returns" alone reads as "back to stores",
   which is a transfer. Don't merge the two.
+
+**Drivers are picked, not typed.** `Driver` holds the regulars (name, surname, email,
+phone), managed at Admin console → Drivers (`routes/drivers.ts`; `GET /drivers` is the
+picker for every signed-in role). At sign-off the first option is a registered driver;
+ticking "Driver not registered" types name, email and phone instead. The ID number and
+ID photo are no longer asked for — older records keep theirs and still show them.
+Every transfer and return COPIES the driver's name, email and phone onto itself;
+`driverId` only links the profile, the server overwrites the copied details from the
+profile when it exists (a phone's cache can be stale), and falls back to what was sent
+when it does not (an offline submission can outlive a deleted profile). That is why
+`driverId` is `ON DELETE SET NULL` — the one FK on a movement record that is not
+Restrict, because the record keeps everything it needs. The picker's offline copy is
+the `cached_driver` SQLite table.
+
+**Adding cylinders to a batch re-opens initialization, for the new ones only.** An
+admin can add a gas (or raise a quantity) on Correct batch; `createCylinders` clears
+`Batch.initializedAt`, and the next initialization requires only the cylinders with no
+`INITIALIZE` event (`CylinderDto.initialized`) — never the ones already on site or
+returned, which could not be scanned again. Cages are asked only for those new ones.
 
 **Every event email is copied to the stores managers.** A new batch's QR sheet, every
 `TRANSFER_NOTICE` and every return's `DELIVERY_NOTE` go to the project manager AND, via
@@ -276,8 +294,8 @@ when the export looks right but the app cannot reach the API.
    its place — so the browser gets HTML where it asked for JavaScript and the app is a blank
    white page with `Unexpected token '<'` in the console. Nothing about the export looks
    wrong; only the restart fixes it.
-3. `npm run typecheck && npm run lint && npm test` — 481 tests baseline
-   (78 shared, 338 API, 65 mobile). **Stop the dev API server first**: it shares the database
+3. `npm run typecheck && npm run lint && npm test` — 485 tests baseline
+   (79 shared, 341 API, 65 mobile). **Stop the dev API server first**: it shares the database
    with the test run, and its email worker polling across `resetDb()` fails tests at random.
 
    **`npm test` also empties the database you were demonstrating.** The suite shares it,

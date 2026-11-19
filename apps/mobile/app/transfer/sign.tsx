@@ -3,7 +3,6 @@ import { Text } from 'react-native';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as Crypto from 'expo-crypto';
 import type { CreateTransferRequest } from '@gct/shared';
-import { useAuth } from '../../src/auth/AuthContext';
 import { DriverSignOffForm } from '../../src/components/DriverSignOffForm';
 import { useDriverSignOff } from '../../src/driver/useDriverSignOff';
 import { useScanFlow } from '../../src/scanning/ScanFlowContext';
@@ -33,7 +32,6 @@ export default function TransferSign() {
   const { batch, cylinders, scans, overrides, photo, photoOverride, cages, empties } =
     useScanFlow();
   const { sync, online } = useSync();
-  const { user } = useAuth();
   const driver = useDriverSignOff({ online });
   const params = useLocalSearchParams<{
     destination?: string;
@@ -151,21 +149,16 @@ export default function TransferSign() {
       ) : null}
       {!online ? (
         <Notice tone="neutral" title="Offline">
-          The signed transfer is queued on this device and sent when signal returns. The photo, the
-          ID and the signature go with it.
+          The signed transfer is queued on this device and sent when signal returns. The photo and
+          the signature go with it.
         </Notice>
       ) : null}
 
-      <DriverSignOffForm
-        driver={driver}
-        isAdmin={user?.role === 'PROJECT_MANAGER'}
-        online={online}
-        submitting={submitting}
-      />
+      <DriverSignOffForm driver={driver} submitting={submitting} />
 
       <Text style={styles.hint}>
-        The driver signs above, then the transfer is submitted. Their name, ID number and signature
-        are recorded against every cylinder that moves.
+        The driver signs above, then the transfer is submitted. Their name, phone, email and
+        signature are recorded against every cylinder that moves.
       </Text>
 
       <ErrorText>{error}</ErrorText>

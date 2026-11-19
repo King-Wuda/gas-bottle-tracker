@@ -19,7 +19,8 @@ import {
   supplierForGas,
   testPhoto,
   uniqueProjectNumber,
-  testDriverId,
+  testDriverContact,
+  TEST_DRIVER_EMAIL,
   notStoresCopy,
 } from './helpers.js';
 
@@ -186,7 +187,7 @@ describe('email worker — delivery note', () => {
         })),
         driverName: 'Thabo Mokoena',
         driverPhone: '082 555 0199',
-        ...testDriverId(),
+        ...testDriverContact(),
         signaturePng: SIGNATURE,
       },
     });
@@ -205,11 +206,10 @@ describe('email worker — delivery note', () => {
 
     const row = await prisma.outboundEmail.findUniqueOrThrow({ where: { id: pending.id } });
     expect(row.status).toBe('SENT');
-    // The signed note first, then the two photographs it was taken against: the
-    // cylinders, and the driver's ID.
-    expect(row.attachmentPaths).toHaveLength(3);
+    // The signed note first, then the photograph of the cylinders. No driver's ID
+    // photo: it is no longer asked for.
+    expect(row.attachmentPaths).toHaveLength(2);
     expect(row.attachmentPaths[1]).toMatch(/batch-/);
-    expect(row.attachmentPaths[2]).toMatch(/driver-id-/);
 
     const pdf = await readFileAt(row.attachmentPaths[0]!);
     expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
@@ -218,10 +218,10 @@ describe('email worker — delivery note', () => {
     const text = pdfText(pdf);
     for (const serial of serials.slice(0, 3)) expect(text).toContain(serial);
     expect(text).toContain('Thabo Mokoena');
-    // The identity half of the note: the number off the driver's document, and the
-    // heading under which their ID photo is embedded.
-    expect(text).toContain('8801015009087');
-    expect(text).toContain('ID DOCUMENT PRESENTED');
+    // How to reach the driver — and no empty ID box on a note that never asked for one.
+    expect(text).toContain(TEST_DRIVER_EMAIL);
+    expect(text).toContain('082 555 0199');
+    expect(text).not.toContain('ID DOCUMENT PRESENTED');
     expect(text).toContain('Delivery Note');
     // 3 of 5 came back, so the note must say the batch is not finished.
     expect(text).toContain('outstanding');

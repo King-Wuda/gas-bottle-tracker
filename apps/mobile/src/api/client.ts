@@ -43,8 +43,6 @@ import type {
   ProjectManagersResponse,
   StoresSummaryResponse,
   ProjectSearchResponse,
-  ReadDriverIdRequest,
-  ReadDriverIdResponse,
   RefreshResponse,
   ResendBatchEmailResponse,
   ClientOptionsResponse,
@@ -60,6 +58,11 @@ import type {
   UpdateClientRequest,
   UpdateGasTypeRequest,
   UpdateSupplierRequest,
+  CreateDriverRequest,
+  DriverImpactResponse,
+  DriverResponse,
+  DriversResponse,
+  UpdateDriverRequest,
 } from '@gct/shared';
 import { API_URL, configNote } from '../config';
 import { loadTokens, saveTokens, clearTokens, type StoredTokens } from '../auth/tokenStore';
@@ -366,18 +369,6 @@ export function apiCreateReturn(body: CreateReturnRequest): Promise<CreateReturn
   return apiRequest<CreateReturnResponse>('/returns', { method: 'POST', body });
 }
 
-/**
- * Ask the server to read the driver's ID number off the document they photographed.
- *
- * Deliberately NOT routed through the outbox, unlike everything else on this screen.
- * The outbox exists so that WORK survives a dead spot; this is a suggestion, and a
- * suggestion that arrives tomorrow is worth nothing. Offline it simply is not offered
- * and the number is typed, exactly as it was before this existed.
- */
-export function apiReadDriverId(body: ReadDriverIdRequest): Promise<ReadDriverIdResponse> {
-  return apiRequest<ReadDriverIdResponse>('/driver-id/read', { method: 'POST', body });
-}
-
 // ---- Workflow A2 (Initialize) ----
 
 /**
@@ -542,6 +533,35 @@ export function apiAdminSupplierImpact(id: string): Promise<DeletionImpactRespon
 
 export function apiAdminDeleteSupplier(id: string): Promise<DeletionResponse> {
   return apiRequest<DeletionResponse>(`/admin/suppliers/${enc(id)}`, { method: 'DELETE' });
+}
+
+/** The active driver profiles — the sign-off picker. Cached for offline use by
+ *  `driver/drivers.ts`. */
+export function apiDrivers(): Promise<DriversResponse> {
+  return apiRequest<DriversResponse>('/drivers');
+}
+
+export function apiAdminDrivers(): Promise<DriversResponse> {
+  return apiRequest<DriversResponse>('/admin/drivers');
+}
+
+export function apiAdminCreateDriver(body: CreateDriverRequest): Promise<DriverResponse> {
+  return apiRequest<DriverResponse>('/admin/drivers', { method: 'POST', body });
+}
+
+export function apiAdminUpdateDriver(
+  id: string,
+  body: UpdateDriverRequest,
+): Promise<DriverResponse> {
+  return apiRequest<DriverResponse>(`/admin/drivers/${enc(id)}`, { method: 'PATCH', body });
+}
+
+export function apiAdminDriverImpact(id: string): Promise<DriverImpactResponse> {
+  return apiRequest<DriverImpactResponse>(`/admin/drivers/${enc(id)}/impact`);
+}
+
+export function apiAdminDeleteDriver(id: string): Promise<DriverImpactResponse> {
+  return apiRequest<DriverImpactResponse>(`/admin/drivers/${enc(id)}`, { method: 'DELETE' });
 }
 
 export function apiAdminClients(): Promise<AdminClientsResponse> {

@@ -7,14 +7,7 @@ import {
   PHOTO_MAX_BASE64,
   PHOTO_REQUIRED_MESSAGE,
 } from './photo';
-import {
-  driverIdFields,
-  driverPhoneSchema,
-  driverSignOffDtoFields,
-  hasDriverIdEvidence,
-  signaturePngSchema,
-  DRIVER_ID_PHOTO_REQUIRED_MESSAGE,
-} from './driver';
+import { driverSignOffDtoFields, driverSignOffFields, signaturePngSchema } from './driver';
 import { overrideSerialsSchema, scanInputSchema, scanRejectionSchema } from './transfer';
 
 /**
@@ -31,9 +24,7 @@ export const createReturnRequestSchema = z
     scans: z.array(scanInputSchema).max(500).default([]),
     /** PROJECT_MANAGER only, and recorded as unscanned evidence — see the transfer schema. */
     overrideSerials: overrideSerialsSchema.default([]),
-    driverName: z.string().min(1).max(200),
-    driverPhone: driverPhoneSchema,
-    ...driverIdFields,
+    ...driverSignOffFields,
     signaturePng: signaturePngSchema,
     /** The batch photo, taken between the scan step and the signature. */
     ...photoSubmissionFields,
@@ -42,11 +33,7 @@ export const createReturnRequestSchema = z
     message: 'Nothing to return: scan at least one cylinder.',
     path: ['scans'],
   })
-  .refine(hasPhotoEvidence, { message: PHOTO_REQUIRED_MESSAGE, path: ['photo'] })
-  .refine(hasDriverIdEvidence, {
-    message: DRIVER_ID_PHOTO_REQUIRED_MESSAGE,
-    path: ['driverIdPhoto'],
-  });
+  .refine(hasPhotoEvidence, { message: PHOTO_REQUIRED_MESSAGE, path: ['photo'] });
 export type CreateReturnRequest = z.infer<typeof createReturnRequestSchema>;
 
 export const returnRecordDtoSchema = z.object({

@@ -36,6 +36,8 @@ export type CylinderRow = {
   gasTypeId: string;
   batchLineId: string;
   currentSiteId: string | null;
+  /** INITIALIZE events on this cylinder — zero until its label has been scanned in. */
+  _count: { movementEvents: number };
 };
 
 export type BatchCoreRow = {
@@ -85,7 +87,12 @@ export const batchRelations = {
   },
 } as const;
 
-export const batchInclude = { ...batchRelations, cylinders: true } as const;
+export const batchInclude = {
+  ...batchRelations,
+  cylinders: {
+    include: { _count: { select: { movementEvents: { where: { type: 'INITIALIZE' } } } } },
+  },
+} as const;
 
 export const iso = (d: Date | null): string | null => (d === null ? null : d.toISOString());
 
@@ -243,6 +250,7 @@ export function toBatchDto(
       gasTypeId: c.gasTypeId,
       batchLineId: c.batchLineId,
       currentSiteId: c.currentSiteId,
+      initialized: c._count.movementEvents > 0,
     })),
   };
 }

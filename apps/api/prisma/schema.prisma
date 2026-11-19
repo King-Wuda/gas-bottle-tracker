@@ -277,6 +277,29 @@ model GasType {
   suppliers  GasSupplier[]
 }
 
+/// A regular collection driver, kept so their details are picked, not re-typed, on
+/// every transfer and return. A transfer or return COPIES the name, email and phone at
+/// the moment of signing (its own driver* columns are the record); `driverId` only says
+/// which profile they came from. So deleting a profile sets that link to NULL and
+/// changes nothing anyone signed for — the one FK into the movement records that is
+/// not Restrict, because there is nothing on it to protect.
+model Driver {
+  id        String   @id @default(cuid())
+  name      String
+  surname   String
+  /// Lowercased on the way in, like every address in the system.
+  email     String   @unique
+  phone     String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transfers Transfer[]
+  returns   ReturnRecord[]
+
+  @@index([active])
+}
+
 /// A cylinder supplier. Data-driven so real names replace "Supplier 1"/"Supplier 2"
 /// with an INSERT, not a deploy.
 model Supplier {
@@ -517,6 +540,10 @@ model Transfer {
   driverIdNumber     String?
   /// The driver's phone number. Null on transfers recorded before it was asked for.
   driverPhone        String?
+  /// The driver's email address. Null on transfers recorded before it was asked for.
+  driverEmail        String?
+  /// The driver profile the details were copied from; null for an unregistered driver.
+  driverId           String?
   /// Path to the photographed ID document; null when there is none.
   driverIdPath       String?
   /// TRUE when an ADMIN submitted this without photographing the ID.
@@ -539,12 +566,14 @@ model Transfer {
   // deleted. SET NULL (Prisma's default for an optional relation) would let a
   // delete quietly erase the record of who the batch was handed to.
   projectManager  ProjectManager? @relation("TransferProjectManager", fields: [projectManagerId], references: [id], onDelete: Restrict)
+  driver          Driver?         @relation(fields: [driverId], references: [id], onDelete: SetNull)
   movementEvents  MovementEvent[]
   photo           BatchPhoto?
 
   @@index([batchId])
   @@index([userId])
   @@index([projectManagerId])
+  @@index([driverId])
 }
 
 model ReturnRecord {
@@ -559,6 +588,10 @@ model ReturnRecord {
   driverIdNumber     String?
   /// The driver's phone number. Null on returns recorded before it was asked for.
   driverPhone        String?
+  /// The driver's email address. Null on returns recorded before it was asked for.
+  driverEmail        String?
+  /// The driver profile the details were copied from; null for an unregistered driver.
+  driverId           String?
   /// Path to the photographed ID document. Null when there is none — either because
   /// the return predates the requirement, or because an admin waived it.
   driverIdPath       String?
@@ -575,11 +608,13 @@ model ReturnRecord {
 
   batch          Batch           @relation(fields: [batchId], references: [id])
   storesManager  User            @relation("ReturnManager", fields: [storesManagerId], references: [id])
+  driver         Driver?         @relation(fields: [driverId], references: [id], onDelete: SetNull)
   movementEvents MovementEvent[]
   photo          BatchPhoto?
 
   @@index([batchId])
   @@index([storesManagerId])
+  @@index([driverId])
 }
 
 /// The first physical scan of a batch: every printed label read back off the cylinder

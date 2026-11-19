@@ -23,7 +23,7 @@ import {
   supplierForGas,
   testPhoto,
   uniqueProjectNumber,
-  testDriverId,
+  testDriverContact,
   testSignOff,
   batchGasCages,
 } from './helpers.js';
@@ -158,7 +158,7 @@ const returnAll = (batchId: string, serials: string[]) =>
       scans: serials.map(scan),
       driverName: 'Sipho Ndlovu',
       driverPhone: '082 555 0199',
-      ...testDriverId(),
+      ...testDriverContact(),
       signaturePng: `data:image/png;base64,${PNG_1X1}`,
     },
   });

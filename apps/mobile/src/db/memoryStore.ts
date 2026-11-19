@@ -1,4 +1,11 @@
-import type { CachedBatch, CachedCylinder, CachedSite, OutboxRecord, Store } from './store';
+import type {
+  CachedBatch,
+  CachedCylinder,
+  CachedDriver,
+  CachedSite,
+  OutboxRecord,
+  Store,
+} from './store';
 
 /**
  * Web-only stand-in for the SQLite store.
@@ -13,6 +20,7 @@ export function createMemoryStore(): Store {
   const batches = new Map<string, CachedBatch>();
   const cylinders = new Map<string, CachedCylinder[]>();
   const sites = new Map<string, CachedSite>();
+  let drivers: CachedDriver[] = [];
 
   const byCreated = (a: OutboxRecord, b: OutboxRecord) => a.createdAt - b.createdAt;
 
@@ -111,6 +119,14 @@ export function createMemoryStore(): Store {
       return [...sites.values()]
         .filter((s) => s.clientId === clientId)
         .sort((a, b) => a.location.localeCompare(b.location));
+    },
+
+    async cacheDrivers(rows) {
+      drivers = [...rows];
+    },
+
+    async getCachedDrivers() {
+      return [...drivers].sort((a, b) => a.fullName.localeCompare(b.fullName));
     },
   };
 }

@@ -12,10 +12,11 @@ export default function InitializeFindBatch() {
   return (
     <BatchPicker
       next="/initialize/scan"
+      onlyUninitialized
       config={{
         scope: 'initialize',
-        // `all` rather than `active`: an uninitialized batch cannot have been
-        // returned, so there is nothing for the status filter to usefully remove.
+        // `all` rather than `active`: a batch an admin added cylinders to may already
+        // be partly returned, and still needs its new cylinders scanned in.
         status: 'all',
         intro:
           'Pick the batch whose QR labels have been printed and stuck on, then scan every ' +

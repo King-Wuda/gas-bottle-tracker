@@ -1,50 +1,42 @@
-import { decodePhoto, InvalidPhotoError, saveDriverIdPhoto } from './photo.js';
+import { driverFullName } from '@gct/shared';
+import { prisma } from '../db.js';
 import { decodeSignaturePng, InvalidSignatureError, saveSignature } from './signature.js';
 
 /**
- * The identity half of a movement: who took the cylinders, and the evidence for it.
+ * The identity half of a movement: who took the cylinders, and their signature.
  *
  * Shared by transfers and returns because both hand physical cylinders to a named
- * person who is not the operator. Recording it on one and not the other left the more
- * common movement as the less accountable one.
+ * person who is not the operator.
+ *
+ * The driver is either a registered profile (`driverId`) or someone typed in on the
+ * spot. For a registered driver the profile is the authority: its name, email and
+ * phone are copied onto the record, whatever the client sent, so a stale cache on a
+ * phone cannot record an old number. If the profile has gone by the time the
+ * submission arrives — an offline outbox row can sit for hours — the details the
+ * client sent are recorded as an unregistered driver's rather than refusing a
+ * delivery that has already physically happened.
  *
  * Everything here is filesystem (or database) IO, so it is called BEFORE the
  * transaction: holding a row lock across a blob write would widen the contended
- * window for no reason. Filenames derive from the idempotency key, so a retry
- * overwrites its own files rather than accumulating one set per attempt.
+ * window for no reason. The signature filename derives from the idempotency key, so a
+ * retry overwrites its own file rather than accumulating one per attempt.
  */
+export interface DriverDetails {
+  driverId: string | null;
+  driverName: string;
+  driverEmail: string;
+  driverPhone: string;
+}
+
 export type PreparedDriverSignOff =
-  | {
-      ok: true;
-      signaturePath: string;
-      /** Null when an admin waived the ID photo. */
-      driverIdPath: string | null;
-      driverIdOverridden: boolean;
-    }
+  | { ok: true; signaturePath: string; driver: DriverDetails }
   | { ok: false; status: number; code: string; message: string };
 
 export async function prepareDriverSignOff(args: {
   clientRequestId: string;
   signaturePng: string;
-  driverIdPhoto: { imageBase64: string } | null;
-  driverIdOverride: boolean;
-  role: string;
-  /** "moved" or "returned" — used only in the 403's wording. */
-  verb: string;
+  driver: DriverDetails;
 }): Promise<PreparedDriverSignOff> {
-  // The ID camera override is the same kind of claim as the scan and batch-photo
-  // overrides: an admin's word in place of evidence. Refused outright for every other
-  // role rather than quietly ignored — an override that was silently dropped would
-  // let a tampered client believe it recorded a document nobody saw.
-  if (args.driverIdOverride && !args.driverIdPhoto && args.role !== 'PROJECT_MANAGER') {
-    return {
-      ok: false,
-      status: 403,
-      code: 'DRIVER_ID_OVERRIDE_FORBIDDEN',
-      message: `Only a project manager can record a batch ${args.verb} without photographing the driver’s ID.`,
-    };
-  }
-
   let signaturePath: string;
   try {
     signaturePath = await saveSignature(
@@ -58,22 +50,18 @@ export async function prepareDriverSignOff(args: {
     throw err;
   }
 
-  // Real evidence outranks an assertion: a submission carrying both a photo and an
-  // override keeps the photo — the same rule scans and batch photos already follow.
-  let driverIdPath: string | null = null;
-  if (args.driverIdPhoto) {
-    try {
-      driverIdPath = await saveDriverIdPhoto(
-        args.clientRequestId,
-        decodePhoto(args.driverIdPhoto.imageBase64),
-      );
-    } catch (err) {
-      if (err instanceof InvalidPhotoError) {
-        return { ok: false, status: 400, code: 'INVALID_DRIVER_ID_PHOTO', message: err.message };
-      }
-      throw err;
-    }
-  }
+  return { ok: true, signaturePath, driver: await resolveDriver(args.driver) };
+}
 
-  return { ok: true, signaturePath, driverIdPath, driverIdOverridden: driverIdPath === null };
+/** The details to record: the profile's when there is one, the typed ones otherwise. */
+export async function resolveDriver(sent: DriverDetails): Promise<DriverDetails> {
+  if (!sent.driverId) return { ...sent, driverId: null };
+  const profile = await prisma.driver.findUnique({ where: { id: sent.driverId } });
+  if (!profile) return { ...sent, driverId: null };
+  return {
+    driverId: profile.id,
+    driverName: driverFullName(profile),
+    driverEmail: profile.email,
+    driverPhone: profile.phone,
+  };
 }

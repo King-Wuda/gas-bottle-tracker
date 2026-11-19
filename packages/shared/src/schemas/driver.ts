@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { capturedPhotoSchema } from './photo';
 
 /**
  * Who took the cylinders, and how that is proved.
@@ -21,24 +20,9 @@ export const signaturePngSchema = z
   .max(2_800_000, 'Signature image is too large');
 
 /**
- * The number off the document the driver presented.
- *
- * Deliberately NOT validated as a South African ID number. The system has to be able
- * to record a passport, a foreign licence, or an asylum permit — a driver who cannot
- * be recorded is a driver who leaves with the cylinders and no name against them,
- * which is worse than a number in an unexpected format. The bounds are here only to
- * stop an empty field and an unbounded body.
- */
-export const driverIdNumberSchema = z
-  .string()
-  .trim()
-  .min(4, 'Enter the number from the driver’s ID')
-  .max(40, 'That does not look like an ID number');
-
-/**
  * The driver's phone number — so the project manager can call whoever has the
- * cylinders. Loose on format for the same reason the ID number is: a foreign number or
- * one written with spaces must still be recordable. It needs at least seven digits.
+ * cylinders. Loose on format: a foreign number or one written with spaces must still be
+ * recordable. It needs at least seven digits.
  */
 export const driverPhoneSchema = z
   .string()
@@ -46,37 +30,89 @@ export const driverPhoneSchema = z
   .regex(/^\+?[0-9(][0-9 ()-]{5,24}$/, 'Enter the driver’s phone number')
   .refine((v) => v.replace(/\D/g, '').length >= 7, 'Enter the driver’s phone number');
 
-export const DRIVER_ID_PHOTO_REQUIRED_MESSAGE =
-  'A photo of the driver’s ID is required. Take one, or ask an admin to override the camera.';
+/** Stored lowercased, like every other address in the system. */
+export const driverEmailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .email('Enter the driver’s email address')
+  .max(200);
+
+const personNameSchema = (what: string) =>
+  z.string().trim().min(1, `Enter the driver’s ${what}`).max(100);
 
 /**
- * The identity half of a return: who took the cylinders, proved the same way the
- * batch itself is proved.
+ * Who took the cylinders, as a transfer or a return records it.
  *
- * A name and a signature say who SAYS they took them. The number and the photographed
- * document are what make that checkable afterwards — the delivery note stops being a
- * squiggle over a name somebody typed. The override exists for the same reason the
- * batch photo's does (see `schemas/photo.ts`): the camera can be the thing that has
- * failed, and it is recorded as an admin's waiver rather than dressed up as a
- * document that was never seen.
+ * Either a registered driver — `driverId` names their profile, and the server copies
+ * the profile's name, email and phone onto the record — or an unregistered one, typed
+ * in on the spot (`driverId` null). The name, email and phone travel either way: they
+ * are what the record keeps, so a profile edited or deleted later never rewrites who
+ * signed for a delivery months ago, and an offline submission queued against a profile
+ * that has since gone still says who it was.
+ *
+ * The ID number and photo of the driver's ID are no longer asked for. Records made
+ * while they were still carry them, and the DTO still exposes them for those.
  */
-export const driverIdFields = {
-  driverIdNumber: driverIdNumberSchema,
-  driverIdPhoto: capturedPhotoSchema.nullable().default(null),
-  /** PROJECT_MANAGER only — 403 for every other role, exactly like `photoOverride`. */
-  driverIdOverride: z.boolean().default(false),
+export const driverSignOffFields = {
+  driverId: z.string().min(1).nullable().default(null),
+  driverName: z.string().trim().min(1, 'Enter the driver’s name').max(200),
+  driverEmail: driverEmailSchema,
+  driverPhone: driverPhoneSchema,
 } as const;
 
-export const hasDriverIdEvidence = (v: {
-  driverIdPhoto: unknown | null;
-  driverIdOverride: boolean;
-}): boolean => v.driverIdPhoto !== null || v.driverIdOverride;
+// ----------------------------------------------------------------- driver profiles
+
+/** A regular driver, kept so their details need not be typed on every collection. */
+export const driverProfileDtoSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  surname: z.string(),
+  /** "Name Surname" — what a record copies as `driverName`. */
+  fullName: z.string(),
+  email: z.string(),
+  phone: z.string(),
+  active: z.boolean(),
+  /** How many transfers and returns name this driver. Deleting the profile keeps them,
+   *  with the name, email and phone they were signed for under. */
+  transfers: z.number().int().nonnegative(),
+  returns: z.number().int().nonnegative(),
+});
+export type DriverProfileDto = z.infer<typeof driverProfileDtoSchema>;
+
+export const driverFullName = (d: { name: string; surname: string }): string =>
+  `${d.name.trim()} ${d.surname.trim()}`.trim();
+
+export const createDriverRequestSchema = z.object({
+  name: personNameSchema('name'),
+  surname: personNameSchema('surname'),
+  email: driverEmailSchema,
+  phone: driverPhoneSchema,
+});
+export type CreateDriverRequest = z.infer<typeof createDriverRequestSchema>;
+
+export const updateDriverRequestSchema = createDriverRequestSchema
+  .partial()
+  .extend({ active: z.boolean().optional() });
+export type UpdateDriverRequest = z.infer<typeof updateDriverRequestSchema>;
+
+export const driversResponseSchema = z.object({ drivers: z.array(driverProfileDtoSchema) });
+export type DriversResponse = z.infer<typeof driversResponseSchema>;
+
+export const driverResponseSchema = z.object({ driver: driverProfileDtoSchema });
+export type DriverResponse = z.infer<typeof driverResponseSchema>;
 
 /** The DTO fields both a transfer and a return expose about the driver. Every one is
  *  nullable or false for records made before sign-off was collected on that flow. */
 export const driverSignOffDtoFields = {
   /** Null on records that predate driver sign-off on this flow. */
   driverName: z.string().nullable(),
+  /** The registered driver's profile; null for an unregistered driver, for older
+   *  records, and once the profile has been deleted (the details above stay). */
+  driverId: z.string().nullable(),
+  /** Null on records made before the email address was asked for. */
+  driverEmail: z.string().nullable(),
+  /** Only on records made while the ID number was still asked for. */
   driverIdNumber: z.string().nullable(),
   /** Null on records made before the phone number was asked for. */
   driverPhone: z.string().nullable(),
@@ -85,3 +121,14 @@ export const driverSignOffDtoFields = {
   /** Whether an ID document image is actually on file. */
   driverIdCaptured: z.boolean(),
 } as const;
+
+/**
+ * What deleting a driver profile touches: the transfers and returns that name them.
+ * Nothing is destroyed — each keeps the name, email and phone it was signed under, and
+ * only loses the link back to the profile. The screen says so before the delete.
+ */
+export const driverImpactResponseSchema = z.object({
+  transfers: z.number().int().nonnegative(),
+  returns: z.number().int().nonnegative(),
+});
+export type DriverImpactResponse = z.infer<typeof driverImpactResponseSchema>;

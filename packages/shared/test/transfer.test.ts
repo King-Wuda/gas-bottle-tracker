@@ -25,16 +25,14 @@ const validPhoto = {
 };
 
 /**
- * A transfer also carries the driver sign-off now — the same four things a return
- * asks for, because both hand cylinders to a named person who drives away with them.
+ * A transfer also carries the driver sign-off — the same things a return asks for, because both hand cylinders to a named person who drives away with them.
  * See schemas/driver.ts. Spread into every fixture so a test about scans or photos
  * fails for the reason it is named after.
  */
 const validSignOff = {
   driverName: 'Sipho Ndlovu',
   driverPhone: '082 555 0199',
-  driverIdNumber: '8801015009087',
-  driverIdPhoto: { ...validPhoto, capturedAt: '2026-08-28T07:01:00.000Z' },
+  driverEmail: 'sipho@example.com',
   signaturePng: `data:image/png;base64,${'A'.repeat(200)}`,
 };
 
@@ -136,25 +134,10 @@ describe('transfer driver sign-off', () => {
     // The whole point of adding this to transfers: a batch could previously cross the
     // country with no record of who took it.
     expect(createTransferRequestSchema.safeParse({ ...base, driverName: '' }).success).toBe(false);
-    expect(createTransferRequestSchema.safeParse({ ...base, driverIdNumber: '' }).success).toBe(
-      false,
-    );
+    expect(createTransferRequestSchema.safeParse({ ...base, driverEmail: '' }).success).toBe(false);
     expect(createTransferRequestSchema.safeParse({ ...base, signaturePng: '' }).success).toBe(
       false,
     );
-  });
-
-  it('refuses a transfer with neither an ID photo nor an admin override', () => {
-    expect(createTransferRequestSchema.safeParse({ ...base, driverIdPhoto: null }).success).toBe(
-      false,
-    );
-    expect(
-      createTransferRequestSchema.safeParse({
-        ...base,
-        driverIdPhoto: null,
-        driverIdOverride: true,
-      }).success,
-    ).toBe(true);
   });
 
   it('demands the same driver evidence a return does', () => {
@@ -170,7 +153,7 @@ describe('transfer driver sign-off', () => {
       ...validSignOff,
     };
 
-    for (const field of ['driverName', 'driverPhone', 'driverIdNumber', 'signaturePng'] as const) {
+    for (const field of ['driverName', 'driverPhone', 'driverEmail', 'signaturePng'] as const) {
       const transfer = { ...base, [field]: '' };
       const ret = { ...returnBase, [field]: '' };
       expect(createTransferRequestSchema.safeParse(transfer).success, `transfer.${field}`).toBe(
@@ -178,13 +161,5 @@ describe('transfer driver sign-off', () => {
       );
       expect(createReturnRequestSchema.safeParse(ret).success, `return.${field}`).toBe(false);
     }
-
-    // And the ID photo, whose absence is only allowed alongside an override.
-    expect(createTransferRequestSchema.safeParse({ ...base, driverIdPhoto: null }).success).toBe(
-      false,
-    );
-    expect(
-      createReturnRequestSchema.safeParse({ ...returnBase, driverIdPhoto: null }).success,
-    ).toBe(false);
   });
 });

@@ -217,6 +217,8 @@ export interface DeliveryNoteMeta {
   driverIdNumber: string | null;
   /** Null on returns recorded before the phone number was asked for. */
   driverPhone: string | null;
+  /** Null on returns recorded before the email address was asked for. */
+  driverEmail: string | null;
   /** True when an admin waived the ID photograph. Printed, because the note is the
    *  evidence somebody signs against and they are entitled to know what is missing. */
   driverIdOverridden: boolean;
@@ -286,8 +288,11 @@ export async function renderDeliveryNote(
   line('Site', meta.siteName);
   line('Contents', meta.contents);
   line('Returned', fmt(meta.returnedAt));
-  line('Driver ID number', meta.driverIdNumber ?? 'Not recorded');
+  line('Driver', meta.driverName);
   line('Driver phone', meta.driverPhone ?? 'Not recorded');
+  line('Driver email', meta.driverEmail ?? 'Not recorded');
+  // The ID number was asked for until driver profiles replaced it; older notes keep it.
+  if (meta.driverIdNumber) line('Driver ID number', meta.driverIdNumber);
   line('Received by', meta.storesManagerName);
   line('Cylinders returned', String(rows.length));
   const overriddenCount = rows.filter((r) => r.overridden).length;
@@ -350,9 +355,14 @@ export async function renderDeliveryNote(
   // The ID document, to the right of the signature. Together they are the claim the
   // note makes about identity: a drawn signature over a typed name, next to the
   // document that name came off.
+  // Only for returns recorded while the ID was still asked for: a note made since has
+  // no ID to show, and a box saying so would read as something missing.
   const idX = MARGIN + 300;
-  doc.fontSize(9).fillColor('#555').text('ID DOCUMENT PRESENTED', idX, sigY);
-  if (driverIdImage) {
+  const hadIdCapture = !!driverIdImage || meta.driverIdOverridden || !!meta.driverIdNumber;
+  if (hadIdCapture) doc.fontSize(9).fillColor('#555').text('ID DOCUMENT PRESENTED', idX, sigY);
+  if (!hadIdCapture) {
+    // Nothing to the right of the signature.
+  } else if (driverIdImage) {
     try {
       doc.image(driverIdImage, idX, sigY + 16, { fit: [200, 92] });
     } catch {
