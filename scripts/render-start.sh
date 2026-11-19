@@ -10,6 +10,14 @@ set -euo pipefail
 echo "--> applying migrations"
 npm run -w @gct/api db:migrate:deploy
 
+# Projects numbered in the old 6-3-1-2 shape (all test data) are deleted, with
+# everything on them, and the database then enforces 5-3-1-2 for every project. Does
+# nothing once they are gone. Not fatal: if it fails, the API still starts, the old rows
+# simply stay until the next start retries — the new format is enforced for every new
+# or changed number by the migration either way.
+echo "--> removing old-format projects"
+npm run -w @gct/api cleanup:legacy-projects || echo "--> old-format project clean-up failed; will retry next start"
+
 # Seeded gas types, suppliers and demo logins. Skip it once you have real data by
 # setting SKIP_SEED=1 in the Render dashboard — it is an upsert, so it will not
 # destroy anything, but it will keep resurrecting the demo accounts.

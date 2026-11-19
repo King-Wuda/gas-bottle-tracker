@@ -161,6 +161,17 @@ sheet is the single `LABEL_SHEET` constant (`cols`, `rows`, `margin`, `gap`, in 
 resizes the labels without touching the drawing code. `test/qrLabels.test.ts` pins the
 8 labels and the 5 mm. Labels must be printed at 100% ("Actual size").
 
+## Project numbers are 5-3-1-2
+
+`#####-###-#-##`, e.g. `12345-678-9-01` — one definition in
+`packages/shared/src/projectNumber.ts` backs the API schema, the input mask (dashes
+inserted as you type) and the `Project_projectNumber_format` CHECK. It was 6-3-1-2;
+those old projects were all test data and `apps/api/scripts/remove-legacy-projects.ts`
+deletes them (through `deleteProject`, the same path as the admin button) on every start
+— `scripts/render-start.sh` runs it after the migrations — then VALIDATEs the
+constraint. Once they are gone it does nothing. The delete confirmation on Admin →
+Projects types the number through the same mask, shaped to the number on record.
+
 ## Passwords: everyone starts on `gea`, and changes their own
 
 `DEFAULT_PASSWORD` (`gea`, in `packages/shared/src/schemas/auth.ts`) is what the seed,
@@ -252,8 +263,8 @@ when the export looks right but the app cannot reach the API.
    its place — so the browser gets HTML where it asked for JavaScript and the app is a blank
    white page with `Unexpected token '<'` in the console. Nothing about the export looks
    wrong; only the restart fixes it.
-3. `npm run typecheck && npm run lint && npm test` — 469 tests baseline
-   (75 shared, 329 API, 65 mobile). **Stop the dev API server first**: it shares the database
+3. `npm run typecheck && npm run lint && npm test` — 475 tests baseline
+   (78 shared, 332 API, 65 mobile). **Stop the dev API server first**: it shares the database
    with the test run, and its email worker polling across `resetDb()` fails tests at random.
 
    **`npm test` also empties the database you were demonstrating.** The suite shares it,

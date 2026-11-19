@@ -6,6 +6,7 @@ import {
   formatBatchDate,
   type BatchEventKind,
   type BatchEventSummary,
+  PROJECT_NUMBER_PLACEHOLDER,
 } from '@gct/shared';
 import { ApiError, apiHistoryFeed } from '../../src/api/client';
 import {
@@ -115,7 +116,7 @@ export default function HistoryFeed() {
         label="Search by project number or project manager"
         value={q}
         onChangeText={setQ}
-        placeholder="123456-789-1-23"
+        placeholder={PROJECT_NUMBER_PLACEHOLDER}
         autoCorrect={false}
       />
 

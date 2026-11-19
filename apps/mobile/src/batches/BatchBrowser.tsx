@@ -8,6 +8,7 @@ import {
   type GasTypeDto,
   type ProjectManagerDto,
   type SupplierDto,
+  PROJECT_NUMBER_PLACEHOLDER,
 } from '@gct/shared';
 import {
   ApiError,
@@ -234,7 +235,7 @@ export function BatchBrowser({
         label="Search project number or project manager"
         value={q}
         onChangeText={setQ}
-        placeholder="123456-789-1-23 or a name"
+        placeholder={`${PROJECT_NUMBER_PLACEHOLDER} or a name`}
         autoCorrect={false}
         // No submit button and no returnKeyType="search": the list narrows on each
         // keystroke, so there is nothing to submit.

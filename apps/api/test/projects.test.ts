@@ -128,10 +128,15 @@ describe('POST /projects — create new site', () => {
     expect(res.json().error.code).toBe('VALIDATION');
   });
 
-  it('rejects a project number that is not ######-###-#-##', async () => {
+  it('rejects a project number that is not #####-###-#-## — the old 6-digit shape included', async () => {
     const pm = await makeProjectManager('Format PM');
-    // The old free-text shape, a right-length-but-wrong-grouping number, and letters.
-    for (const projectNumber of ['PRJ-0001', '123456-789-12-3', '12345A-789-1-23']) {
+    // The old free-text shape, the old 6-3-1-2 shape, a wrong grouping, and letters.
+    for (const projectNumber of [
+      'PRJ-0001',
+      '123456-789-1-23',
+      '12345-678-90-1',
+      '1234A-678-9-01',
+    ]) {
       const res = await app.inject({
         method: 'POST',
         url: '/projects',

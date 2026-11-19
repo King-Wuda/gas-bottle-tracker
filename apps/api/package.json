@@ -19,7 +19,8 @@
     "postinstall": "prisma generate",
     "demo": "node --env-file-if-exists=.env --import tsx scripts/demo.ts",
     "setup": "node --import tsx scripts/setup.ts",
-    "reset:data": "node --env-file-if-exists=.env --import tsx scripts/reset-data.ts"
+    "reset:data": "node --env-file-if-exists=.env --import tsx scripts/reset-data.ts",
+    "cleanup:legacy-projects": "node --env-file-if-exists=.env --import tsx scripts/remove-legacy-projects.ts"
   },
   "dependencies": {
     "@fastify/cors": "11.3.0",
