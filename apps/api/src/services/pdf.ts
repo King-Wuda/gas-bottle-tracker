@@ -20,20 +20,59 @@ export interface QrSheetMeta {
 const PAGE = { width: 595.28, height: 841.89 };
 const MARGIN = 40;
 
+/** PDF points per millimetre. Every label measurement below is in mm, because that
+ *  is what a sticker sheet's packaging and a ruler both say. */
+const MM = 72 / 25.4;
+
 /**
- * 2 × 3 labels per A4 page.
+ * The sheet the QR labels are printed onto, in millimetres.
  *
- * The old sheet was a 3 × 4 grid of bare QR codes with the batch details printed once
- * in the page header. That works while the sheet is intact and stops working the
- * moment it is cut up — which is exactly what happens to it, because each label gets
- * stuck on a different cylinder that then goes to a different place. A label that has
- * left the sheet has to be able to answer "what is this and whose is it?" on its own,
- * so every label now carries the batch's details itself. Six per page is what that
- * costs, and the trade is worth it: the sheet is printed once, the labels are read for
- * the life of the rental.
+ * Eight labels on A4, 2 across × 4 down, with the same 5 mm between every label and
+ * between the labels and each edge of the paper — no header, no wasted band at the top.
+ * The label size falls out of that: (210 − 3 × 5) / 2 = 97.5 mm wide and
+ * (297 − 5 × 5) / 4 = 68 mm tall. Change `cols`, `rows`, `margin` or `gap` and the labels
+ * resize to fit; nothing else needs touching.
+ *
+ * Print at 100% ("Actual size"). "Fit to page" shrinks every label and moves the gaps.
  */
-const COLS = 2;
-const ROWS = 3;
+export const LABEL_SHEET = {
+  page: { width: 210, height: 297 },
+  cols: 2,
+  rows: 4,
+  /** Between the outer labels and the paper's edges. */
+  margin: 5,
+  /** Between neighbouring labels, across and down. */
+  gap: 5,
+};
+
+export type LabelSheet = typeof LABEL_SHEET;
+
+/** One label's size in millimetres, derived from the sheet. */
+export function labelSize(sheet: LabelSheet = LABEL_SHEET): { width: number; height: number } {
+  return {
+    width: (sheet.page.width - 2 * sheet.margin - (sheet.cols - 1) * sheet.gap) / sheet.cols,
+    height: (sheet.page.height - 2 * sheet.margin - (sheet.rows - 1) * sheet.gap) / sheet.rows,
+  };
+}
+
+/** Where each label on one sheet is, in PDF points, row by row. */
+export function labelSlots(
+  sheet: LabelSheet = LABEL_SHEET,
+): { x: number; y: number; width: number; height: number }[] {
+  const size = labelSize(sheet);
+  const slots = [];
+  for (let r = 0; r < sheet.rows; r++) {
+    for (let c = 0; c < sheet.cols; c++) {
+      slots.push({
+        x: (sheet.margin + c * (size.width + sheet.gap)) * MM,
+        y: (sheet.margin + r * (size.height + sheet.gap)) * MM,
+        width: size.width * MM,
+        height: size.height * MM,
+      });
+    }
+  }
+  return slots;
+}
 
 function collect(doc: PDFKit.PDFDocument): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -47,94 +86,104 @@ function collect(doc: PDFKit.PDFDocument): Promise<Buffer> {
 const labelDate = (d: Date): string =>
   new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(d);
 
-/** A4 sheet of self-describing QR labels — one per cylinder — for the PM to print. */
+/**
+ * QR labels, one per cylinder, eight to an A4 sheet — see `LABEL_SHEET`.
+ *
+ * Every label carries the batch's details itself rather than the page header: the
+ * sheet is cut up the moment it is printed, each label goes onto a different cylinder
+ * that then goes somewhere different, and a label that has left the sheet still has
+ * to answer "what is this and whose is it?" on its own.
+ *
+ * Inside a label: the QR square on the left, as large as the height allows; the gas
+ * in bold beside it, because that is what someone at a cage looks for first; then the
+ * batch details; and the serial across the bottom in the largest type on the label —
+ * what a person reads out over the phone when the camera will not focus.
+ */
 export async function renderQrSheet(meta: QrSheetMeta, cells: QrSheetCell[]): Promise<Buffer> {
-  const doc = new PDFDocument({ size: 'A4', margin: MARGIN, autoFirstPage: false });
+  // margin 0: every position below is exact, and pdfkit would otherwise start a new
+  // page whenever text came near the bottom margin of a sheet whose last row of
+  // stickers sits there.
+  const doc = new PDFDocument({
+    size: [LABEL_SHEET.page.width * MM, LABEL_SHEET.page.height * MM],
+    margin: 0,
+    autoFirstPage: false,
+  });
   const done = collect(doc);
 
-  const gridW = PAGE.width - MARGIN * 2;
-  const headerH = 34;
-  const cellW = gridW / COLS;
-  const cellH = (PAGE.height - MARGIN * 2 - headerH) / ROWS;
-  const perPage = COLS * ROWS;
+  const slots = labelSlots();
+  const perPage = slots.length;
 
-  // Inside one label: a detail block on the left, the QR square on the right, and the
-  // serial across the bottom in the largest type on the label — it is what a person
-  // reads out over the phone when the camera will not focus.
-  const PAD = 10;
-  // Sized to fill the space the detail block leaves rather than a round number: a
-  // bigger module size is the difference between a scan that works across a yard in
-  // low light and one that needs the phone held against the cylinder.
-  const qrSize = 150;
-  const detailW = cellW - qrSize - PAD * 3;
-
-  const detail = (x: number, y: number, label: string, value: string): number => {
-    doc.fontSize(6.5).fillColor('#777').text(label.toUpperCase(), x, y, { width: detailW });
-    doc
-      .fontSize(8.5)
-      .fillColor('#111')
-      .text(value, x, y + 8, { width: detailW, lineBreak: true });
-    // Advance by what the value actually consumed, so a long site name pushes the
-    // next row down instead of being overprinted by it.
-    return y + 8 + doc.heightOfString(value, { width: detailW }) + 4;
-  };
+  const PAD = 3.5 * MM;
+  const SERIAL_H = 10 * MM;
+  const QR = labelSize().height * MM - PAD * 2 - SERIAL_H - 1 * MM;
+  const GUTTER = 3 * MM;
 
   cells.forEach((cell, i) => {
-    if (i % perPage === 0) {
-      doc.addPage();
-      doc
-        .fontSize(12)
-        .fillColor('#000')
-        .text(`Cylinder labels — ${meta.projectNumber}`, MARGIN, MARGIN);
-      doc
-        .fontSize(8)
-        .fillColor('#666')
-        .text(
-          `${meta.siteName} · ${cells.length} label(s) · page ${Math.floor(i / perPage) + 1} of ` +
-            `${Math.ceil(cells.length / perPage)} · cut along the boxes`,
-          MARGIN,
-          MARGIN + 16,
-        );
-    }
+    // No header: the labels run edge to edge at the sheet's 5 mm margins, and every
+    // label carries the batch's details itself.
+    if (i % perPage === 0) doc.addPage();
 
-    const idx = i % perPage;
-    const x = MARGIN + (idx % COLS) * cellW;
-    const y = MARGIN + headerH + Math.floor(idx / COLS) * cellH;
+    const { x, y, width, height } = slots[i % perPage]!;
 
-    // The cut line. Dashed so it reads as "cut here" rather than as a table border.
+    // The sticker's own edge, hairline and pale: on a sticker sheet it falls on the die
+    // cut, and on plain paper it is the line to cut along.
     doc
       .save()
-      .dash(2, { space: 2 })
-      .rect(x + 3, y + 3, cellW - 6, cellH - 6)
-      .strokeColor('#bbb')
-      .lineWidth(0.5)
+      .dash(1.5, { space: 1.5 })
+      .roundedRect(x, y, width, height, 2 * MM)
+      .strokeColor('#c8c8c8')
+      .lineWidth(0.4)
       .stroke()
       .restore();
 
-    let dy = y + PAD + 2;
-    dy = detail(x + PAD, dy, 'Project', meta.projectNumber);
-    dy = detail(x + PAD, dy, 'Project manager', meta.projectManagerName);
-    dy = detail(x + PAD, dy, 'Gas', cell.gasTypeName);
-    dy = detail(x + PAD, dy, 'Supplier', cell.supplierName);
-    dy = detail(x + PAD, dy, 'Site', `${meta.siteName} — ${meta.siteLocation}`);
-    detail(x + PAD, dy, 'Date', labelDate(meta.createdAt));
+    doc.image(cell.qrPng, x + PAD, y + PAD, { width: QR, height: QR });
 
-    doc.image(cell.qrPng, x + cellW - qrSize - PAD, y + PAD + 2, {
-      width: qrSize,
-      height: qrSize,
-    });
+    // The details column, beside the QR and no taller than it.
+    const cx = x + PAD + QR + GUTTER;
+    const cw = x + width - PAD - cx;
+    let cy = y + PAD;
 
     doc
+      .font('Helvetica-Bold')
       .fontSize(15)
       .fillColor('#000')
-      .text(cell.serialCode, x + PAD, y + cellH - 30, {
-        width: cellW - PAD * 2,
+      .text(cell.gasTypeName, cx, cy, { width: cw, height: 17, ellipsis: true, lineBreak: false });
+    cy += 21;
+
+    const field = (label: string, value: string, lines = 1): void => {
+      doc.font('Helvetica').fontSize(5.5).fillColor('#777');
+      doc.text(label.toUpperCase(), cx, cy, { width: cw, lineBreak: false });
+      cy += 7;
+      doc.font('Helvetica').fontSize(8).fillColor('#111');
+      const lineH = doc.currentLineHeight(true);
+      // At most `lines` lines, then "…": a long site name must not run off the
+      // sticker or over the next field.
+      doc.text(value, cx, cy, { width: cw, height: lineH * lines, ellipsis: true });
+      cy += Math.min(doc.heightOfString(value, { width: cw }), lineH * lines) + 3;
+    };
+    field('Project', meta.projectNumber);
+    field('Project manager', meta.projectManagerName, 2);
+    field('Supplier', cell.supplierName);
+    field('Site', `${meta.siteName} — ${meta.siteLocation}`, 2);
+    field('Date', labelDate(meta.createdAt));
+
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(20)
+      .fillColor('#000')
+      .text(cell.serialCode, x + PAD, y + height - PAD - SERIAL_H + 2 * MM, {
+        width: width - PAD * 2,
         align: 'center',
+        lineBreak: false,
       });
   });
 
   if (cells.length === 0) {
-    doc.addPage().fontSize(12).text('No cylinders in this batch.', MARGIN, MARGIN);
+    doc
+      .addPage()
+      .font('Helvetica')
+      .fontSize(12)
+      .text('No cylinders in this batch.', 20 * MM, 20 * MM);
   }
 
   doc.end();

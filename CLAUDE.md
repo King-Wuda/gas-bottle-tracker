@@ -151,6 +151,16 @@ rejected is not an error. An initialization's are checked up front and extras re
 `cached_cylinder` carries `gas_type_id` and `delivery_point` for this, offline —
 `CACHE_SCHEMA_VERSION` 4.
 
+## QR labels: eight to an A4 sheet, 5 mm apart
+
+The QR sheet (`renderQrSheet` in `apps/api/src/services/pdf.ts`) prints 8 labels per A4
+page, 2 across × 4 down, with 5 mm between every label and between the labels and each
+edge of the paper — no header. The label size is DERIVED from that (97.5 × 68 mm): the
+sheet is the single `LABEL_SHEET` constant (`cols`, `rows`, `margin`, `gap`, in mm), and
+`labelSize()` / `labelSlots()` compute the rest, so changing the spacing or the count
+resizes the labels without touching the drawing code. `test/qrLabels.test.ts` pins the
+8 labels and the 5 mm. Labels must be printed at 100% ("Actual size").
+
 ## Passwords: everyone starts on `gea`, and changes their own
 
 `DEFAULT_PASSWORD` (`gea`, in `packages/shared/src/schemas/auth.ts`) is what the seed,
@@ -242,8 +252,8 @@ when the export looks right but the app cannot reach the API.
    its place — so the browser gets HTML where it asked for JavaScript and the app is a blank
    white page with `Unexpected token '<'` in the console. Nothing about the export looks
    wrong; only the restart fixes it.
-3. `npm run typecheck && npm run lint && npm test` — 455 tests baseline
-   (72 shared, 321 API, 62 mobile). **Stop the dev API server first**: it shares the database
+3. `npm run typecheck && npm run lint && npm test` — 465 tests baseline
+   (75 shared, 325 API, 65 mobile). **Stop the dev API server first**: it shares the database
    with the test run, and its email worker polling across `resetDb()` fails tests at random.
 
    **`npm test` also empties the database you were demonstrating.** The suite shares it,
