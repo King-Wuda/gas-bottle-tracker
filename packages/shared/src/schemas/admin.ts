@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { staffRoleSchema } from './common';
 import { passwordSchema } from './auth';
 import { batchLineInputSchema } from './batch';
+import { projectNumberSchema } from './project';
 
 /**
  * The admin console's contract — who can use the system, who the paperwork is
@@ -149,6 +150,12 @@ export const updateBatchRequestSchema = z
   .object({
     projectManagerId: z.string().min(1).optional(),
     siteId: z.string().min(1).optional(),
+    /**
+     * Correct the PROJECT's number. It belongs to the project, not to this batch, so
+     * it changes on every batch booked on that project — the screen says how many
+     * before it is sent. Refused when another project already has the number.
+     */
+    projectNumber: projectNumberSchema.optional(),
     lines: z.array(batchLineEditSchema).max(25).optional(),
     /** Line ids to drop entirely. Same untouched-cylinder rule as shrinking one. */
     removeLineIds: z.array(z.string().min(1)).max(25).optional(),
@@ -159,6 +166,7 @@ export const updateBatchRequestSchema = z
     (b) =>
       b.projectManagerId !== undefined ||
       b.siteId !== undefined ||
+      b.projectNumber !== undefined ||
       (b.lines?.length ?? 0) > 0 ||
       (b.removeLineIds?.length ?? 0) > 0,
     { message: 'Nothing to update' },

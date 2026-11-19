@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   formatBatchDate,
   INITIAL_DELIVERY_POINT_LABELS,
+  isValidProjectNumber,
   summariseDistribution,
   type BatchAmendmentDto,
   type BatchDto,
@@ -35,7 +36,8 @@ import {
   SecondaryButton,
   styles,
 } from '../../../src/ui/components';
-import { SegmentedToggle, Select } from '../../../src/ui/controls';
+import { ProjectNumberField, SegmentedToggle, Select } from '../../../src/ui/controls';
+import { confirmAction } from '../../../src/ui/confirm';
 import { colors } from '../../../src/ui/theme';
 
 const DELIVERY_POINTS: { value: InitialDeliveryPoint; label: string }[] = [
@@ -88,6 +90,10 @@ export default function AdminBatchEdit() {
   const [siteId, setSiteId] = useState<string | null>(null);
   const [lineDrafts, setLineDrafts] = useState<Record<string, LineDraft>>({});
   const [reason, setReason] = useState('');
+  /** The project's number, as it is being corrected. */
+  const [projectNumber, setProjectNumber] = useState('');
+  /** Every batch on the project — what renaming it reaches. Null until loaded. */
+  const [projectBatchCount, setProjectBatchCount] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -98,6 +104,7 @@ export default function AdminBatchEdit() {
       setBatch(b);
       setManagerId(b.projectManagerId);
       setSiteId(b.siteId);
+      setProjectNumber(b.projectNumber);
       setLineDrafts(
         Object.fromEntries(
           b.lines.map((l) => [
@@ -120,7 +127,10 @@ export default function AdminBatchEdit() {
         apiAdminBatchAmendments(id),
       ]);
       if (pm.status === 'fulfilled') setManagers(pm.value.projectManagers);
-      if (project.status === 'fulfilled') setSites(project.value.project.sites);
+      if (project.status === 'fulfilled') {
+        setSites(project.value.project.sites);
+        setProjectBatchCount(project.value.project.batchCount);
+      }
       if (gas.status === 'fulfilled') setGasTypes(gas.value.gasTypes);
       if (amend.status === 'fulfilled') setAmendments(amend.value.amendments);
 
@@ -157,9 +167,15 @@ export default function AdminBatchEdit() {
   }
   if (!batch) return null;
 
+  const projectNumberChanged = projectNumber !== batch.projectNumber;
+  const projectNumberValid = isValidProjectNumber(projectNumber);
+  /** The other batches a rename reaches, beyond this one. */
+  const otherBatches = Math.max((projectBatchCount ?? 1) - 1, 0);
+
   /** Only what actually differs from the stored batch — an empty patch is not sent. */
   const buildPatch = (): UpdateBatchRequest | null => {
     const patch: UpdateBatchRequest = {};
+    if (projectNumberChanged && projectNumberValid) patch.projectNumber = projectNumber;
     if (managerId && managerId !== batch.projectManagerId) patch.projectManagerId = managerId;
     if (siteId && siteId !== batch.siteId) patch.siteId = siteId;
 
@@ -189,6 +205,7 @@ export default function AdminBatchEdit() {
     const substantive =
       patch.projectManagerId !== undefined ||
       patch.siteId !== undefined ||
+      patch.projectNumber !== undefined ||
       (patch.lines?.length ?? 0) > 0;
     return substantive ? patch : null;
   };
@@ -197,12 +214,27 @@ export default function AdminBatchEdit() {
 
   const save = async () => {
     if (!patch || !id) return;
+    // A rename reaches every batch on the project, so say so before it happens when
+    // there are others — this screen is about one batch, and that is easy to forget.
+    if (
+      patch.projectNumber &&
+      otherBatches > 0 &&
+      !(await confirmAction(
+        `Rename project ${batch.projectNumber} to ${patch.projectNumber}?\n\n` +
+          `The number belongs to the project, so it changes on all ` +
+          `${otherBatches + 1} batches booked on it — not only this one. Each of them ` +
+          `records the correction.`,
+      ))
+    ) {
+      return;
+    }
     setSaving(true);
     setSaveError(null);
     setSaved(false);
     try {
       const res = await apiAdminUpdateBatch(id, patch);
       setBatch(res.batch);
+      setProjectNumber(res.batch.projectNumber);
       setReason('');
       setSaved(true);
       const fresh = await apiAdminBatchAmendments(id).catch(() => null);
@@ -226,6 +258,27 @@ export default function AdminBatchEdit() {
         Every change here is recorded with your name. Cylinders that have already been transferred
         or returned cannot be edited away.
       </Text>
+
+      <Card>
+        <Text style={{ fontWeight: '700' }}>Project</Text>
+        <ProjectNumberField
+          value={projectNumber}
+          onChangeText={setProjectNumber}
+          showErrorNow={projectNumberChanged && projectNumber.length >= 15}
+        />
+        <Text style={styles.hint}>
+          {projectNumberChanged && projectNumberValid
+            ? otherBatches > 0
+              ? `This renames the project. It changes on all ${otherBatches + 1} batches booked ` +
+                `on ${batch.projectNumber}, not only this one.`
+              : 'This renames the project. This is the only batch on it.'
+            : 'Correct a mistyped project number here. The number belongs to the project, so it ' +
+              'changes on every batch booked on it.'}
+          {projectNumberChanged && projectNumberValid
+            ? ' QR labels already printed keep the old number.'
+            : ''}
+        </Text>
+      </Card>
 
       <Card>
         <Text style={{ fontWeight: '700' }}>Where the paperwork goes</Text>
@@ -302,9 +355,15 @@ export default function AdminBatchEdit() {
       ) : null}
 
       <PrimaryButton
-        title={patch ? 'Save corrections' : 'Nothing changed yet'}
+        title={
+          projectNumberChanged && !projectNumberValid
+            ? 'Finish the project number'
+            : patch
+              ? 'Save corrections'
+              : 'Nothing changed yet'
+        }
         onPress={() => void save()}
-        disabled={!patch}
+        disabled={!patch || (projectNumberChanged && !projectNumberValid)}
         busy={saving}
       />
 

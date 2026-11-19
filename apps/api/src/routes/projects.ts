@@ -34,7 +34,11 @@ const toSiteDto = (s: SiteRow, clientName: string): SiteDto => ({
   location: s.location,
 });
 
-const toProjectDto = (p: ProjectRow, activeBatchCount: number): ProjectDto => ({
+const toProjectDto = (
+  p: ProjectRow,
+  activeBatchCount: number,
+  batchCount: number,
+): ProjectDto => ({
   id: p.id,
   projectNumber: p.projectNumber,
   status: p.status,
@@ -49,6 +53,7 @@ const toProjectDto = (p: ProjectRow, activeBatchCount: number): ProjectDto => ({
   // The CLIENT's sites: every place this project can deliver to, not a private copy.
   sites: p.client.sites.map((site) => toSiteDto(site, p.client.name)),
   activeBatchCount,
+  batchCount,
 });
 
 /** The client + sites shape every project view needs. */
@@ -208,8 +213,13 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
     if (!project) {
       return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Project not found' } });
     }
-    const counts = await activeBatchCounts([id]);
-    const body: ProjectDetailResponse = { project: toProjectDto(project, counts.get(id) ?? 0) };
+    const [counts, batchCount] = await Promise.all([
+      activeBatchCounts([id]),
+      prisma.batch.count({ where: { projectId: id } }),
+    ]);
+    const body: ProjectDetailResponse = {
+      project: toProjectDto(project, counts.get(id) ?? 0, batchCount),
+    };
     return body;
   });
 
@@ -266,7 +276,7 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
       });
 
       const body: CreateProjectResponse = {
-        project: toProjectDto(project, 0),
+        project: toProjectDto(project, 0, 0),
         // Which of the client's sites this project was started for, so the flow can
         // carry straight on to the batch without guessing when the client has three.
         siteId: site.id,

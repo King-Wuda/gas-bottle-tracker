@@ -595,6 +595,123 @@ describe('admin — project managers', () => {
 
 // ----------------------------------------------------- batch corrections
 
+describe('admin — correcting the project number', () => {
+  /** A project of its own, with `n` batches on it — renaming the suite's shared
+   *  project would ripple into every other test in this file. */
+  async function projectWithBatches(n: number) {
+    const number = uniqueProjectNumber();
+    const created = await app.inject({
+      method: 'POST',
+      url: '/projects',
+      headers: bearer(techToken),
+      payload: {
+        projectNumber: number,
+        projectManagerId: (await makeProjectManager('Rename PM')).id,
+        clientName: 'Rename Client',
+        location: 'Midrand',
+      },
+    });
+    const pid = created.json().project.id as string;
+    const sid = created.json().project.sites[0].id as string;
+    const batchIds: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const b = await app.inject({
+        method: 'POST',
+        url: '/batches',
+        headers: bearer(techToken),
+        payload: {
+          projectId: pid,
+          siteId: sid,
+          clientRequestId: randomUUID(),
+          lines: [
+            {
+              gasTypeId: nitrogenId,
+              supplierId: await supplierForGas(nitrogenId),
+              quantity: 1,
+              initialDeliveryPoint: 'STORES',
+            },
+          ],
+        },
+      });
+      batchIds.push(b.json().batch.id);
+    }
+    return { projectId: pid, number, batchIds };
+  }
+
+  const correct = (batchId: string, payload: Record<string, unknown>) =>
+    app.inject({
+      method: 'PATCH',
+      url: `/admin/batches/${batchId}`,
+      headers: bearer(adminToken),
+      payload,
+    });
+
+  const amendmentsOf = async (batchId: string) =>
+    (
+      await app.inject({
+        method: 'GET',
+        url: `/admin/batches/${batchId}/amendments`,
+        headers: bearer(adminToken),
+      })
+    ).json().amendments as { changes: string[]; reason: string | null }[];
+
+  it('renames the project — on this batch and every other batch booked on it', async () => {
+    const p = await projectWithBatches(2);
+    const project = await app.inject({
+      method: 'GET',
+      url: `/projects/${p.projectId}`,
+      headers: bearer(adminToken),
+    });
+    expect(project.json().project.batchCount).toBe(2);
+
+    const fixed = uniqueProjectNumber();
+    const res = await correct(p.batchIds[0]!, { projectNumber: fixed, reason: 'typo on intake' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().batch.projectNumber).toBe(fixed);
+
+    const other = await app.inject({
+      method: 'GET',
+      url: `/batches/${p.batchIds[1]}`,
+      headers: bearer(adminToken),
+    });
+    expect(other.json().batch.projectNumber).toBe(fixed);
+    expect(await prisma.project.count({ where: { projectNumber: p.number } })).toBe(0);
+
+    // Both trails say what happened; the other batch says where it was done from.
+    const mine = await amendmentsOf(p.batchIds[0]!);
+    expect(mine[0]!.changes).toEqual([`Project number: ${p.number} → ${fixed}`]);
+    expect(mine[0]!.reason).toBe('typo on intake');
+    const theirs = await amendmentsOf(p.batchIds[1]!);
+    expect(theirs[0]!.changes).toEqual([`Project number: ${p.number} → ${fixed}`]);
+    expect(theirs[0]!.reason).toContain('another batch');
+  });
+
+  it('refuses a number another project already has, and changes nothing', async () => {
+    const a = await projectWithBatches(1);
+    const b = await projectWithBatches(1);
+    const res = await correct(a.batchIds[0]!, { projectNumber: b.number });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('PROJECT_NUMBER_TAKEN');
+    expect(
+      (await prisma.project.findUniqueOrThrow({ where: { id: a.projectId } })).projectNumber,
+    ).toBe(a.number);
+    expect(await amendmentsOf(a.batchIds[0]!)).toHaveLength(0);
+  });
+
+  it('refuses a number in the wrong format', async () => {
+    const p = await projectWithBatches(1);
+    const res = await correct(p.batchIds[0]!, { projectNumber: '1234' });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('treats the same number as no change', async () => {
+    const p = await projectWithBatches(1);
+    const res = await correct(p.batchIds[0]!, { projectNumber: p.number });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('NO_CHANGES');
+  });
+});
+
 describe('admin — correcting a batch', () => {
   it('corrects paperwork and records what changed, by whom', async () => {
     const { batchId, lineIds } = await makeBatch([{ gasTypeId: nitrogenId, quantity: 2 }]);
