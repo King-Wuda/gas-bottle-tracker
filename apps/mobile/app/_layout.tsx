@@ -3,6 +3,7 @@ import { Redirect, Stack, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth } from '../src/auth/AuthContext';
 import { SyncProvider } from '../src/sync/SyncContext';
+import { NewFlowProvider } from '../src/new/NewFlowContext';
 import { stackScreenOptions } from '../src/ui/chrome';
 
 function AuthGate() {
@@ -48,8 +49,14 @@ export default function RootLayout() {
   return (
     <AuthProvider>
       <SyncProvider>
-        <StatusBar style="auto" />
-        <AuthGate />
+        {/* Here rather than around /new only: History's "Add another batch to this
+            site" hands the project and site to the New flow, and a provider that
+            exists only inside /new is not there for it to hand them to — the batch
+            screen crashed on open. /new/index resets it, so New still starts clean. */}
+        <NewFlowProvider>
+          <StatusBar style="auto" />
+          <AuthGate />
+        </NewFlowProvider>
       </SyncProvider>
     </AuthProvider>
   );

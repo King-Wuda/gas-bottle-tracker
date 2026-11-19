@@ -331,3 +331,25 @@ export function distributionLines(entries: BatchDistributionEntry[]): string[] {
           : `${e.count} on site at ${e.locationName}`,
     );
 }
+
+/**
+ * Where a whole batch is, by kind of place: "2 on site", "1 in stores", "1 returned
+ * to supplier". Replaces "3 of 3 still out", which said how many were out but not
+ * where — and "out" lumped cylinders sitting in stores together with ones on a job.
+ *
+ * On site first, because that is what a batch is usually being chased for; returned
+ * last, because it is terminal. Sites are summed: the per-gas lines above it already
+ * say which site. A kind with nothing in it is left out.
+ */
+export function locationTotals(entries: BatchDistributionEntry[]): string[] {
+  const sum = (kind: BatchLocationKind) =>
+    entries.filter((e) => e.kind === kind).reduce((n, e) => n + e.count, 0);
+  const site = sum('SITE');
+  const stores = sum('STORES');
+  const returned = sum('RETURNED');
+  return [
+    ...(site > 0 ? [`${site} on site`] : []),
+    ...(stores > 0 ? [`${stores} in stores`] : []),
+    ...(returned > 0 ? [`${returned} returned to supplier`] : []),
+  ];
+}

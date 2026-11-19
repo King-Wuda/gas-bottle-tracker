@@ -45,6 +45,10 @@ async function main(): Promise<void> {
   await prisma.$transaction([
     prisma.batchAmendment.deleteMany(),
     prisma.movementEvent.deleteMany(),
+    // Photos point at the transfer, return or initialization they evidence, so they
+    // go before all three — every one of those now carries one.
+    prisma.batchPhoto.deleteMany(),
+    prisma.batchInitialization.deleteMany(),
     prisma.returnRecord.deleteMany(),
     prisma.transfer.deleteMany(),
     prisma.cylinder.deleteMany(),

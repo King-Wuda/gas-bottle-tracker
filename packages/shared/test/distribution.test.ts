@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { distributionLines, summariseDistribution } from '../src/schemas/batch';
+import { distributionLines, locationTotals, summariseDistribution } from '../src/schemas/batch';
 
 const entries = [
   {
@@ -48,5 +48,13 @@ describe('where a gas is', () => {
 
   it('the one-line summary says the same, joined', () => {
     expect(summariseDistribution(entries)).toBe(distributionLines(entries).join(' · '));
+  });
+});
+
+describe('where a whole batch is', () => {
+  it('on site, in stores, returned — summed across gases and sites, zeros left out', () => {
+    expect(locationTotals(entries)).toEqual(['6 on site', '3 in stores', '1 returned to supplier']);
+    expect(locationTotals(entries.filter((e) => e.kind === 'STORES'))).toEqual(['3 in stores']);
+    expect(locationTotals([])).toEqual([]);
   });
 });
