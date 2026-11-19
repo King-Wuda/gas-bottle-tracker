@@ -25,44 +25,49 @@ const MARGIN = 40;
 const MM = 72 / 25.4;
 
 /**
- * The sticker sheet the QR labels are printed onto, in millimetres.
+ * The sheet the QR labels are printed onto, in millimetres.
  *
- * Each label is one 100 × 75 mm sticker. On an A4 sheet that is at most 2 across ×
- * 3 down (200 mm of the 210 mm width; 225 mm of the 297 mm height) — no other
- * arrangement fits more — and the grid is centred, which is how such sheets are cut.
- * If a sheet with different margins or gaps is bought, THIS is the only thing to
- * change: `origin` pins the top-left sticker, `gap` is the space between stickers.
+ * Eight labels on A4, 2 across × 4 down, with the same 5 mm between every label and
+ * between the labels and each edge of the paper — no header, no wasted band at the top.
+ * The label size falls out of that: (210 − 3 × 5) / 2 = 97.5 mm wide and
+ * (297 − 5 × 5) / 4 = 68 mm tall. Change `cols`, `rows`, `margin` or `gap` and the labels
+ * resize to fit; nothing else needs touching.
  *
- * Print at 100% ("Actual size"). "Fit to page" shrinks every label off its sticker.
+ * Print at 100% ("Actual size"). "Fit to page" shrinks every label and moves the gaps.
  */
 export const LABEL_SHEET = {
   page: { width: 210, height: 297 },
-  label: { width: 100, height: 75 },
   cols: 2,
-  rows: 3,
-  gap: { x: 0, y: 0 },
-  /** Top-left corner of the first sticker; null centres the grid on the page. */
-  origin: null as null | { left: number; top: number },
+  rows: 4,
+  /** Between the outer labels and the paper's edges. */
+  margin: 5,
+  /** Between neighbouring labels, across and down. */
+  gap: 5,
 };
 
 export type LabelSheet = typeof LABEL_SHEET;
 
-/** Where each sticker on one sheet is, in PDF points, row by row. */
+/** One label's size in millimetres, derived from the sheet. */
+export function labelSize(sheet: LabelSheet = LABEL_SHEET): { width: number; height: number } {
+  return {
+    width: (sheet.page.width - 2 * sheet.margin - (sheet.cols - 1) * sheet.gap) / sheet.cols,
+    height: (sheet.page.height - 2 * sheet.margin - (sheet.rows - 1) * sheet.gap) / sheet.rows,
+  };
+}
+
+/** Where each label on one sheet is, in PDF points, row by row. */
 export function labelSlots(
   sheet: LabelSheet = LABEL_SHEET,
 ): { x: number; y: number; width: number; height: number }[] {
-  const gridW = sheet.cols * sheet.label.width + (sheet.cols - 1) * sheet.gap.x;
-  const gridH = sheet.rows * sheet.label.height + (sheet.rows - 1) * sheet.gap.y;
-  const left = sheet.origin?.left ?? (sheet.page.width - gridW) / 2;
-  const top = sheet.origin?.top ?? (sheet.page.height - gridH) / 2;
+  const size = labelSize(sheet);
   const slots = [];
   for (let r = 0; r < sheet.rows; r++) {
     for (let c = 0; c < sheet.cols; c++) {
       slots.push({
-        x: (left + c * (sheet.label.width + sheet.gap.x)) * MM,
-        y: (top + r * (sheet.label.height + sheet.gap.y)) * MM,
-        width: sheet.label.width * MM,
-        height: sheet.label.height * MM,
+        x: (sheet.margin + c * (size.width + sheet.gap)) * MM,
+        y: (sheet.margin + r * (size.height + sheet.gap)) * MM,
+        width: size.width * MM,
+        height: size.height * MM,
       });
     }
   }
@@ -82,7 +87,7 @@ const labelDate = (d: Date): string =>
   new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(d);
 
 /**
- * QR labels, one per cylinder, laid out on 100 × 75 mm stickers — see `LABEL_SHEET`.
+ * QR labels, one per cylinder, eight to an A4 sheet — see `LABEL_SHEET`.
  *
  * Every label carries the batch's details itself rather than the page header: the
  * sheet is cut up the moment it is printed, each label goes onto a different cylinder
@@ -107,34 +112,16 @@ export async function renderQrSheet(meta: QrSheetMeta, cells: QrSheetCell[]): Pr
 
   const slots = labelSlots();
   const perPage = slots.length;
-  const pages = Math.ceil(cells.length / perPage);
 
-  const PAD = 4 * MM;
-  const SERIAL_H = 11 * MM;
-  const QR = LABEL_SHEET.label.height * MM - PAD * 2 - SERIAL_H - 1 * MM;
+  const PAD = 3.5 * MM;
+  const SERIAL_H = 10 * MM;
+  const QR = labelSize().height * MM - PAD * 2 - SERIAL_H - 1 * MM;
   const GUTTER = 3 * MM;
 
   cells.forEach((cell, i) => {
-    if (i % perPage === 0) {
-      doc.addPage();
-      // In the top margin, which on a sticker sheet is the bare edge above the first
-      // row — never on a sticker.
-      const top = slots[0]!.y;
-      if (top >= 10 * MM) {
-        doc
-          .font('Helvetica')
-          .fontSize(8)
-          .fillColor('#666')
-          .text(
-            `Cylinder labels — ${meta.projectNumber} · ${meta.siteName} · ` +
-              `${cells.length} label(s) · page ${Math.floor(i / perPage) + 1} of ${pages} · ` +
-              'print at 100% (Actual size), not "Fit to page"',
-            6 * MM,
-            Math.max(4 * MM, top / 2 - 4),
-            { width: LABEL_SHEET.page.width * MM - 12 * MM, align: 'center', lineBreak: false },
-          );
-      }
-    }
+    // No header: the labels run edge to edge at the sheet's 5 mm margins, and every
+    // label carries the batch's details itself.
+    if (i % perPage === 0) doc.addPage();
 
     const { x, y, width, height } = slots[i % perPage]!;
 
