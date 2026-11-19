@@ -172,19 +172,26 @@ describe('initialization — into a cage per gas', () => {
     for (const s of b.nitrogen) expect((await cylinder(s)).cage).toBeNull();
   });
 
-  it('refuses to initialize without a cage for a gas going into stores', async () => {
+  it('a cage is optional: a gas with none chosen goes into stores with no cage', async () => {
     const b = await makeBatch({ qty: 1, to: 'STORES' }, { qty: 1, to: 'STORES' });
     const res = await initialize(
       b.batchId,
       [...b.argon, ...b.nitrogen],
       [{ gasTypeId: argonId, cage: 1 }],
     );
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error.code).toBe('CAGE_REQUIRED');
-    expect(res.json().error.details.gasTypeIds).toEqual([nitrogenId]);
-    expect(
-      (await prisma.batch.findUniqueOrThrow({ where: { id: b.batchId } })).initializedAt,
-    ).toBeNull();
+    expect(res.statusCode).toBe(201);
+    for (const s of b.argon) expect(await cylinder(s)).toMatchObject({ cage: 1, contents: 'FULL' });
+    for (const s of b.nitrogen) {
+      expect(await cylinder(s)).toMatchObject({
+        status: 'IN_STORES',
+        cage: null,
+        contents: 'FULL',
+      });
+    }
+
+    const none = await makeBatch({ qty: 1, to: 'STORES' }, { qty: 1, to: 'STORES' });
+    const bare = await initialize(none.batchId, [...none.argon, ...none.nitrogen], []);
+    expect(bare.statusCode).toBe(201);
   });
 
   it('refuses a cage for a gas that went straight to site', async () => {
@@ -293,7 +300,7 @@ describe('transfers — out of the cage, and back in full or empty', () => {
     expect(detail.json().event.emptySerials.sort()).toEqual(t.emptySerials.sort());
   });
 
-  it('refuses a move back to stores without a cage for a gas that moved, and moves nothing', async () => {
+  it('a move back to stores needs no cage either', async () => {
     const b = await onSite();
     const res = await transfer({
       batchId: b.batchId,
@@ -301,10 +308,12 @@ describe('transfers — out of the cage, and back in full or empty', () => {
       scans: b.all.map(scan),
       cages: [{ gasTypeId: argonId, cage: 1 }],
     });
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error.code).toBe('CAGE_REQUIRED');
-    for (const s of b.all) expect((await cylinder(s)).status).toBe('DEPLOYED');
-    expect(await prisma.transfer.count({ where: { batchId: b.batchId } })).toBe(1);
+    expect(res.statusCode).toBe(201);
+    for (const s of b.argon)
+      expect(await cylinder(s)).toMatchObject({ status: 'IN_STORES', cage: 1 });
+    for (const s of b.nitrogen) {
+      expect(await cylinder(s)).toMatchObject({ status: 'IN_STORES', cage: null });
+    }
   });
 
   it('a cage for a gas that did not move is not an error', async () => {
@@ -679,5 +688,160 @@ describe('the stores manager is copied on every event', () => {
       headers: bearer(techToken),
     });
     expect(res.json().emailDelivery.to).toBe(pm.email);
+  });
+});
+
+// ------------------------------------------- the stores manager moves a gas's cage
+
+describe('PATCH /batches/:id/cages', () => {
+  const setCages = (batchId: string, payload: Record<string, unknown>, token = storesToken) =>
+    app.inject({
+      method: 'PATCH',
+      url: `/batches/${batchId}/cages`,
+      headers: bearer(token),
+      payload,
+    });
+
+  it('a stores manager puts a gas into a cage later, and moves it, on the trail', async () => {
+    const b = await makeBatch({ qty: 2, to: 'STORES' }, { qty: 1, to: 'STORES' });
+    expect((await initialize(b.batchId, [...b.argon, ...b.nitrogen], [])).statusCode).toBe(201);
+
+    const first = await setCages(b.batchId, { cages: [{ gasTypeId: argonId, cage: 3 }] });
+    expect(first.statusCode).toBe(200);
+    for (const s of b.argon) expect((await cylinder(s)).cage).toBe(3);
+    for (const s of b.nitrogen) expect((await cylinder(s)).cage).toBeNull();
+    const dto = first.json().batch.cylinders as { serialCode: string; cage: number | null }[];
+    expect(dto.filter((c) => b.argon.includes(c.serialCode)).every((c) => c.cage === 3)).toBe(true);
+
+    const moved = await setCages(b.batchId, {
+      cages: [
+        { gasTypeId: argonId, cage: 1 },
+        { gasTypeId: nitrogenId, cage: 2 },
+      ],
+      reason: 'Cage 3 is full',
+    });
+    expect(moved.statusCode).toBe(200);
+    for (const s of b.argon) expect((await cylinder(s)).cage).toBe(1);
+    for (const s of b.nitrogen) expect((await cylinder(s)).cage).toBe(2);
+
+    const trail = await prisma.batchAmendment.findMany({
+      where: { batchId: b.batchId },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(trail).toHaveLength(2);
+    expect(JSON.stringify(trail[0]!.changes)).toContain('No cage');
+    expect(JSON.stringify(trail[1]!.changes)).toContain('Cage 3');
+    expect(trail[1]!.reason).toBe('Cage 3 is full');
+
+    // Taking a gas out of any cage is a choice too.
+    const out = await setCages(b.batchId, { cages: [{ gasTypeId: nitrogenId, cage: null }] });
+    expect(out.statusCode).toBe(200);
+    for (const s of b.nitrogen) expect((await cylinder(s)).cage).toBeNull();
+  });
+
+  it('touches only the cylinders physically in stores', async () => {
+    const b = await makeBatch({ qty: 2, to: 'STORES' }, { qty: 1, to: 'SITE' });
+    expect((await initialize(b.batchId, [...b.argon, ...b.nitrogen], [])).statusCode).toBe(201);
+    const out = await transfer({
+      batchId: b.batchId,
+      destination: { type: 'SITE', siteId },
+      scans: [scan(b.argon[0]!)],
+    });
+    expect(out.statusCode).toBe(201);
+
+    const res = await setCages(b.batchId, { cages: [{ gasTypeId: argonId, cage: 2 }] });
+    expect(res.statusCode).toBe(200);
+    expect(await cylinder(b.argon[0]!)).toMatchObject({ status: 'DEPLOYED', cage: null });
+    expect(await cylinder(b.argon[1]!)).toMatchObject({ status: 'IN_STORES', cage: 2 });
+
+    // Nitrogen was delivered straight to site: none of it is in stores.
+    const site = await setCages(b.batchId, { cages: [{ gasTypeId: nitrogenId, cage: 1 }] });
+    expect(site.statusCode).toBe(400);
+    expect(site.json().error.code).toBe('NOT_IN_STORES');
+  });
+
+  it('lists each gas physically in stores, and how many are in each cage', async () => {
+    const b = await makeBatch({ qty: 3, to: 'STORES' }, { qty: 1, to: 'SITE' });
+    expect(
+      (await initialize(b.batchId, [...b.argon, ...b.nitrogen], [{ gasTypeId: argonId, cage: 1 }]))
+        .statusCode,
+    ).toBe(201);
+    expect(
+      (await setCages(b.batchId, { cages: [{ gasTypeId: argonId, cage: 1 }] })).statusCode,
+    ).toBe(200);
+    await prisma.cylinder.update({ where: { serialCode: b.argon[2]! }, data: { cage: null } });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/batches/${b.batchId}/cages`,
+      headers: bearer(storesToken),
+    });
+    expect(res.statusCode).toBe(200);
+    // Nitrogen went straight to site, so it is not listed.
+    expect(res.json().gases).toEqual([
+      {
+        gasTypeId: argonId,
+        gasTypeName: 'Argon',
+        inStores: 3,
+        byCage: [
+          { cage: null, count: 1 },
+          { cage: 1, count: 2 },
+        ],
+      },
+    ]);
+    const tech = await app.inject({
+      method: 'GET',
+      url: `/batches/${b.batchId}/cages`,
+      headers: bearer(techToken),
+    });
+    expect(tech.statusCode).toBe(403);
+  });
+
+  it('is the stores manager’s (and a project manager’s) — a technician cannot', async () => {
+    const b = await makeBatch({ qty: 1, to: 'STORES' }, { qty: 1, to: 'STORES' });
+    expect((await initialize(b.batchId, [...b.argon, ...b.nitrogen], [])).statusCode).toBe(201);
+    const tech = await setCages(b.batchId, { cages: [{ gasTypeId: argonId, cage: 1 }] }, techToken);
+    expect(tech.statusCode).toBe(403);
+    const admin = await setCages(
+      b.batchId,
+      { cages: [{ gasTypeId: argonId, cage: 1 }] },
+      await loginAs(app, DEMO.admin),
+    );
+    expect(admin.statusCode).toBe(200);
+  });
+
+  it('changes nothing but the cage', async () => {
+    // The only field this route reads is the cage list: anything else in the body is
+    // dropped, not applied.
+    const b = await makeBatch({ qty: 1, to: 'STORES' }, { qty: 1, to: 'STORES' });
+    expect((await initialize(b.batchId, [...b.argon, ...b.nitrogen], [])).statusCode).toBe(201);
+    const before = await prisma.batch.findUniqueOrThrow({
+      where: { id: b.batchId },
+      include: { lines: true },
+    });
+    const res = await setCages(b.batchId, {
+      cages: [{ gasTypeId: argonId, cage: 1 }],
+      projectManagerId: 'someone-else',
+      lines: [{ id: before.lines[0]!.id, quantity: 9 }],
+    });
+    expect(res.statusCode).toBe(200);
+    const after = await prisma.batch.findUniqueOrThrow({
+      where: { id: b.batchId },
+      include: { lines: true },
+    });
+    expect(after.projectManagerId).toBe(before.projectManagerId);
+    expect(after.lines.map((l) => l.quantity)).toEqual(before.lines.map((l) => l.quantity));
+    expect(await prisma.cylinder.count({ where: { batchId: b.batchId } })).toBe(2);
+  });
+
+  it('404s an unknown batch and refuses an empty or bad request', async () => {
+    expect((await setCages('nope', { cages: [{ gasTypeId: argonId, cage: 1 }] })).statusCode).toBe(
+      404,
+    );
+    const b = await makeBatch({ qty: 1, to: 'STORES' }, { qty: 1, to: 'STORES' });
+    expect((await setCages(b.batchId, { cages: [] })).statusCode).toBe(400);
+    expect(
+      (await setCages(b.batchId, { cages: [{ gasTypeId: argonId, cage: 4 }] })).statusCode,
+    ).toBe(400);
   });
 });

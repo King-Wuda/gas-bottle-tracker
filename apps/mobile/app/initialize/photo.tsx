@@ -7,7 +7,7 @@ import { useAuth } from '../../src/auth/AuthContext';
 import { playCue } from '../../src/sound';
 import { PhotoCapture } from '../../src/components/PhotoCapture';
 import { useScanFlow } from '../../src/scanning/ScanFlowContext';
-import { allCaged, CageChooser, cagesPayload, gasesIn } from '../../src/stores/StoresDropOff';
+import { CageChooser, cagesPayload, gasesIn } from '../../src/stores/StoresDropOff';
 import { useSync } from '../../src/sync/SyncContext';
 import { enqueueMutation } from '../../src/sync/worker';
 import { Notice, ScreenScroll, styles } from '../../src/ui/components';
@@ -47,7 +47,6 @@ export default function InitializePhoto() {
     cylinders.filter((c) => c.deliveryPoint === 'STORES'),
     cylinders.map((c) => c.serialCode),
   );
-  const cagesChosen = allCaged(storesGases, cages);
 
   const submit = async (evidence: { photo: CapturedPhoto | null; photoOverride: boolean }) => {
     setSubmitting(true);
@@ -113,32 +112,26 @@ export default function InitializePhoto() {
           into stores — a batch delivered wholly to site skips straight to the camera. */}
       <CageChooser gases={storesGases} cages={cages} onChange={setCage} disabled={submitting} />
 
-      {!cagesChosen ? (
-        <Notice tone="neutral" title="Choose the cages first">
-          Pick a cage for every gas above, then photograph the batch.
-        </Notice>
-      ) : (
-        <PhotoCapture
-          title="Photograph the whole batch where it stands"
-          hint={
-            'Get all ' +
-            `${selectedCount} cylinder(s) in frame, with their labels visible. The photo is stamped ` +
-            'with the time and, where the phone can get a fix, the location.'
-          }
-          ctaLabel="Submit initialization"
-          onDone={(taken) => {
-            setPhoto(taken);
-            void submit({ photo: taken, photoOverride: false });
-          }}
-          isAdmin={user?.role === 'PROJECT_MANAGER'}
-          onOverride={() => {
-            overridePhoto();
-            void submit({ photo: null, photoOverride: true });
-          }}
-          busy={submitting}
-          error={error}
-        />
-      )}
+      <PhotoCapture
+        title="Photograph the whole batch where it stands"
+        hint={
+          'Get all ' +
+          `${selectedCount} cylinder(s) in frame, with their labels visible. The photo is stamped ` +
+          'with the time and, where the phone can get a fix, the location.'
+        }
+        ctaLabel="Submit initialization"
+        onDone={(taken) => {
+          setPhoto(taken);
+          void submit({ photo: taken, photoOverride: false });
+        }}
+        isAdmin={user?.role === 'PROJECT_MANAGER'}
+        onOverride={() => {
+          overridePhoto();
+          void submit({ photo: null, photoOverride: true });
+        }}
+        busy={submitting}
+        error={error}
+      />
 
       {/* A photo already held from a failed submit — resubmit it rather than making
           the operator walk back to the batch and take it again. */}

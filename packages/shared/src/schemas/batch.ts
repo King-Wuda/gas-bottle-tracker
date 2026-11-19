@@ -89,6 +89,8 @@ export const cylinderDtoSchema = z.object({
    * those are the only ones a re-initialization has to scan.
    */
   initialized: z.boolean(),
+  /** The stores cage it is in; null when it is in none (or not in stores). */
+  cage: z.number().int().nullable(),
 });
 export type CylinderDto = z.infer<typeof cylinderDtoSchema>;
 

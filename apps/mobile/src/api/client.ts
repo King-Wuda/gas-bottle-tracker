@@ -58,7 +58,9 @@ import type {
   UpdateClientRequest,
   UpdateGasTypeRequest,
   UpdateSupplierRequest,
+  BatchCagesResponse,
   CreateDriverRequest,
+  SetBatchCagesRequest,
   DriverImpactResponse,
   DriverResponse,
   DriversResponse,
@@ -347,6 +349,19 @@ export function apiListBatches(query: Partial<BatchListQuery> = {}): Promise<Bat
 /** Full batch incl. every cylinder — the payload cached for offline scanning. */
 export function apiGetBatch(id: string): Promise<BatchDetailResponse> {
   return apiRequest<BatchDetailResponse>(`/batches/${id}`);
+}
+
+/** Each gas of a batch that is in stores, and its cages — the stores manager's screen. */
+export function apiBatchCages(id: string): Promise<BatchCagesResponse> {
+  return apiRequest<BatchCagesResponse>(`/batches/${enc(id)}/cages`);
+}
+
+/** Put a gas into a cage, move it, or take it out of one. Stores manager or PM only. */
+export function apiSetBatchCages(
+  id: string,
+  body: SetBatchCagesRequest,
+): Promise<BatchDetailResponse> {
+  return apiRequest<BatchDetailResponse>(`/batches/${enc(id)}/cages`, { method: 'PATCH', body });
 }
 
 export function apiCreateTransfer(body: CreateTransferRequest): Promise<CreateTransferResponse> {

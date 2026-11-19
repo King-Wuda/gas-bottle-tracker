@@ -1,4 +1,4 @@
-import { CAGE_REQUIRED_MESSAGE, type CageAssignmentDto, type GasCages } from '@gct/shared';
+import type { CageAssignmentDto, GasCages } from '@gct/shared';
 import type { Prisma } from '../db.js';
 
 /**
@@ -16,10 +16,11 @@ export type CageCheck =
   | { ok: false; status: 400; code: string; message: string; details: unknown };
 
 /**
- * Every gas going into stores has exactly one cage, and no cage is named for a gas
- * that is not going in. The second half is refused rather than ignored: a cage sent
- * for a gas that is staying on site means the screen and the server disagree about
- * what is moving, and saying so beats guessing which one is right.
+ * A cage is OPTIONAL: a gas with no cage chosen goes into stores with none, and a
+ * stores manager can put it in one later from the batch (`PATCH /batches/:id/cages`).
+ * What is refused is a cage named for a gas that is not going in — that means the
+ * screen and the server disagree about what is moving, and saying so beats guessing
+ * which one is right.
  *
  * `allowExtra` is for transfers, where the set that moves is only known after the
  * claim: a cage chosen for nitrogen is not an error just because both nitrogen
@@ -31,16 +32,6 @@ export function checkCages(
   { allowExtra = false }: { allowExtra?: boolean } = {},
 ): CageCheck {
   const cageByGas = new Map(cages.map((c) => [c.gasTypeId, c.cage]));
-  const missing = [...gasesIntoStores].filter((g) => !cageByGas.has(g));
-  if (missing.length > 0) {
-    return {
-      ok: false,
-      status: 400,
-      code: 'CAGE_REQUIRED',
-      message: CAGE_REQUIRED_MESSAGE,
-      details: { gasTypeIds: missing },
-    };
-  }
   const extra = [...cageByGas.keys()].filter((g) => !gasesIntoStores.has(g));
   if (extra.length > 0 && !allowExtra) {
     return {

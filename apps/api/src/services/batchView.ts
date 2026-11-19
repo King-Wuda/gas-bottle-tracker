@@ -36,6 +36,7 @@ export type CylinderRow = {
   gasTypeId: string;
   batchLineId: string;
   currentSiteId: string | null;
+  cage: number | null;
   /** INITIALIZE events on this cylinder — zero until its label has been scanned in. */
   _count: { movementEvents: number };
 };
@@ -251,6 +252,7 @@ export function toBatchDto(
       batchLineId: c.batchLineId,
       currentSiteId: c.currentSiteId,
       initialized: c._count.movementEvents > 0,
+      cage: c.cage,
     })),
   };
 }

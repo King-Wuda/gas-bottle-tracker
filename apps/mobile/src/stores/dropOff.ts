@@ -32,10 +32,6 @@ export function gasesIn(
   return [...byGas.values()].sort((a, b) => a.gasTypeName.localeCompare(b.gasTypeName));
 }
 
-/** True when every gas has a cage — what the submit button waits for. */
-export const allCaged = (gases: readonly GasInDropOff[], cages: Record<string, number>): boolean =>
-  gases.every((g) => cages[g.gasTypeId] !== undefined);
-
 /** The request field: one `{ gasTypeId, cage }` per gas in the drop-off. */
 export const cagesPayload = (gases: readonly GasInDropOff[], cages: Record<string, number>) =>
   gases.flatMap((g) =>

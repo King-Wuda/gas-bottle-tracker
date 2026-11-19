@@ -4,7 +4,7 @@ import { Redirect, useRouter } from 'expo-router';
 import type { ProjectManagerDto } from '@gct/shared';
 import { apiProjectManagers } from '../../src/api/client';
 import { useScanFlow } from '../../src/scanning/ScanFlowContext';
-import { allCaged, CageChooser, EmptyMarker, gasesIn } from '../../src/stores/StoresDropOff';
+import { CageChooser, EmptyMarker, gasesIn } from '../../src/stores/StoresDropOff';
 import { useSync } from '../../src/sync/SyncContext';
 import {
   Card,
@@ -65,7 +65,6 @@ export default function Destination() {
   const selectedSerials = [...scans.map((s) => s.serialCode), ...overrides];
   const gases = gasesIn(cylinders, selectedSerials);
   const toStores = choice?.kind === 'stores';
-  const cagesChosen = !toStores || allCaged(gases, cages);
 
   // A cylinder cannot be transferred to where it already is, so the batch's own
   // site is still offered — some of the scanned cylinders may have moved away from
@@ -93,10 +92,6 @@ export default function Destination() {
    */
   const toSignOff = () => {
     if (!choice) return;
-    if (!cagesChosen) {
-      setError('Choose a cage for every gas going into stores.');
-      return;
-    }
     if (mustReassign && !managerChanged) {
       setError(
         `${batch.projectManagerName} has been deactivated and can no longer receive this ` +
@@ -199,15 +194,9 @@ export default function Destination() {
 
       <View style={{ marginTop: 8 }}>
         <PrimaryButton
-          title={
-            !choice
-              ? 'Choose a destination'
-              : !cagesChosen
-                ? 'Choose a cage for each gas'
-                : 'Driver sign-off'
-          }
+          title={!choice ? 'Choose a destination' : 'Driver sign-off'}
           onPress={toSignOff}
-          disabled={!choice || !cagesChosen}
+          disabled={!choice}
         />
       </View>
     </ScreenScroll>

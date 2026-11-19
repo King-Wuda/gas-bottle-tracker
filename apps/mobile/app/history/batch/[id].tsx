@@ -188,6 +188,15 @@ export default function BatchDetail() {
         }}
       />
 
+      {/* The stores manager's one edit to a batch: which cage each gas is in. A cage is
+          optional when cylinders come into stores, so this is where it is set later. */}
+      {user?.role === 'STORES_MANAGER' || user?.role === 'PROJECT_MANAGER' ? (
+        <SecondaryButton
+          title="Change cages"
+          onPress={() => router.push({ pathname: '/history/cages/[id]', params: { id: batch.id } })}
+        />
+      ) : null}
+
       {user?.role === 'PROJECT_MANAGER' ? (
         <SecondaryButton
           title="Correct these details (admin)"

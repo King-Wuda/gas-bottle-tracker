@@ -39,8 +39,6 @@ export const cageAssignmentDtoSchema = z.object({
 });
 export type CageAssignmentDto = z.infer<typeof cageAssignmentDtoSchema>;
 
-export const CAGE_REQUIRED_MESSAGE = 'Choose a cage for every gas going into stores.';
-
 // ------------------------------- the stores console -------------------------------
 
 const fullEmptySchema = z.object({
@@ -82,3 +80,43 @@ export const storesSummaryResponseSchema = z.object({
   }),
 });
 export type StoresSummaryResponse = z.infer<typeof storesSummaryResponseSchema>;
+
+// ------------------------------- moving a gas between cages -------------------------------
+
+/**
+ * A stores manager's one edit to a batch: which cage each gas is in.
+ *
+ * Choosing a cage is optional when cylinders come into stores, so this is where one is
+ * set later, or changed when a gas is moved to another cage. `cage: null` takes the gas
+ * out of any cage. It touches only the batch's cylinders that are physically in stores,
+ * and is recorded on the batch's correction trail like any other change.
+ */
+export const setBatchCagesRequestSchema = z.object({
+  cages: z
+    .array(z.object({ gasTypeId: z.string().min(1), cage: cageSchema.nullable() }))
+    .min(1, 'Choose a cage for at least one gas')
+    .max(20)
+    .refine(
+      (cs) => new Set(cs.map((c) => c.gasTypeId)).size === cs.length,
+      'Each gas can only be in one cage',
+    ),
+  reason: z.string().max(500).optional(),
+});
+export type SetBatchCagesRequest = z.infer<typeof setBatchCagesRequestSchema>;
+
+/** One gas of a batch as the cage screen shows it: how many are in stores, and where. */
+export const batchGasCagesDtoSchema = z.object({
+  gasTypeId: z.string(),
+  gasTypeName: z.string(),
+  inStores: z.number().int().nonnegative(),
+  /** How many of them are in each cage; `cage: null` = in no cage. */
+  byCage: z.array(z.object({ cage: cageSchema.nullable(), count: z.number().int().positive() })),
+});
+export type BatchGasCagesDto = z.infer<typeof batchGasCagesDtoSchema>;
+
+export const batchCagesResponseSchema = z.object({
+  batchId: z.string(),
+  projectNumber: z.string(),
+  gases: z.array(batchGasCagesDtoSchema),
+});
+export type BatchCagesResponse = z.infer<typeof batchCagesResponseSchema>;

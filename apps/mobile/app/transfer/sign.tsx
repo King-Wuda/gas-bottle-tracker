@@ -131,7 +131,7 @@ export default function TransferSign() {
 
       {toStores ? (
         <Notice tone="neutral" title="Into stores">
-          {`${gases.map((g) => `${g.gasTypeName} → cage ${cages[g.gasTypeId] ?? '?'}`).join(' · ')}\n` +
+          {`${gases.map((g) => (cages[g.gasTypeId] !== undefined ? `${g.gasTypeName} → cage ${cages[g.gasTypeId]}` : `${g.gasTypeName} → no cage`)).join(' · ')}\n` +
             `${selectedCount - emptySerials.length} full · ${emptySerials.length} empty`}
         </Notice>
       ) : null}
