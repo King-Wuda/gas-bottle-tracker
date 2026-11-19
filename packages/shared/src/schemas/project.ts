@@ -97,6 +97,9 @@ export const projectDtoSchema = z.object({
   /** The CLIENT's sites — every place this project can deliver to. */
   sites: z.array(siteDtoSchema),
   activeBatchCount: z.number().int().nonnegative(),
+  /** Every batch booked on the project, returned or not — what a change to the
+   *  project's own number reaches. */
+  batchCount: z.number().int().nonnegative(),
 });
 export type ProjectDto = z.infer<typeof projectDtoSchema>;
 

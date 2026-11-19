@@ -566,6 +566,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       where: { id },
       include: {
         site: true,
+        project: { select: { id: true, projectNumber: true } },
         projectManager: true,
         lines: { include: { gasType: true } },
       },
@@ -575,6 +576,9 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const changes: Change[] = [];
+    /** Set when the project's number is corrected: the change also reaches every
+     *  other batch on that project, and each of their trails must say so. */
+    let projectRename: Change | null = null;
     const userId = request.user.sub;
     const year = serialYear(systemClock, env().SERIAL_YEAR_TZ);
 
@@ -601,6 +605,35 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
               from: batch.projectManager.name,
               to: pm.name,
             });
+          }
+
+          // --- project number ---
+          // The number is the PROJECT's, so correcting it renames the project — and
+          // with it every batch booked on that project. A number another project
+          // already has is refused rather than merged: two jobs sharing one number is
+          // the ambiguity the unique index exists to prevent.
+          if (input.projectNumber && input.projectNumber !== batch.project.projectNumber) {
+            const taken = await tx.project.findUnique({
+              where: { projectNumber: input.projectNumber },
+              include: { client: { select: { name: true } } },
+            });
+            if (taken) {
+              throw new ImmutableHistoryError(
+                'PROJECT_NUMBER_TAKEN',
+                `Project number ${input.projectNumber} already belongs to another project ` +
+                  `(${taken.client.name}).`,
+              );
+            }
+            await tx.project.update({
+              where: { id: batch.project.id },
+              data: { projectNumber: input.projectNumber },
+            });
+            projectRename = {
+              field: 'Project number',
+              from: batch.project.projectNumber,
+              to: input.projectNumber,
+            };
+            changes.push(projectRename);
           }
 
           // --- site ---
@@ -666,12 +699,44 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
               reason: input.reason?.trim() || null,
             },
           });
+
+          // The other batches on a renamed project changed too, so their trails record
+          // it — with the reason, and which batch it was corrected from — rather than
+          // showing a different number with nothing to say why.
+          if (projectRename) {
+            const others = await tx.batch.findMany({
+              where: { projectId: batch.project.id, id: { not: id } },
+              select: { id: true },
+            });
+            if (others.length > 0) {
+              await tx.batchAmendment.createMany({
+                data: others.map((o) => ({
+                  batchId: o.id,
+                  userId,
+                  changes: [projectRename] as unknown as Prisma.InputJsonValue,
+                  reason:
+                    `Project number corrected from another batch on this project` +
+                    (input.reason?.trim() ? ` — ${input.reason.trim()}` : '.'),
+                })),
+              });
+            }
+          }
         },
         { timeout: 30_000, maxWait: 15_000 },
       );
     } catch (err) {
       if (err instanceof ImmutableHistoryError) {
         return reply.code(400).send({ error: { code: err.code, message: err.message } });
+      }
+      // Two corrections racing to the same new number: the unique index decides, and
+      // the loser gets the same answer the check above would have given it.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        return reply.code(400).send({
+          error: {
+            code: 'PROJECT_NUMBER_TAKEN',
+            message: `Project number ${input.projectNumber ?? ''} already belongs to another project.`,
+          },
+        });
       }
       throw err;
     }
