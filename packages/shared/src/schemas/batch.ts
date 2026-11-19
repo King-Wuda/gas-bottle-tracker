@@ -310,9 +310,46 @@ export function summariseLines(lines: { quantity: number; gasTypeName: string }[
  * what the reader is deciding about.
  */
 export function summariseDistribution(entries: BatchDistributionEntry[]): string {
+  return distributionLines(entries).join(' · ');
+}
+
+/**
+ * The same facts, one location per entry — stores first, then each site, then
+ * returned — for the Transfer and Returns lists, where cylinders in stores and
+ * cylinders on site are different piles in different places and each gets its own
+ * line rather than sharing one.
+ */
+export function distributionLines(entries: BatchDistributionEntry[]): string[] {
   const order: Record<BatchLocationKind, number> = { STORES: 0, SITE: 1, RETURNED: 2 };
   return [...entries]
     .sort((a, b) => order[a.kind] - order[b.kind] || a.locationName.localeCompare(b.locationName))
-    .map((e) => `${e.count} ${e.kind === 'RETURNED' ? 'returned' : `at ${e.locationName}`}`)
-    .join(' · ');
+    .map((e) =>
+      e.kind === 'RETURNED'
+        ? `${e.count} returned to supplier`
+        : e.kind === 'STORES'
+          ? `${e.count} in stores`
+          : `${e.count} on site at ${e.locationName}`,
+    );
+}
+
+/**
+ * Where a whole batch is, by kind of place: "2 on site", "1 in stores", "1 returned
+ * to supplier". Replaces "3 of 3 still out", which said how many were out but not
+ * where — and "out" lumped cylinders sitting in stores together with ones on a job.
+ *
+ * On site first, because that is what a batch is usually being chased for; returned
+ * last, because it is terminal. Sites are summed: the per-gas lines above it already
+ * say which site. A kind with nothing in it is left out.
+ */
+export function locationTotals(entries: BatchDistributionEntry[]): string[] {
+  const sum = (kind: BatchLocationKind) =>
+    entries.filter((e) => e.kind === kind).reduce((n, e) => n + e.count, 0);
+  const site = sum('SITE');
+  const stores = sum('STORES');
+  const returned = sum('RETURNED');
+  return [
+    ...(site > 0 ? [`${site} on site`] : []),
+    ...(stores > 0 ? [`${stores} in stores`] : []),
+    ...(returned > 0 ? [`${returned} returned to supplier`] : []),
+  ];
 }

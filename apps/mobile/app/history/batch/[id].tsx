@@ -5,7 +5,8 @@ import {
   emailDeliveryLabel,
   formatBatchDate,
   INITIAL_DELIVERY_POINT_LABELS,
-  summariseDistribution,
+  locationTotals,
+  distributionLines,
   type BatchDto,
   type EmailDelivery,
   type InitialDeliveryPoint,
@@ -109,7 +110,6 @@ export default function BatchDetail() {
   if (!batch) return null;
 
   const badge = badgeFor(batch);
-  const outstanding = batch.cylinders.filter((c) => c.status !== 'RETURNED').length;
 
   return (
     <ScreenScroll>
@@ -126,7 +126,10 @@ export default function BatchDetail() {
         <Row label="Manager email" value={batch.projectManagerEmail} />
         <Row label="Site" value={`${batch.siteName} — ${batch.siteLocation}`} />
         <Row label="Quantity" value={`${batch.quantity} cylinder(s)`} />
-        <Row label="Still out" value={`${outstanding} of ${batch.cylinders.length}`} />
+        <Row
+          label="Where they are"
+          value={locationTotals(batch.distribution).join('\n') || 'No cylinders'}
+        />
       </Card>
 
       <Card>
@@ -142,11 +145,15 @@ export default function BatchDetail() {
                 {INITIAL_DELIVERY_POINT_LABELS[l.initialDeliveryPoint as InitialDeliveryPoint] ??
                   l.initialDeliveryPoint}
               </Text>
-              <Text style={styles.hint}>
-                {summariseDistribution(
-                  batch.distribution.filter((d) => d.gasTypeId === l.gasTypeId),
-                ) || 'No cylinders'}
-              </Text>
+              {/* One line per location, as in the lists: stores and site are
+                  different piles in different places. */}
+              {distributionLines(batch.distribution.filter((d) => d.gasTypeId === l.gasTypeId)).map(
+                (where) => (
+                  <Text key={where} style={styles.hint}>
+                    {where}
+                  </Text>
+                ),
+              )}
             </View>
           ))}
         </View>

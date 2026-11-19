@@ -1,5 +1,5 @@
 import { Text, View } from 'react-native';
-import { summariseDistribution, type BatchDistributionEntry, type BatchLineDto } from '@gct/shared';
+import { distributionLines, type BatchDistributionEntry, type BatchLineDto } from '@gct/shared';
 import { styles } from '../ui/components';
 
 /**
@@ -8,7 +8,10 @@ import { styles } from '../ui/components';
  * The second half is the point. A batch used to be one gas in one place, so a row
  * could honestly say "7 × Nitrogen at Yard B". Partial movement broke that: 3 of the 7
  * can be at stores while 4 are on site, and a single-location line would be a claim
- * the system cannot support. So every gas gets its own split, spelled out.
+ * the system cannot support. So every gas gets its own split, spelled out — and each
+ * location on a line of its own: the cylinders in stores and the ones on site are
+ * different piles in different places, and picking a batch to transfer or return is
+ * exactly when that difference matters.
  *
  * Rendered identically in the Transfer, Returns and History lists and on the batch
  * detail screen — the same fact should not have three phrasings.
@@ -41,9 +44,11 @@ export function BatchContents({
                 {line.supplierName}
               </Text>
             </Text>
-            {here.length > 0 ? (
-              <Text style={styles.hint}>{summariseDistribution(here)}</Text>
-            ) : null}
+            {distributionLines(here).map((where) => (
+              <Text key={where} style={styles.hint}>
+                {where}
+              </Text>
+            ))}
           </View>
         );
       })}

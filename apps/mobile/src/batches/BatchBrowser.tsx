@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   formatBatchDate,
+  locationTotals,
   type BatchListScope,
   type BatchSummary,
   type GasTypeDto,
@@ -318,6 +319,7 @@ export function BatchBrowser({
         batches.map((b) => {
           const badge = badgeFor(b);
           const outstanding = b.cylinderCount - b.returnedCount;
+          const totals = locationTotals(b.distribution);
           return (
             <Card key={b.id} onPress={() => onPick(b)}>
               <View style={rowStyles.cardHead}>
@@ -334,13 +336,13 @@ export function BatchBrowser({
                 <BatchContents lines={b.lines} distribution={b.distribution} compact />
               </View>
 
-              <View style={rowStyles.cardFoot}>
-                <Text style={rowStyles.meta}>{formatBatchDate(b.createdAt)}</Text>
-                <Text style={rowStyles.metaDot}>·</Text>
-                <Text style={[rowStyles.meta, outstanding > 0 && rowStyles.metaOut]}>
-                  {outstanding} of {b.cylinderCount} still out
-                </Text>
-              </View>
+              <Text style={rowStyles.meta}>{formatBatchDate(b.createdAt)}</Text>
+              {/* How many are where, not just how many are "out": a cylinder in
+                  stores and one on a job were both "out" before. Its own line, so it
+                  never wraps into the date. */}
+              <Text style={[rowStyles.meta, outstanding > 0 && rowStyles.metaOut]}>
+                {totals.length > 0 ? totals.join(' · ') : 'No cylinders'}
+              </Text>
               {busyBatchId === b.id ? (
                 <ActivityIndicator color={colors.brand} style={rowStyles.busy} />
               ) : null}
@@ -381,9 +383,7 @@ const rowStyles = StyleSheet.create({
   projectNumber: { fontSize: 17, fontWeight: '800', color: colors.ink, flexShrink: 1 },
   where: { ...type.caption, fontSize: 14 },
   contents: { marginTop: space.xs / 2 },
-  cardFoot: { flexDirection: 'row', alignItems: 'center', gap: space.xs + 2, flexWrap: 'wrap' },
   meta: { ...type.overline, fontSize: 10.5 },
-  metaDot: { color: colors.inkFaint, fontSize: 11 },
   /** Outstanding cylinders are the reason this row is in the list, so they are the
    *  one piece of metadata allowed to carry colour. */
   metaOut: { color: colors.warning },

@@ -1,9 +1,18 @@
+import { useEffect } from 'react';
 import { Text } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useNewFlow } from '../../src/new/NewFlowContext';
 import { Card, ScreenScroll } from '../../src/ui/components';
 
 export default function SiteMode() {
   const router = useRouter();
+  const { reset } = useNewFlow();
+  // A fresh start each time New is opened, as when the flow's state lived inside /new
+  // and was thrown away with it. A half-entered batch from last time must not
+  // reappear in someone else's line items.
+  useEffect(() => {
+    reset();
+  }, [reset]);
   return (
     <ScreenScroll>
       <Text style={{ fontSize: 15, opacity: 0.7 }}>
