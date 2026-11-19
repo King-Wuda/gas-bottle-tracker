@@ -3,7 +3,6 @@ import { Text } from 'react-native';
 import { Redirect, useRouter } from 'expo-router';
 import * as Crypto from 'expo-crypto';
 import type { CreateReturnRequest } from '@gct/shared';
-import { useAuth } from '../../src/auth/AuthContext';
 import { DriverSignOffForm } from '../../src/components/DriverSignOffForm';
 import { useDriverSignOff } from '../../src/driver/useDriverSignOff';
 import { useScanFlow } from '../../src/scanning/ScanFlowContext';
@@ -15,11 +14,9 @@ import { ErrorText, Notice, PrimaryButton, ScreenScroll, styles } from '../../sr
 /**
  * Workflow C4 — the driver's details, then C5 submits.
  *
- * The signature is evidence that a named person took the cylinders. On its own it is
- * a squiggle over a name somebody typed, so it is collected alongside the number off
- * the driver's ID and a photograph of that document: together they make "who took
- * them" checkable months later, when the batch is being reconciled and the driver is
- * long gone.
+ * The signature is evidence that a named person took the cylinders. The driver is
+ * picked from the registered profiles, or typed in with an email and phone number, so
+ * "who took them" can be followed up months later when the batch is reconciled.
  *
  * The form itself is shared with the transfer flow — see `useDriverSignOff`. What is
  * left here is what is specific to a RETURN: the warnings this batch has earned, and
@@ -29,7 +26,6 @@ export default function Sign() {
   const router = useRouter();
   const { batch, scans, overrides, photo, photoOverride } = useScanFlow();
   const { sync, online } = useSync();
-  const { user } = useAuth();
   const driver = useDriverSignOff({ online });
 
   const [submitting, setSubmitting] = useState(false);
@@ -117,21 +113,16 @@ export default function Sign() {
       ) : null}
       {!online ? (
         <Notice tone="neutral" title="Offline">
-          The signed return is queued on this device and sent when signal returns. The photo, the ID
-          and the signature go with it.
+          The signed return is queued on this device and sent when signal returns. The photo and the
+          signature go with it.
         </Notice>
       ) : null}
 
-      <DriverSignOffForm
-        driver={driver}
-        isAdmin={user?.role === 'PROJECT_MANAGER'}
-        online={online}
-        submitting={submitting}
-      />
+      <DriverSignOffForm driver={driver} submitting={submitting} />
 
       <Text style={styles.hint}>
-        The driver signs above, then the return is submitted. A signed delivery note carrying the
-        signature and the ID is emailed to the project manager.
+        The driver signs above, then the return is submitted. A signed delivery note is emailed to
+        the project manager and the stores managers.
       </Text>
 
       <ErrorText>{error}</ErrorText>

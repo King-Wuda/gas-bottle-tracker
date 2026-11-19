@@ -7,14 +7,7 @@ import {
   photoSubmissionFields,
   PHOTO_REQUIRED_MESSAGE,
 } from './photo';
-import {
-  driverIdFields,
-  driverPhoneSchema,
-  driverSignOffDtoFields,
-  hasDriverIdEvidence,
-  signaturePngSchema,
-  DRIVER_ID_PHOTO_REQUIRED_MESSAGE,
-} from './driver';
+import { driverSignOffDtoFields, driverSignOffFields, signaturePngSchema } from './driver';
 
 export const destinationTypeSchema = z.enum(['SITE', 'STORES']);
 export type DestinationType = z.infer<typeof destinationTypeSchema>;
@@ -94,9 +87,7 @@ export const createTransferRequestSchema = z
      * other left the more common movement as the less accountable one, which is
      * backwards. See `schemas/driver.ts`.
      */
-    driverName: z.string().min(1).max(200),
-    driverPhone: driverPhoneSchema,
-    ...driverIdFields,
+    ...driverSignOffFields,
     /**
      * Moving back to stores only: which cage each gas goes into, and which of the
      * moved cylinders came back empty (everything else is recorded as full). Refused
@@ -113,11 +104,7 @@ export const createTransferRequestSchema = z
     message: 'Nothing to transfer: scan at least one cylinder.',
     path: ['scans'],
   })
-  .refine(hasPhotoEvidence, { message: PHOTO_REQUIRED_MESSAGE, path: ['photo'] })
-  .refine(hasDriverIdEvidence, {
-    message: DRIVER_ID_PHOTO_REQUIRED_MESSAGE,
-    path: ['driverIdPhoto'],
-  });
+  .refine(hasPhotoEvidence, { message: PHOTO_REQUIRED_MESSAGE, path: ['photo'] });
 export type CreateTransferRequest = z.infer<typeof createTransferRequestSchema>;
 
 /** Why one scanned serial could not be moved. The app highlights that row rather

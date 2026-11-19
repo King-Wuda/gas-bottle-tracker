@@ -31,11 +31,10 @@ touches one of these:
 | `apps/mobile/src/photo/capture.ts`            | `navigator.geolocation` (HTTPS only) | Play Services / GPS        |
 | `apps/mobile/app/login.tsx`                   | (no-op)                              | iOS `KeyboardAvoidingView` |
 | `apps/mobile/app/new/create-site.tsx`         | (no-op)                              | iOS `KeyboardAvoidingView` |
-| `apps/mobile/src/components/IdCapture.tsx`    | getUserMedia frame                   | device camera file         |
 | `apps/mobile/src/components/SignaturePad.tsx` | needs `touchAction: 'none'`          | style key ignored          |
 | `apps/mobile/src/sound/index.ts`              | blocked until a user gesture         | plays whenever asked       |
 
-None of the last five branch on `Platform.OS` in our own source — they differ inside
+None of the last four branch on `Platform.OS` in our own source — they differ inside
 `expo-camera` / `expo-location` / `expo-image-manipulator` / `expo-audio`, or in what the
 browser will allow — which makes them the easiest of all to forget, because there is no
 visible `if` to notice. See [docs/WEB_PARITY.md](docs/WEB_PARITY.md) for what each does
@@ -125,13 +124,39 @@ project manager is one person held in two rows:
 ## Transfers repeat; a return is final
 
 - **A transfer** moves cylinders between stores and a site, as often as needed. Both
-  directions take full driver sign-off (name, phone, ID number, ID photo, signature)
-  and a batch photo, and every transfer emails the batch's project manager a
-  `TRANSFER_NOTICE` with the batch photo and the driver's ID attached.
+  directions take driver sign-off (who, phone, email, signature) and a batch photo, and
+  every transfer emails the batch's project manager a `TRANSFER_NOTICE` with the batch
+  photo attached.
 - **A return** sends cylinders back to the SUPPLIER. It is terminal (`RETURNED`): the
   cylinder leaves rotation, leaves its cage, and stops counting anywhere. It is labelled
   "Return to supplier" in the app because "Returns" alone reads as "back to stores",
   which is a transfer. Don't merge the two.
+
+**Drivers are picked, not typed.** `Driver` holds the regulars (name, surname, email,
+phone), managed at Admin console → Drivers (`routes/drivers.ts`; `GET /drivers` is the
+picker for every signed-in role). At sign-off the first option is a registered driver;
+ticking "Driver not registered" types name, email and phone instead. The ID number and
+ID photo are no longer asked for — older records keep theirs and still show them.
+Every transfer and return COPIES the driver's name, email and phone onto itself;
+`driverId` only links the profile, the server overwrites the copied details from the
+profile when it exists (a phone's cache can be stale), and falls back to what was sent
+when it does not (an offline submission can outlive a deleted profile). That is why
+`driverId` is `ON DELETE SET NULL` — the one FK on a movement record that is not
+Restrict, because the record keeps everything it needs. The picker's offline copy is
+the `cached_driver` SQLite table.
+
+**Adding cylinders to a batch re-opens initialization, for the new ones only.** An
+admin can add a gas (or raise a quantity) on Correct batch; `createCylinders` clears
+`Batch.initializedAt`, and the next initialization requires only the cylinders with no
+`INITIALIZE` event (`CylinderDto.initialized`) — never the ones already on site or
+returned, which could not be scanned again. Cages are asked only for those new ones.
+
+**Every event email is copied to the stores managers.** A new batch's QR sheet, every
+`TRANSFER_NOTICE` and every return's `DELIVERY_NOTE` go to the project manager AND, via
+`copyToStoresManagers` (`services/notices.ts`), to every active `STORES_MANAGER` — the
+same email and attachments, payload marked `copy: 'stores'`. `emailDeliveryFor` skips
+copies, so the batch screen keeps reporting the project manager's QR sheet. Tests about
+the PM's own email filter them out with `notStoresCopy` (test/helpers.ts).
 
 **Cages and full/empty live on the cylinder, and only in stores.** `Cylinder.cage` is
 1-3 and the `Cylinder_cage_only_in_stores` CHECK refuses one on anything not
@@ -147,6 +172,17 @@ the one moment contents change (`emptySerials`, everything else is set FULL).
 A transfer's cages are checked against what actually MOVED, after the claim
 (`checkCages(..., { allowExtra: true })`): a cage for a gas whose cylinders were all
 rejected is not an error. An initialization's are checked up front and extras refused.
+
+**A cage is optional.** "No cage" is the default at initialization and on a transfer
+back to stores; a gas left without one is `IN_STORES` with `cage = NULL`, and the
+stores console counts it under "No cage yet". The cage is set or changed afterwards
+with `PATCH /batches/:id/cages` (`routes/batchCages.ts`, screen "Change cages" on the
+batch page) — the stores manager's ONE edit to a batch, open to stores managers and
+project managers only. It writes nothing but `Cylinder.cage`, only on cylinders
+physically in stores (`IN_STORES` and either delivered to STORES or transferred back
+at least once — a SITE line's cylinders are booked `IN_STORES` but are on site), and
+records a `BatchAmendment`. Every other correction stays on the project managers'
+Correct batch.
 
 `cached_cylinder` carries `gas_type_id` and `delivery_point` for this, offline —
 `CACHE_SCHEMA_VERSION` 4.
@@ -186,6 +222,12 @@ From there each person changes their own from the dashboard's "Change password"
 - **ends every session the account holds and returns a fresh pair** for the device that
   made the change. `apiChangePassword` installs that pair itself; without it the next
   request would hit a revoked refresh token and sign the person out.
+
+**Email addresses are case-insensitive at sign-in.** `loginEmailSchema` trims and
+lowercases what was typed (phones capitalise the first letter), every address is stored
+lowercased (the console lowercases on the way in; migration
+`20261119150000_lowercase_emails` fixed the ones already there, skipping any pair that
+differs only by case), and `/auth/login` looks up case-insensitively as a backstop.
 
 Resetting goes back to `gea` rather than to a password the admin chooses, on purpose:
 it is the one everybody already knows to try. Don't make that migration re-run — it is
@@ -263,8 +305,8 @@ when the export looks right but the app cannot reach the API.
    its place — so the browser gets HTML where it asked for JavaScript and the app is a blank
    white page with `Unexpected token '<'` in the console. Nothing about the export looks
    wrong; only the restart fixes it.
-3. `npm run typecheck && npm run lint && npm test` — 475 tests baseline
-   (78 shared, 332 API, 65 mobile). **Stop the dev API server first**: it shares the database
+3. `npm run typecheck && npm run lint && npm test` — 490 tests baseline
+   (79 shared, 347 API, 64 mobile). **Stop the dev API server first**: it shares the database
    with the test run, and its email worker polling across `resetDb()` fails tests at random.
 
    **`npm test` also empties the database you were demonstrating.** The suite shares it,

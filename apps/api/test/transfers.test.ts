@@ -14,7 +14,8 @@ import {
   makeProjectManager,
   resetDb,
   supplierForGas,
-  testDriverId,
+  testDriverContact,
+  TEST_DRIVER_EMAIL,
   testPhoto,
   uniqueProjectNumber,
   batchGasCages,
@@ -23,7 +24,6 @@ import {
 let app: FastifyInstance;
 let techToken: string;
 let storesToken: string;
-let adminToken: string;
 let projectId: string;
 let siteA: string;
 let siteB: string;
@@ -38,7 +38,6 @@ beforeAll(async () => {
   await app.ready();
   techToken = await loginAs(app, DEMO.technician);
   storesToken = await loginAs(app, DEMO.stores);
-  adminToken = await loginAs(app, DEMO.admin);
 
   const created = await app.inject({
     method: 'POST',
@@ -144,7 +143,7 @@ const postTransfer = (payload: Record<string, unknown>, token = techToken) =>
       driverName: 'Sipho Ndlovu',
       driverPhone: '082 555 0199',
       signaturePng: SIGNATURE,
-      ...testDriverId(),
+      ...testDriverContact(),
       ...payload,
     },
   });
@@ -163,7 +162,7 @@ const rejectionFor = (rejected: ScanRejection[], serialCode: string) =>
  * more common movement — which is the one that used to record nobody.
  */
 describe('POST /transfers — driver sign-off', () => {
-  it('records the driver, the ID number and the document', async () => {
+  it('records the driver’s name, phone and email, and their signature', async () => {
     const { batchId, serials } = await makeBatch(2);
     const res = await postTransfer({
       batchId,
@@ -174,26 +173,30 @@ describe('POST /transfers — driver sign-off', () => {
 
     expect(res.statusCode).toBe(201);
     const { transfer } = res.json();
-    expect(transfer.driverName).toBe('Sipho Ndlovu');
-    expect(transfer.driverIdNumber).toBe('8801015009087');
-    expect(transfer.driverIdCaptured).toBe(true);
-    expect(transfer.driverIdOverridden).toBe(false);
+    expect(transfer).toMatchObject({
+      driverId: null,
+      driverName: 'Sipho Ndlovu',
+      driverEmail: TEST_DRIVER_EMAIL,
+      driverIdNumber: null,
+      driverIdCaptured: false,
+    });
 
     const row = await prisma.transfer.findUniqueOrThrow({ where: { id: transfer.id } });
     // Named from the idempotency key, like every other blob, so a retry overwrites
     // its own file rather than littering one per attempt.
     expect(row.signaturePath).toContain(`signature-${row.clientRequestId}`);
-    expect(row.driverIdPath).toContain(`driver-id-${row.clientRequestId}`);
+    expect(row.driverIdPath).toBeNull();
     await expect(readFileAt(row.signaturePath!)).resolves.toBeInstanceOf(Buffer);
   });
 
-  it('refuses a transfer with no driver name, ID number or signature', async () => {
+  it('refuses a transfer with no driver name, phone, email or signature', async () => {
     const { batchId, serials } = await makeBatch(1);
     for (const missing of [
       { driverName: '' },
-      { driverIdNumber: '' },
+      { driverPhone: '' },
+      { driverEmail: '' },
+      { driverEmail: 'not-an-email' },
       { signaturePng: '' },
-      { driverIdPhoto: null },
     ]) {
       const res = await postTransfer({
         batchId,
@@ -204,6 +207,32 @@ describe('POST /transfers — driver sign-off', () => {
       });
       expect(res.statusCode, JSON.stringify(missing)).toBe(400);
     }
+  });
+
+  it('a registered driver’s details come from their profile', async () => {
+    const driver = await prisma.driver.create({
+      data: {
+        name: 'Bongani',
+        surname: 'Zulu',
+        email: 'bongani@demo.local',
+        phone: '071 234 5678',
+      },
+    });
+    const { batchId, serials } = await makeBatch(1);
+    const res = await postTransfer({
+      batchId,
+      clientRequestId: randomUUID(),
+      destination: toSite(siteB),
+      scans: serials.map(scan),
+      driverId: driver.id,
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().transfer).toMatchObject({
+      driverId: driver.id,
+      driverName: 'Bongani Zulu',
+      driverEmail: 'bongani@demo.local',
+      driverPhone: '071 234 5678',
+    });
   });
 
   it('refuses a signature that is not actually a PNG', async () => {
@@ -217,60 +246,6 @@ describe('POST /transfers — driver sign-off', () => {
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().error.code).toBe('INVALID_SIGNATURE');
-  });
-
-  it('refuses a non-admin who claims the ID override, rather than ignoring it', async () => {
-    const { batchId, serials } = await makeBatch(1);
-    const res = await postTransfer({
-      batchId,
-      clientRequestId: randomUUID(),
-      destination: toSite(siteB),
-      scans: serials.map(scan),
-      driverIdPhoto: null,
-      driverIdOverride: true,
-    });
-    expect(res.statusCode).toBe(403);
-    expect(res.json().error.code).toBe('DRIVER_ID_OVERRIDE_FORBIDDEN');
-  });
-
-  it('lets an admin waive the ID photo, and records it as a waiver', async () => {
-    const { batchId, serials } = await makeBatch(1);
-    const res = await postTransfer(
-      {
-        batchId,
-        clientRequestId: randomUUID(),
-        destination: toSite(siteB),
-        scans: serials.map(scan),
-        driverIdPhoto: null,
-        driverIdOverride: true,
-      },
-      adminToken,
-    );
-    expect(res.statusCode).toBe(201);
-    const { transfer } = res.json();
-    expect(transfer.driverIdOverridden).toBe(true);
-    expect(transfer.driverIdCaptured).toBe(false);
-    // The number is still required — the waiver is of the camera, not of identity.
-    expect(transfer.driverIdNumber).toBe('8801015009087');
-  });
-
-  it('keeps the photo when a submission carries both a photo and an override', async () => {
-    // Real evidence outranks an assertion, exactly as a genuinely scanned serial
-    // keeps its scan even when it also appears in overrideSerials.
-    const { batchId, serials } = await makeBatch(1);
-    const res = await postTransfer(
-      {
-        batchId,
-        clientRequestId: randomUUID(),
-        destination: toSite(siteB),
-        scans: serials.map(scan),
-        driverIdOverride: true,
-      },
-      adminToken,
-    );
-    expect(res.statusCode).toBe(201);
-    expect(res.json().transfer.driverIdCaptured).toBe(true);
-    expect(res.json().transfer.driverIdOverridden).toBe(false);
   });
 });
 

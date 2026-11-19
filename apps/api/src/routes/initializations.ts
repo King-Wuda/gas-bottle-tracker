@@ -127,8 +127,16 @@ export async function initializationRoutes(app: FastifyInstance): Promise<void> 
           // By the LINE's delivery point: every cylinder is recorded IN_STORES at
           // intake, but one on a line delivered straight to site is physically there
           // and in no cage.
+          //
+          // Only cylinders not yet scanned in: when an admin adds cylinders to a batch
+          // that was already initialized, the batch is initialized again, and the
+          // cylinders already in their cages stay where they are.
           cylinders: {
-            where: { status: 'IN_STORES', batchLine: { initialDeliveryPoint: 'STORES' } },
+            where: {
+              status: 'IN_STORES',
+              batchLine: { initialDeliveryPoint: 'STORES' },
+              movementEvents: { none: { type: 'INITIALIZE' } },
+            },
             select: { id: true, gasTypeId: true },
           },
         },
@@ -207,10 +215,20 @@ export async function initializationRoutes(app: FastifyInstance): Promise<void> 
               { requireInitialized: false },
             );
 
-            // Every cylinder, or none. Read inside the transaction so a batch cannot
-            // grow a cylinder between the check and the stamp.
+            // Every cylinder not yet scanned in, or none. Read inside the transaction
+            // so a batch cannot grow a cylinder between the check and the stamp.
+            //
+            // "Not yet scanned in" rather than "every cylinder": on a first
+            // initialization they are the same set, but when an admin adds a line to a
+            // batch that was already initialized (and perhaps partly delivered or
+            // returned), only the new cylinders have never been seen. Demanding the rest
+            // again would ask for cylinders on a site miles away, or already back with
+            // the supplier — a batch that could never be initialized again.
             const all = await tx.cylinder.findMany({
-              where: { batchId: input.batchId },
+              where: {
+                batchId: input.batchId,
+                movementEvents: { none: { type: 'INITIALIZE' } },
+              },
               select: { id: true, serialCode: true, currentSiteId: true },
               orderBy: { serialCode: 'asc' },
             });
@@ -219,8 +237,11 @@ export async function initializationRoutes(app: FastifyInstance): Promise<void> 
             if (missing.length > 0) throw new IncompleteInitializationError(missing);
 
             const siteById = new Map(all.map((c) => [c.id, c.currentSiteId]));
+            // A cylinder that was already scanned in and is scanned again here proves
+            // nothing new; only the ones being initialized now get an event.
+            const fresh = accepted.filter((c) => siteById.has(c.id));
             await tx.movementEvent.createMany({
-              data: accepted.map((c) => ({
+              data: fresh.map((c) => ({
                 cylinderId: c.id,
                 type: 'INITIALIZE' as const,
                 // Nothing moves: from and to are both where the cylinder already is.

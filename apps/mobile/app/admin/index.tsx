@@ -44,6 +44,14 @@ export default function AdminHome() {
         <Text style={styles.hint}>Add someone, change a role, or deactivate an account.</Text>
       </Card>
 
+      <Card onPress={() => router.push('/admin/drivers')}>
+        <Text style={{ fontSize: 18, fontWeight: '700' }}>Drivers</Text>
+        <Text style={{ opacity: 0.75 }}>
+          The regular collection drivers, picked at sign-off on transfers and returns.
+        </Text>
+        <Text style={styles.hint}>Add a driver, edit their details, or remove one.</Text>
+      </Card>
+
       <Card onPress={() => router.push('/admin/clients')}>
         <Text style={{ fontSize: 18, fontWeight: '700' }}>Clients and locations</Text>
         <Text style={{ opacity: 0.75 }}>

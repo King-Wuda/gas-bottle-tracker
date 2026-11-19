@@ -21,7 +21,7 @@ const SIGNATURE_PNG =
 
 /**
  * Every scan-backed step now has to carry a photo — the batch for initialization,
- * transfer and return, and the driver's ID document for a return. `services/photo.ts`
+ * transfer and return. `services/photo.ts`
  * checks the magic bytes, so a stub with the right prefix will not do; this is a real
  * 1×1 PNG.
  *
@@ -251,8 +251,8 @@ async function main(): Promise<void> {
       scans: moving.map(scanOf),
       photo: photo(),
       driverName: 'Thabo Mokoena',
-      driverIdNumber: '8801015009087',
-      driverIdPhoto: photo(),
+      driverPhone: '082 555 0199',
+      driverEmail: 'thabo.mokoena@example.com',
       signaturePng: SIGNATURE_PNG,
     },
   });
@@ -269,8 +269,8 @@ async function main(): Promise<void> {
     scans: serials.slice(3).map(scanOf),
     photo: photo(),
     driverName: 'Naledi Khumalo',
-    driverIdNumber: '9203125800083',
-    driverIdPhoto: photo(),
+    driverPhone: '071 234 5678',
+    driverEmail: 'naledi.khumalo@example.com',
     signaturePng: SIGNATURE_PNG,
   };
   const second = await api<{ returnRecord: { id: string; batchStatus: string } }>('/returns', {

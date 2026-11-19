@@ -56,7 +56,8 @@ interface ScanFlowValue {
    */
   cages: Record<string, number>;
   empties: string[];
-  setCage: (gasTypeId: string, cage: number) => void;
+  /** `null` clears it — a cage is optional, and "No cage" is a choice. */
+  setCage: (gasTypeId: string, cage: number | null) => void;
   toggleEmpty: (serialCode: string) => void;
 
   selectBatch: (batch: CachedBatch, cylinders: CachedCylinder[], sites: CachedSite[]) => void;
@@ -100,8 +101,13 @@ export function ScanFlowProvider({ children }: { children: ReactNode }) {
     setEmpties([]);
   }, []);
 
-  const setCage = useCallback((gasTypeId: string, cage: number) => {
-    setCages((prev) => ({ ...prev, [gasTypeId]: cage }));
+  const setCage = useCallback((gasTypeId: string, cage: number | null) => {
+    setCages((prev) => {
+      const next = { ...prev };
+      if (cage === null) delete next[gasTypeId];
+      else next[gasTypeId] = cage;
+      return next;
+    });
   }, []);
 
   const toggleEmpty = useCallback((serialCode: string) => {

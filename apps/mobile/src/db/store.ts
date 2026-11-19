@@ -87,6 +87,14 @@ export interface CachedSite {
   location: string;
 }
 
+/** A driver profile as the sign-off picker needs it, with no signal. */
+export interface CachedDriver {
+  id: string;
+  fullName: string;
+  email: string;
+  phone: string;
+}
+
 export interface Store {
   enqueue(
     rec: Pick<OutboxRecord, 'id' | 'kind' | 'path' | 'payload' | 'label'>,
@@ -121,4 +129,7 @@ export interface Store {
   getCachedBatch(batchId: string): Promise<CachedBatch | null>;
   getCachedCylinders(batchId: string): Promise<CachedCylinder[]>;
   getCachedSites(clientId: string): Promise<CachedSite[]>;
+  /** Replace the whole driver list — the server's active profiles, as last fetched. */
+  cacheDrivers(drivers: CachedDriver[]): Promise<void>;
+  getCachedDrivers(): Promise<CachedDriver[]>;
 }

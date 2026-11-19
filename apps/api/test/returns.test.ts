@@ -5,7 +5,6 @@ import type { ScanInput, ScanRejection } from '@gct/shared';
 import { buildApp } from '../src/app.js';
 import { prisma } from '../src/db.js';
 import { qrPayloadFor } from '../src/services/qr.js';
-import { readFileAt } from '../src/services/storage.js';
 import {
   loginAs,
   bearer,
@@ -14,10 +13,12 @@ import {
   makeProjectManager,
   resetDb,
   supplierForGas,
-  testDriverId,
+  testDriverContact,
+  TEST_DRIVER_EMAIL,
   testSignOff,
   testPhoto,
   uniqueProjectNumber,
+  notStoresCopy,
 } from './helpers.js';
 
 let app: FastifyInstance;
@@ -130,7 +131,7 @@ const returnBody = (batchId: string, serials: string[], extra: Record<string, un
   scans: serials.map(scan),
   driverName: 'Sipho Ndlovu',
   driverPhone: '082 555 0199',
-  ...testDriverId(),
+  ...testDriverContact(),
   signaturePng: SIGNATURE,
   ...extra,
 });
@@ -280,12 +281,11 @@ describe('POST /returns — idempotency', () => {
     expect(replay.json().returnRecord.returnedSerials).toEqual([...serials].sort());
 
     expect(await prisma.returnRecord.count({ where: { batchId } })).toBe(1);
-    // Exactly one delivery note — the PM is not emailed twice for one collection.
-    expect(
-      await prisma.outboundEmail.count({
-        where: { payload: { path: ['returnRecordId'], equals: first.json().returnRecord.id } },
-      }),
-    ).toBe(1);
+    // Exactly one delivery note — the PM is not emailed twice for one collection, and
+    // neither is the stores manager's copy (copyToStoresManagers).
+    const notes = { payload: { path: ['returnRecordId'], equals: first.json().returnRecord.id } };
+    expect(await prisma.outboundEmail.count({ where: { ...notes, ...notStoresCopy } })).toBe(1);
+    expect(await prisma.outboundEmail.count({ where: { ...notes, to: DEMO.stores } })).toBe(1);
   });
 
   it('concurrent replays of one queued return produce exactly one record', async () => {
@@ -416,114 +416,100 @@ describe('POST /returns — request validation', () => {
 });
 
 /**
- * The driver's identity (Workflow C4).
- *
- * A signature is a squiggle over a name somebody typed. The number and the
- * photographed document are what make "who took the cylinders" checkable afterwards,
- * so they follow exactly the rules the batch photo already follows: mandatory,
- * waivable only by an admin, and the waiver recorded as a waiver.
+ * Who took the cylinders: a registered driver picked from the profiles, or one typed
+ * in on the spot. Either way the record keeps the name, email and phone it was signed
+ * under. The ID number and photo of the driver's ID are no longer asked for.
  */
-describe('POST /returns — driver identity', () => {
-  it('records the ID number and stores the photographed document', async () => {
+describe('POST /returns — the driver', () => {
+  it('records an unregistered driver’s name, phone and email, and no ID', async () => {
     const { batchId, serials } = await makeBatch(1);
     const res = await postReturn(returnBody(batchId, serials));
 
     expect(res.statusCode).toBe(201);
     const { returnRecord } = res.json();
-    expect(returnRecord.driverIdNumber).toBe('8801015009087');
-    expect(returnRecord.driverIdCaptured).toBe(true);
-    expect(returnRecord.driverIdOverridden).toBe(false);
-
-    const row = await prisma.returnRecord.findUniqueOrThrow({ where: { id: returnRecord.id } });
-    expect(row.driverIdNumber).toBe('8801015009087');
-    // Named from the idempotency key, like every other blob, so a retry overwrites
-    // its own file instead of littering one per attempt.
-    expect(row.driverIdPath).toContain(`driver-id-${row.clientRequestId}`);
-    await expect(readFileAt(row.driverIdPath!)).resolves.toBeInstanceOf(Buffer);
-  });
-
-  it('refuses a return with no ID number', async () => {
-    const { batchId, serials } = await makeBatch(1);
-    const res = await postReturn({ ...returnBody(batchId, serials), driverIdNumber: '' });
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error.code).toBe('VALIDATION');
-  });
-
-  it('accepts a passport or foreign licence number, not only a South African ID', async () => {
-    // A driver who cannot be recorded is a driver who leaves with the cylinders and
-    // no name against them, which is worse than a number in an unexpected format.
-    const { batchId, serials } = await makeBatch(1);
-    const res = await postReturn({
-      ...returnBody(batchId, serials),
-      driverIdNumber: 'ZW-DL-88231/04',
+    expect(returnRecord).toMatchObject({
+      driverId: null,
+      driverName: 'Sipho Ndlovu',
+      driverEmail: TEST_DRIVER_EMAIL,
+      driverIdNumber: null,
+      driverIdCaptured: false,
     });
-    expect(res.statusCode).toBe(201);
-    expect(res.json().returnRecord.driverIdNumber).toBe('ZW-DL-88231/04');
-  });
-
-  it('refuses a return with neither an ID photo nor an override', async () => {
-    const { batchId, serials } = await makeBatch(1);
-    const res = await postReturn({ ...returnBody(batchId, serials), driverIdPhoto: null });
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error.code).toBe('VALIDATION');
-  });
-
-  it('refuses a non-admin who claims the ID override, rather than ignoring it', async () => {
-    // Silently dropping it would let a tampered client believe it recorded a return
-    // that a stores manager is not entitled to record.
-    const { batchId, serials } = await makeBatch(1);
-    const res = await postReturn({
-      ...returnBody(batchId, serials),
-      driverIdPhoto: null,
-      driverIdOverride: true,
-    });
-    expect(res.statusCode).toBe(403);
-    expect(res.json().error.code).toBe('DRIVER_ID_OVERRIDE_FORBIDDEN');
-  });
-
-  it('lets an admin waive the ID photo, and records it as a waiver', async () => {
-    const { batchId, serials } = await makeBatch(1);
-    const res = await postReturn(
-      { ...returnBody(batchId, serials), driverIdPhoto: null, driverIdOverride: true },
-      adminToken,
-    );
-    expect(res.statusCode).toBe(201);
-    const { returnRecord } = res.json();
-    expect(returnRecord.driverIdOverridden).toBe(true);
-    expect(returnRecord.driverIdCaptured).toBe(false);
-    // The number is still required — the waiver is of the camera, not of identity.
-    expect(returnRecord.driverIdNumber).toBe('8801015009087');
-
     const row = await prisma.returnRecord.findUniqueOrThrow({ where: { id: returnRecord.id } });
     expect(row.driverIdPath).toBeNull();
   });
 
-  it('keeps the photo when a submission carries both a photo and an override', async () => {
-    // Real evidence outranks an assertion, exactly as a genuinely scanned serial
-    // keeps its scan even when it also appears in overrideSerials.
+  it('refuses a return with no driver email', async () => {
     const { batchId, serials } = await makeBatch(1);
-    const res = await postReturn(
-      { ...returnBody(batchId, serials), driverIdOverride: true },
-      adminToken,
-    );
-    expect(res.statusCode).toBe(201);
-    expect(res.json().returnRecord.driverIdCaptured).toBe(true);
-    expect(res.json().returnRecord.driverIdOverridden).toBe(false);
+    const res = await postReturn({ ...returnBody(batchId, serials), driverEmail: '' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('VALIDATION');
   });
 
-  it('refuses an ID payload that is not actually an image', async () => {
+  it('copies a registered driver’s details from the profile, not from what was sent', async () => {
+    // A phone's cached copy of the profile can be stale; the profile is the authority.
+    const driver = await prisma.driver.create({
+      data: {
+        name: 'Bongani',
+        surname: 'Zulu',
+        email: 'bongani@demo.local',
+        phone: '071 234 5678',
+      },
+    });
     const { batchId, serials } = await makeBatch(1);
     const res = await postReturn({
       ...returnBody(batchId, serials),
-      driverIdPhoto: testPhoto({
-        imageBase64: `data:image/jpeg;base64,${Buffer.from('x'.repeat(100)).toString('base64')}`,
-      }),
+      driverId: driver.id,
+      driverName: 'B Zulu',
+      driverPhone: '000 000 0000',
     });
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error.code).toBe('INVALID_DRIVER_ID_PHOTO');
+    expect(res.statusCode).toBe(201);
+    expect(res.json().returnRecord).toMatchObject({
+      driverId: driver.id,
+      driverName: 'Bongani Zulu',
+      driverEmail: 'bongani@demo.local',
+      driverPhone: '071 234 5678',
+    });
   });
 
-  it('reports the ID number on the history event detail', async () => {
+  it('records the sent details when the profile has gone by the time it arrives', async () => {
+    // An offline return can be queued against a profile that is deleted before it
+    // syncs. The delivery happened; it is recorded, not refused.
+    const { batchId, serials } = await makeBatch(1);
+    const res = await postReturn({ ...returnBody(batchId, serials), driverId: 'gone' });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().returnRecord).toMatchObject({
+      driverId: null,
+      driverName: 'Sipho Ndlovu',
+      driverEmail: TEST_DRIVER_EMAIL,
+    });
+  });
+
+  it('keeps the details when the driver’s profile is deleted later', async () => {
+    const driver = await prisma.driver.create({
+      data: {
+        name: 'Pieter',
+        surname: 'van Wyk',
+        email: 'pieter@demo.local',
+        phone: '082 444 1234',
+      },
+    });
+    const { batchId, serials } = await makeBatch(1);
+    const created = await postReturn({ ...returnBody(batchId, serials), driverId: driver.id });
+    expect(created.statusCode).toBe(201);
+
+    await prisma.driver.delete({ where: { id: driver.id } });
+    const row = await prisma.returnRecord.findUniqueOrThrow({
+      where: { id: created.json().returnRecord.id },
+    });
+    expect(row).toMatchObject({
+      driverId: null,
+      driverName: 'Pieter van Wyk',
+      driverEmail: 'pieter@demo.local',
+      driverPhone: '082 444 1234',
+    });
+  });
+
+  it('reports the driver’s email on the history event detail', async () => {
     const { batchId, serials } = await makeBatch(1);
     const created = await postReturn(returnBody(batchId, serials));
     expect(created.statusCode).toBe(201);
@@ -534,7 +520,7 @@ describe('POST /returns — driver identity', () => {
       headers: bearer(storesToken),
     });
     expect(detail.statusCode).toBe(200);
-    expect(detail.json().event.driverIdNumber).toBe('8801015009087');
+    expect(detail.json().event.driverEmail).toBe(TEST_DRIVER_EMAIL);
   });
 });
 

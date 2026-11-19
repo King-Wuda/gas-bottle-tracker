@@ -94,6 +94,7 @@ export default function EventDetail() {
           />
         ) : null}
         {event.driverPhone ? <Row label="Driver phone" value={event.driverPhone} /> : null}
+        {event.driverEmail ? <Row label="Driver email" value={event.driverEmail} /> : null}
         {event.driverIdNumber ? <Row label="Driver ID" value={event.driverIdNumber} /> : null}
         {event.cages.map((c) => (
           <Row key={c.gasTypeId} label={`${c.gasTypeName} into`} value={`Cage ${c.cage}`} />

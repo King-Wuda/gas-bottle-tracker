@@ -94,6 +94,11 @@ async function main(): Promise<void> {
   // Safe to delete rather than deactivate only because everything that could
   // reference a user was removed above. A user with history must be deactivated —
   // the audit trail has to stay resolvable.
+  // Driver profiles the suite made for itself, by the same fixture domain. Real
+  // drivers are reference data, like the seed's suppliers, and stay. Safe after the
+  // transfers and returns above: nothing points at a driver any more.
+  await prisma.driver.deleteMany({ where: { email: { endsWith: '@demo.local' } } });
+
   await prisma.refreshToken.deleteMany({
     where: { user: { email: { endsWith: '@demo.local' } } },
   });

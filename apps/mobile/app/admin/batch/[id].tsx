@@ -52,6 +52,24 @@ interface LineDraft {
   deliveryPoint: InitialDeliveryPoint | null;
 }
 
+/** A gas being added to the batch, held locally until Save. */
+interface NewLineDraft {
+  key: string;
+  gasTypeId: string | null;
+  supplierId: string | null;
+  quantity: string;
+  deliveryPoint: InitialDeliveryPoint;
+}
+
+let newLineSeq = 0;
+const blankNewLine = (): NewLineDraft => ({
+  key: `new-${++newLineSeq}`,
+  gasTypeId: null,
+  supplierId: null,
+  quantity: '',
+  deliveryPoint: 'STORES',
+});
+
 /**
  * Correcting a batch that was entered wrong.
  *
@@ -63,10 +81,14 @@ interface LineDraft {
  * rental someone is being charged for, not a typo, and quietly deleting it here would
  * make this screen a way to erase the very evidence the system exists to keep.
  *
- * Gas type is not offered. It re-issues every serial on the line — invalidating labels
- * already printed and stuck on cylinders — so it belongs to a "reprint and re-tag"
- * procedure rather than a quick correction. Remove the line and add a new one, which
- * makes the reprint obvious.
+ * Changing an existing line's gas is not offered. It re-issues every serial on the
+ * line — invalidating labels already printed and stuck on cylinders — so it belongs to
+ * a "reprint and re-tag" procedure rather than a quick correction.
+ *
+ * ADDING a gas is offered ("Add a gas"): a batch booked as argon that also needed
+ * nitrogen gets a new line with its own fresh serials. Those cylinders have never been
+ * seen, so the batch goes back to needing initialization — only the new cylinders are
+ * scanned in, and their QR labels are on a re-sent QR sheet.
  */
 export default function AdminBatchEdit() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -89,6 +111,7 @@ export default function AdminBatchEdit() {
   const [managerId, setManagerId] = useState<string | null>(null);
   const [siteId, setSiteId] = useState<string | null>(null);
   const [lineDrafts, setLineDrafts] = useState<Record<string, LineDraft>>({});
+  const [newLines, setNewLines] = useState<NewLineDraft[]>([]);
   const [reason, setReason] = useState('');
   /** The project's number, as it is being corrected. */
   const [projectNumber, setProjectNumber] = useState('');
@@ -157,6 +180,20 @@ export default function AdminBatchEdit() {
   const setDraft = (lineId: string, patch: Partial<LineDraft>): void =>
     setLineDrafts((prev) => ({ ...prev, [lineId]: { ...prev[lineId]!, ...patch } }));
 
+  const setNewLine = (key: string, patch: Partial<NewLineDraft>): void =>
+    setNewLines((prev) => prev.map((n) => (n.key === key ? { ...n, ...patch } : n)));
+
+  /** Suppliers are per gas — fetched the first time a gas is picked for a new line. */
+  const pickNewGas = (key: string, gasTypeId: string): void => {
+    setNewLine(key, { gasTypeId, supplierId: null });
+    if (suppliersByGas[gasTypeId]) return;
+    apiSuppliers(gasTypeId)
+      .then((r) => setSuppliersByGas((prev) => ({ ...prev, [gasTypeId]: r.suppliers })))
+      .catch(() => {
+        /* the supplier select says there is nothing to choose from */
+      });
+  };
+
   if (loading && !batch) return <LoadingState label="Loading batch..." />;
   if (loadError && !batch) {
     return (
@@ -199,6 +236,17 @@ export default function AdminBatchEdit() {
       }
       return changed ? [edit] : [];
     });
+    for (const n of newLines) {
+      const qty = Number.parseInt(n.quantity, 10);
+      if (n.gasTypeId && n.supplierId && Number.isInteger(qty) && qty > 0) {
+        lines.push({
+          gasTypeId: n.gasTypeId,
+          supplierId: n.supplierId,
+          quantity: qty,
+          initialDeliveryPoint: n.deliveryPoint,
+        });
+      }
+    }
     if (lines.length > 0) patch.lines = lines;
     if (reason.trim()) patch.reason = reason.trim();
 
@@ -211,6 +259,15 @@ export default function AdminBatchEdit() {
   };
 
   const patch = buildPatch();
+  /** A new gas started but not finished — saving now would silently drop it. */
+  const newLineIncomplete = newLines.some((n) => {
+    const qty = Number.parseInt(n.quantity, 10);
+    return !(n.gasTypeId && n.supplierId && Number.isInteger(qty) && qty > 0);
+  });
+  const addedCylinders = newLines.reduce((sum, n) => {
+    const qty = Number.parseInt(n.quantity, 10);
+    return sum + (Number.isInteger(qty) && qty > 0 ? qty : 0);
+  }, 0);
 
   const save = async () => {
     if (!patch || !id) return;
@@ -228,11 +285,25 @@ export default function AdminBatchEdit() {
     ) {
       return;
     }
+    if (
+      addedCylinders > 0 &&
+      batch.initializedAt &&
+      !(await confirmAction(
+        `Add ${addedCylinders} cylinder(s) to ${batch.projectNumber}?\n\n` +
+          `New cylinders get new serial numbers and QR labels, so the batch has to be ` +
+          `initialized again — only the new cylinders need scanning. Until then nothing in ` +
+          `this batch can be transferred or returned.`,
+      ))
+    ) {
+      return;
+    }
     setSaving(true);
     setSaveError(null);
     setSaved(false);
     try {
       const res = await apiAdminUpdateBatch(id, patch);
+      setNewLines([]);
+      await load();
       setBatch(res.batch);
       setProjectNumber(res.batch.projectNumber);
       setReason('');
@@ -342,6 +413,66 @@ export default function AdminBatchEdit() {
         );
       })}
 
+      {newLines.map((n) => (
+        <Card key={n.key}>
+          <View
+            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+          >
+            <Text style={{ fontWeight: '700' }}>New gas</Text>
+            <Text
+              role="button"
+              onPress={() => setNewLines((prev) => prev.filter((x) => x.key !== n.key))}
+              style={{ color: colors.danger, fontWeight: '600' }}
+            >
+              Remove
+            </Text>
+          </View>
+          <Select
+            label="Gas"
+            placeholder="Choose a gas"
+            value={n.gasTypeId}
+            onChange={(v) => pickNewGas(n.key, v)}
+            options={gasTypes.map((g) => ({ value: g.id, label: g.name }))}
+          />
+          <Select
+            label="Supplier"
+            placeholder="Choose a supplier"
+            value={n.supplierId}
+            onChange={(v) => setNewLine(n.key, { supplierId: v })}
+            disabled={!n.gasTypeId}
+            disabledHint="Choose the gas first."
+            options={(n.gasTypeId ? (suppliersByGas[n.gasTypeId] ?? []) : []).map((s) => ({
+              value: s.id,
+              label: s.name,
+            }))}
+          />
+          <SegmentedToggle
+            label="Initial delivery point"
+            options={DELIVERY_POINTS}
+            value={n.deliveryPoint}
+            onChange={(v) => setNewLine(n.key, { deliveryPoint: v })}
+          />
+          <Field
+            label="Quantity"
+            keyboardType="number-pad"
+            value={n.quantity}
+            onChangeText={(t) => setNewLine(n.key, { quantity: t.replace(/[^0-9]/g, '') })}
+          />
+        </Card>
+      ))}
+
+      <SecondaryButton
+        title="Add a gas"
+        onPress={() => setNewLines((prev) => [...prev, blankNewLine()])}
+      />
+      {addedCylinders > 0 ? (
+        <Text style={styles.hint}>
+          The new cylinders get their own serial numbers. After saving, re-send the QR sheet from
+          the batch page to print their labels, then initialize the batch again — only the new
+          cylinders need scanning.
+        </Text>
+      ) : null}
+
       <Field
         label="Why (optional — recorded with the change)"
         value={reason}
@@ -358,12 +489,14 @@ export default function AdminBatchEdit() {
         title={
           projectNumberChanged && !projectNumberValid
             ? 'Finish the project number'
-            : patch
-              ? 'Save corrections'
-              : 'Nothing changed yet'
+            : newLineIncomplete
+              ? 'Finish the new gas, or remove it'
+              : patch
+                ? 'Save corrections'
+                : 'Nothing changed yet'
         }
         onPress={() => void save()}
-        disabled={!patch || (projectNumberChanged && !projectNumberValid)}
+        disabled={!patch || newLineIncomplete || (projectNumberChanged && !projectNumberValid)}
         busy={saving}
       />
 

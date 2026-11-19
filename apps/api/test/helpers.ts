@@ -31,6 +31,7 @@ export async function resetDb(): Promise<void> {
         'Client',
         'ProjectManager',
         'RefreshToken',
+        'Driver',
       ]
         .map((t) => `"${t}"`)
         .join(', ') +
@@ -73,6 +74,13 @@ export const DEMO = {
   /** A PROJECT_MANAGER — the role that runs the admin console. */
   admin: 'admin@demo.local',
 } as const;
+
+/**
+ * Excludes the stores manager's copy of an event email (`copyToStoresManagers`) — for
+ * tests about the project manager's own email: the QR sheet's resend lock, its delivery
+ * status, one sheet per batch. The suite's stores account is the only stores manager.
+ */
+export const notStoresCopy = { NOT: { to: 'stores@demo.local' } } as const;
 
 /** The role each seeded demo account is supposed to have, so resetDb can restore it. */
 const SEED_ROLES = {
@@ -255,19 +263,13 @@ export function testPhoto(overrides: Record<string, unknown> = {}) {
 }
 
 /**
- * The driver identity every return must carry: the number off the document, and a
- * photograph of the document itself.
- *
- * The image is the same tiny JPEG the batch photo uses — `services/photo.ts` cares
- * that it is a real image and nothing else, and a second fixture would only be a
- * second thing to keep in step.
+ * How to reach the driver, which every transfer and return carries alongside their
+ * name and phone. The ID number and photo of the driver's ID are no longer asked for.
  */
-export function testDriverId(overrides: Record<string, unknown> = {}) {
-  return {
-    driverIdNumber: '8801015009087',
-    driverIdPhoto: testPhoto(),
-    ...overrides,
-  };
+export const TEST_DRIVER_EMAIL = 'sipho.driver@demo.local';
+
+export function testDriverContact(overrides: Record<string, unknown> = {}) {
+  return { driverEmail: TEST_DRIVER_EMAIL, ...overrides };
 }
 
 /** A 1x1 PNG. `services/signature.ts` checks the magic bytes, not the drawing. */
@@ -276,7 +278,7 @@ export const TEST_SIGNATURE =
 
 /**
  * The whole driver sign-off a transfer or a return must carry: who took the
- * cylinders, the number off their document, a photo of it, and their signature.
+ * cylinders, how to reach them, and their signature.
  *
  * One fixture for both flows, because the two schemas deliberately ask for the same
  * things — see `schemas/driver.ts`. A test about scans or photos spreads this so it
@@ -322,7 +324,7 @@ export function testSignOff(overrides: Record<string, unknown> = {}) {
     driverName: 'Sipho Ndlovu',
     driverPhone: TEST_DRIVER_PHONE,
     signaturePng: TEST_SIGNATURE,
-    ...testDriverId(),
+    ...testDriverContact(),
     ...overrides,
   };
 }

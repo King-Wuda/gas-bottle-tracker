@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { allCaged, cagesPayload, gasesIn } from '../src/stores/dropOff';
+import { cagesPayload, gasesIn } from '../src/stores/dropOff';
 
 const cyl = (serialCode: string, gasTypeId: string, gasTypeName: string) => ({
   serialCode,
@@ -21,18 +21,6 @@ describe('stores drop-off', () => {
       { gasTypeId: 'n2', gasTypeName: 'Nitrogen', count: 1 },
     ]);
     expect(gasesIn(batch, [])).toEqual([]);
-  });
-
-  it('waits until every gas in the drop-off has a cage', () => {
-    const gases = gasesIn(
-      batch,
-      batch.map((c) => c.serialCode),
-    );
-    expect(allCaged(gases, {})).toBe(false);
-    expect(allCaged(gases, { ar: 1 })).toBe(false);
-    expect(allCaged(gases, { ar: 1, n2: 3 })).toBe(true);
-    // Nothing going into stores needs nothing.
-    expect(allCaged([], {})).toBe(true);
   });
 
   it('sends a cage only for the gases in this drop-off', () => {

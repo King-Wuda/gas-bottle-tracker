@@ -17,6 +17,8 @@ import { returnRoutes } from './routes/returns.js';
 import { historyRoutes } from './routes/history.js';
 import { adminRoutes } from './routes/admin.js';
 import { storesRoutes } from './routes/stores.js';
+import { driverRoutes } from './routes/drivers.js';
+import { batchCageRoutes } from './routes/batchCages.js';
 
 /**
  * Builds the Fastify instance without listening. Tests import this and call
@@ -70,6 +72,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(historyRoutes);
   await app.register(adminRoutes);
   await app.register(storesRoutes);
+  await app.register(driverRoutes);
+  await app.register(batchCageRoutes);
 
   // Optional: serve the Expo web export from this same origin under /app.
   // Off by default (tests and production API deployments don't want it). Enabling it

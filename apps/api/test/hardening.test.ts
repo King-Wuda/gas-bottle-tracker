@@ -32,6 +32,10 @@ let supplierId: string;
 
 beforeAll(async () => {
   await resetDb(); // exact drain counts, so no other suite's emails may be pending
+  // No stores manager either, so no stores copy of each email (copyToStoresManagers):
+  // these tests count every send, and are about the worker, not about who is copied.
+  // resetDb reactivates the account for the next suite.
+  await prisma.user.updateMany({ where: { role: 'STORES_MANAGER' }, data: { active: false } });
   app = await buildApp();
   await app.ready();
   techToken = await loginAs(app, DEMO.technician);

@@ -14,7 +14,21 @@ import { useScanFlow } from './ScanFlowContext';
  * is the reason this wrapper exists at all: `BatchBrowser` is a pure list, and the
  * History tab uses it without ever caching anything.
  */
-export function BatchPicker({ next, config }: { next: Href; config: BatchBrowserConfig }) {
+export function BatchPicker({
+  next,
+  config,
+  onlyUninitialized = false,
+}: {
+  next: Href;
+  config: BatchBrowserConfig;
+  /**
+   * Initialize only: work against the cylinders whose labels have never been scanned
+   * in. On a new batch that is all of them; on one an admin added cylinders to after it
+   * was initialized, it is only the new ones — the rest may be on a site or back with
+   * the supplier, and are not asked for again.
+   */
+  onlyUninitialized?: boolean;
+}) {
   const router = useRouter();
   const { selectBatch } = useScanFlow();
 
@@ -52,6 +66,7 @@ export function BatchPicker({ next, config }: { next: Href; config: BatchBrowser
       // again, so they are left out of the checklist the scanner works against.
       const cylinders = batch.cylinders
         .filter((c) => c.status !== 'RETURNED')
+        .filter((c) => !onlyUninitialized || !c.initialized)
         .map((c) => ({
           serialCode: c.serialCode,
           batchId: batch.id,

@@ -115,11 +115,13 @@ function GasCard({ gas }: { gas: StoresGasSummary }) {
             <Text style={[type.body, s.cellNum, c.empty === 0 && s.zero]}>{c.empty}</Text>
           </View>
         ))}
-        {/* Cylinders that reached stores before cages were recorded. Shown only when
-            there are some, and labelled for what it is rather than folded into a cage. */}
+        {/* Cylinders in stores with no cage chosen yet — a cage is optional when they
+            come in, and a stores manager sets it later from the batch page. Shown only
+            when there are some, and labelled for what it is rather than folded into a
+            cage. */}
         {showNoCage ? (
           <View style={s.tr}>
-            <Text style={[type.body, s.cellName]}>No cage recorded</Text>
+            <Text style={[type.body, s.cellName]}>No cage yet</Text>
             <Text style={[type.body, s.cellNum]}>{gas.noCage.full}</Text>
             <Text style={[type.body, s.cellNum]}>{gas.noCage.empty}</Text>
           </View>

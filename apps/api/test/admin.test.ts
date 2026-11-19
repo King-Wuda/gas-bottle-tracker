@@ -14,7 +14,7 @@ import {
   supplierForGas,
   testPhoto,
   uniqueProjectNumber,
-  testDriverId,
+  testDriverContact,
   testSignOff,
   batchGasCages,
 } from './helpers.js';
@@ -959,7 +959,7 @@ describe('scan override', () => {
         overrideSerials: [serials[0]!],
         driverName: 'Sipho',
         driverPhone: '082 555 0199',
-        ...testDriverId(),
+        ...testDriverContact(),
         signaturePng: 'x'.repeat(100),
       },
     });

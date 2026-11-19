@@ -171,6 +171,8 @@ export const batchEventDetailSchema = batchEventSummarySchema.extend({
   driverIdNumber: z.string().nullable(),
   /** TRANSFER and RETURN: the driver's phone, where one was recorded. */
   driverPhone: z.string().nullable(),
+  /** TRANSFER and RETURN: the driver's email, where one was recorded. */
+  driverEmail: z.string().nullable(),
   /** INITIALIZED and TRANSFER to stores: which cage each gas went into. */
   cages: z.array(cageAssignmentDtoSchema),
   /** TRANSFER to stores: the cylinders that came back empty. */

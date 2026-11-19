@@ -101,7 +101,6 @@ from one source. Divergence is confined to files that branch on `Platform.OS`:
 | `app/queue.tsx`                            | `confirm()`                      | `Alert.alert`               |
 | `src/components/Scanner.tsx`               | getUserMedia + `BarcodeDetector` | native camera scanner       |
 | `app/login.tsx`, `app/new/create-site.tsx` | no-op                            | iOS `KeyboardAvoidingView`  |
-| `src/components/IdCapture.tsx`             | getUserMedia frame               | device camera file          |
 | `src/components/SignaturePad.tsx`          | needs `touchAction: 'none'`      | style key ignored           |
 | `src/sound/index.ts`                       | blocked until a user gesture     | plays whenever asked        |
 | `src/config.ts`                            | API defaults to the page origin  | needs `EXPO_PUBLIC_API_URL` |

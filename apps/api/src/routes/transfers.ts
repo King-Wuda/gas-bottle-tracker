@@ -17,7 +17,7 @@ import {
   CageCheckError,
   checkCages,
 } from '../services/cages.js';
-import { transferNotice } from '../services/notices.js';
+import { copyToStoresManagers, transferNotice } from '../services/notices.js';
 
 /** Thrown to roll the transaction back when nothing survived validation, so no
  *  orphan Transfer row is left behind for a submission that moved no cylinders. */
@@ -36,6 +36,8 @@ type TransferRow = {
   projectManagerId: string | null;
   photoOverridden: boolean;
   driverName: string | null;
+  driverId: string | null;
+  driverEmail: string | null;
   driverIdNumber: string | null;
   driverPhone: string | null;
   driverIdPath: string | null;
@@ -81,6 +83,8 @@ const toTransferDto = (t: TransferRow): TransferDto => ({
   photo: t.photo ? toPhotoDto(t.photo) : null,
   photoOverridden: t.photoOverridden,
   driverName: t.driverName,
+  driverId: t.driverId,
+  driverEmail: t.driverEmail,
   driverIdNumber: t.driverIdNumber,
   driverPhone: t.driverPhone,
   driverIdOverridden: t.driverIdOverridden,
@@ -222,16 +226,18 @@ export async function transferRoutes(app: FastifyInstance): Promise<void> {
         }
       }
 
-      // Who is taking the cylinders away, and the proof. Written before the
+      // Who is taking the cylinders away, and their signature. Written before the
       // transaction: blob IO must not run under a row lock. See
-      // services/driverSignOff.ts, which returns and transfers now share.
+      // services/driverSignOff.ts, which returns and transfers share.
       const signOff = await prepareDriverSignOff({
         clientRequestId: input.clientRequestId,
         signaturePng: input.signaturePng,
-        driverIdPhoto: input.driverIdPhoto,
-        driverIdOverride: input.driverIdOverride,
-        role: request.user.role,
-        verb: 'transfer',
+        driver: {
+          driverId: input.driverId,
+          driverName: input.driverName,
+          driverEmail: input.driverEmail,
+          driverPhone: input.driverPhone,
+        },
       });
       if (!signOff.ok) {
         return reply
@@ -279,11 +285,7 @@ export async function transferRoutes(app: FastifyInstance): Promise<void> {
                 userId,
                 projectManagerId: newManager?.id ?? null,
                 photoOverridden: prepared.overridden,
-                driverName: input.driverName,
-                driverIdNumber: input.driverIdNumber,
-                driverPhone: input.driverPhone,
-                driverIdPath: signOff.driverIdPath,
-                driverIdOverridden: signOff.driverIdOverridden,
+                ...signOff.driver,
                 signaturePath: signOff.signaturePath,
                 clientRequestId: input.clientRequestId,
               },
@@ -449,14 +451,22 @@ export async function transferRoutes(app: FastifyInstance): Promise<void> {
             // over. Queued in the same transaction, so a rolled-back transfer sends
             // nothing; the photos are attached by the worker at send time.
             const notice = await transferNotice(tx, transfer.id);
+            const pmEmail = newManager?.email ?? batch.projectManagerEmail;
             await tx.outboundEmail.create({
               data: {
-                to: newManager?.email ?? batch.projectManagerEmail,
+                to: pmEmail,
                 type: 'TRANSFER_NOTICE',
                 subject: notice.subject,
                 bodyText: notice.text,
                 payload: { transferId: transfer.id },
               },
+            });
+            await copyToStoresManagers(tx, {
+              type: 'TRANSFER_NOTICE',
+              subject: notice.subject,
+              bodyText: notice.text,
+              payload: { transferId: transfer.id },
+              alreadyTo: pmEmail,
             });
 
             return { transferId: transfer.id, rejected };

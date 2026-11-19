@@ -19,9 +19,10 @@ import {
   resetDb,
   testPhoto,
   uniqueProjectNumber,
-  testDriverId,
+  testDriverContact,
   testSignOff,
   batchGasCages,
+  notStoresCopy,
 } from './helpers.js';
 
 const PNG_1X1 =
@@ -408,7 +409,7 @@ describe('GET /batches — the shared Transfer / Returns / History list', () => 
         clientRequestId: randomUUID(),
         driverName: 'Driver D',
         driverPhone: '082 555 0199',
-        ...testDriverId(),
+        ...testDriverContact(),
         signaturePng: SIGNATURE,
         scans: r.serials.map(scan),
       },
@@ -443,7 +444,7 @@ describe('GET /batches — the shared Transfer / Returns / History list', () => 
         clientRequestId: randomUUID(),
         driverName: 'Driver P',
         driverPhone: '082 555 0199',
-        ...testDriverId(),
+        ...testDriverContact(),
         signaturePng: SIGNATURE,
         scans: [scan(p.serials[0]!)],
       },
@@ -674,7 +675,11 @@ describe('GET /batches — the shared Transfer / Returns / History list', () => 
 
     // One batch means one QR sheet, not one per gas.
     const emails = await prisma.outboundEmail.findMany({
-      where: { type: 'QR_SHEET', payload: { path: ['batchId'], equals: batch.id } },
+      where: {
+        ...notStoresCopy,
+        type: 'QR_SHEET',
+        payload: { path: ['batchId'], equals: batch.id },
+      },
     });
     expect(emails).toHaveLength(1);
   });
@@ -744,7 +749,11 @@ describe('POST /batches/:id/resend-email', () => {
 
     // Refused means refused: no extra mail was queued.
     const queued = await prisma.outboundEmail.count({
-      where: { type: 'QR_SHEET', payload: { path: ['batchId'], equals: batchId } },
+      where: {
+        ...notStoresCopy,
+        type: 'QR_SHEET',
+        payload: { path: ['batchId'], equals: batchId },
+      },
     });
     expect(queued).toBe(1);
   });
@@ -763,7 +772,11 @@ describe('POST /batches/:id/resend-email', () => {
     expect(res.json().retryAfterSeconds).toBe(RESEND_LOCKOUT_SECONDS);
 
     const mail = await prisma.outboundEmail.findMany({
-      where: { type: 'QR_SHEET', payload: { path: ['batchId'], equals: batchId } },
+      where: {
+        ...notStoresCopy,
+        type: 'QR_SHEET',
+        payload: { path: ['batchId'], equals: batchId },
+      },
       orderBy: { createdAt: 'asc' },
     });
     expect(mail).toHaveLength(2);
@@ -803,7 +816,11 @@ describe('POST /batches/:id/resend-email', () => {
     expect(codes).toEqual([202, 429]);
 
     const mail = await prisma.outboundEmail.count({
-      where: { type: 'QR_SHEET', payload: { path: ['batchId'], equals: batchId } },
+      where: {
+        ...notStoresCopy,
+        type: 'QR_SHEET',
+        payload: { path: ['batchId'], equals: batchId },
+      },
     });
     expect(mail).toBe(2); // the original plus exactly one resend
 

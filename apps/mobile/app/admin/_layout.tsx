@@ -28,6 +28,7 @@ export default function AdminLayout() {
       <Stack.Screen name="projects" options={{ title: 'Projects' }} />
       <Stack.Screen name="gases" options={{ title: 'Gases' }} />
       <Stack.Screen name="suppliers" options={{ title: 'Suppliers' }} />
+      <Stack.Screen name="drivers" options={{ title: 'Drivers' }} />
       <Stack.Screen name="batch/[id]" options={{ title: 'Correct batch' }} />
     </Stack>
   );
