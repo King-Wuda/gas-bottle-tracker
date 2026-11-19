@@ -65,7 +65,7 @@ export function ProjectNumberField({
         style={[base.input, show && controls.inputInvalid]}
         value={value}
         // The mask is the only writer of this value, so non-digits can never enter the
-        // state — pasting `123456-789-1-23` re-masks to itself, and typing a letter is
+        // state — pasting `12345-678-9-01` re-masks to itself, and typing a letter is
         // a no-op rather than a character that has to be rejected later.
         onChangeText={(t) => onChangeText(maskProjectNumber(t))}
         onBlur={() => setTouched(true)}

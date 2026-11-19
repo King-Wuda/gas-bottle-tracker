@@ -174,10 +174,12 @@ export const bearer = (token: string): Record<string, string> => ({
  */
 let projectNumberCounter = 0;
 export function uniqueProjectNumber(): string {
-  const clock = String(Date.now() % 1_000_000_000).padStart(9, '0');
+  // 11 digits, 5-3-1-2: eight from the clock and three from a counter, so numbers
+  // minted in one run do not collide.
+  const clock = String(Date.now() % 100_000_000).padStart(8, '0');
   const seq = String(projectNumberCounter++ % 1000).padStart(3, '0');
   const digits = `${clock}${seq}`;
-  return `${digits.slice(0, 6)}-${digits.slice(6, 9)}-${digits.slice(9, 10)}-${digits.slice(10, 12)}`;
+  return `${digits.slice(0, 5)}-${digits.slice(5, 8)}-${digits.slice(8, 9)}-${digits.slice(9, 11)}`;
 }
 
 /**
